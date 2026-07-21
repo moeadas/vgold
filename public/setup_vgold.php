@@ -87,6 +87,20 @@ $order = [
 ];
 foreach ($order as $f) run_sql_file($pdo, $migDir . '/' . $f);
 
+// Migration 010 uses MariaDB-only `ADD COLUMN IF NOT EXISTS`, which SiteGround's
+// MySQL rejects (1064). The runtime Schema guard recreates the exact same
+// objects with MySQL-portable DDL (CREATE TABLE IF NOT EXISTS + information_schema
+// column checks), so we invoke it here to make the DB fully consistent right away
+// instead of waiting for the first live request. Both guards are idempotent.
+try {
+    require_once $root . '/app/lib/Schema.php';
+    Schema::ensureFeatureBatchB();
+    Schema::ensureCrm();
+    out("   runtime schema guards applied (feature-batch-b + crm)");
+} catch (\Throwable $e) {
+    out("   ! schema guard: " . substr($e->getMessage(), 0, 160));
+}
+
 /* ─────────────────────────────────────────────────────────────────────────
  * 2. CRM DATA IMPORT — only if crm_leads is empty (marker-based idempotency).
  * ──────────────────────────────────────────────────────────────────────── */
