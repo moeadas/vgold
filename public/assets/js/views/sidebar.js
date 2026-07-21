@@ -24,6 +24,7 @@ function renderSidebar() {
             : (n.id === 'messages' ? `<span class="nav-badge" id="nav-msg-badge" style="display:none"></span>` : '');
           return `<button class="nav-btn ${State.screen === n.id ? 'active' : ''}" onclick="nav('${n.id}')">${n.icon}<span>${n.label}</span>${badge}</button>`;
         }).join('')}
+        ${u.crm_user_id ? `<a class="nav-btn" href="/crm/" style="text-decoration:none">${I.people}<span>CRM</span></a>` : ''}
       </nav>
       <div class="sidebar-bottom">
         <div class="sidebar-user" onclick="nav('settings')" style="cursor:pointer;transition:background .15s" onmouseover="this.style.background='var(--gold-bg)'" onmouseout="this.style.background='none'">

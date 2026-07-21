@@ -21,6 +21,11 @@ async function renderSettings() {
   if (smtp === undefined) {
     try { const res = await API.smtp(); smtp = res.settings; State.smtpSettings = smtp; } catch(e) { smtp = null; }
   }
+  // CRM role mapping (admin-only).
+  let crmRoleMap = State.crmRoleMap;
+  if (user.role === 'admin' && !crmRoleMap) {
+    try { const res = await API.crmRoleMap(); crmRoleMap = res.mappings; State.crmRoleMap = crmRoleMap; } catch(e) { crmRoleMap = []; }
+  }
 
   const notifPref = settings.email_notify_pref || 'all';
   const notifRadio = `
@@ -235,6 +240,37 @@ async function renderSettings() {
 
       ${user.role === 'admin' ? `
       <div class="settings-card">
+        <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
+          <span style="font-size:15px;font-weight:700">CRM role mapping</span>
+          <span style="font-size:11px;font-weight:700;color:var(--primary-dark);background:var(--primary-bg);border-radius:999px;padding:3px 9px">Admin</span>
+        </div>
+        <div class="desc">Map each Victory Genomics CRM role onto a VGold access role. Used when linking or re-syncing CRM users.</div>
+        <div style="margin-top:14px">
+          ${(crmRoleMap && crmRoleMap.length) ? crmRoleMap.map(m => `
+            <div class="crm-rolemap-row" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
+              <div style="flex:1;font-size:13.5px;font-weight:600">${esc(m.crm_role)}
+                <span style="font-weight:400;color:var(--muted);font-size:12px">(${m.user_count} user${m.user_count===1?'':'s'})</span>
+              </div>
+              <span style="color:var(--muted)">→</span>
+              <select data-crm-role="${esc(m.crm_role)}" style="flex:0 0 140px;font-size:13px;padding:6px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface)">
+                <option value="member" ${m.vgold_role !== 'admin' ? 'selected' : ''}>Member</option>
+                <option value="admin" ${m.vgold_role === 'admin' ? 'selected' : ''}>Admin</option>
+              </select>
+            </div>
+          `).join('') : '<div class="desc">No CRM roles found. Run the CRM data migration first.</div>'}
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer">
+          <input type="checkbox" id="crm-rolemap-apply"> Re-apply to existing linked users now
+        </label>
+        <div style="margin-top:12px">
+          <button class="btn-primary" style="padding:9px 16px;font-size:13.5px" onclick="saveCrmRoleMap()">Save mapping</button>
+          <span id="crm-rolemap-status" style="margin-left:10px;font-size:12px;color:var(--muted)"></span>
+        </div>
+      </div>
+      ` : ''}
+
+      ${user.role === 'admin' ? `
+      <div class="settings-card">
         <h3 style="color:var(--red)">Danger Zone</h3>
         <div class="desc">Irreversible actions. Proceed with caution.</div>
         <div class="danger-zone">
@@ -430,6 +466,27 @@ async function changeUserRole(userId, role) {
     toast('Role updated', 'success');
     render();
   } catch(e) { toast(e.message, 'error'); }
+}
+
+async function saveCrmRoleMap() {
+  const rows = document.querySelectorAll('select[data-crm-role]');
+  const mappings = Array.from(rows).map(s => ({
+    crm_role: s.getAttribute('data-crm-role'),
+    vgold_role: s.value,
+  }));
+  const applyToUsers = document.getElementById('crm-rolemap-apply')?.checked || false;
+  const status = document.getElementById('crm-rolemap-status');
+  if (status) status.textContent = 'Saving…';
+  try {
+    const res = await API.updateCrmRoleMap({ mappings, apply_to_users: applyToUsers });
+    State.crmRoleMap = null;
+    if (applyToUsers) { State.teamData = null; }
+    toast('CRM role mapping saved' + (applyToUsers ? ' and applied to users' : ''), 'success');
+    render();
+  } catch(e) {
+    if (status) status.textContent = '';
+    toast(e.message, 'error');
+  }
 }
 
 async function toggleUserActive(userId) {

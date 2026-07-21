@@ -470,4 +470,64 @@ class SettingsController {
             'roleColor' => $m['role'] === 'admin' ? '#25563F' : '#6E5638',
         ], $members)]);
     }
+
+    // ── CRM role mapping (Phase 4) ──────────────────────────────────────────
+    // The CRM has its own role vocabulary (Admin / Sales Manager / Sales Rep /
+    // Viewer). VGold has two roles (admin / member). crm_role_map defines how
+    // each CRM role maps onto a VGold role, and it is admin-configurable here.
+
+    public static function crmRoleMap() {
+        Auth::requireAdmin();
+        $rows = DB::fetchAll("SELECT id, crm_role, vgold_role FROM crm_role_map ORDER BY id");
+        // How many linked users currently hold each CRM role (for context).
+        $counts = [];
+        foreach (DB::fetchAll("SELECT crm_role, COUNT(*) c FROM users WHERE crm_user_id IS NOT NULL AND crm_role IS NOT NULL GROUP BY crm_role") as $r) {
+            $counts[$r['crm_role']] = (int)$r['c'];
+        }
+        jsonResponse(['mappings' => array_map(fn($m) => [
+            'id'         => (int)$m['id'],
+            'crm_role'   => $m['crm_role'],
+            'vgold_role' => $m['vgold_role'],
+            'user_count' => $counts[$m['crm_role']] ?? 0,
+        ], $rows)]);
+    }
+
+    public static function updateCrmRoleMap() {
+        Auth::requireAdmin();
+        $data = input();
+        $mappings = $data['mappings'] ?? null;
+        if (!is_array($mappings) || !$mappings) jsonError('No mappings provided');
+
+        $applyToUsers = !empty($data['apply_to_users']);
+        $updated = 0;
+        foreach ($mappings as $m) {
+            $crmRole   = trim($m['crm_role'] ?? '');
+            $vgoldRole = ($m['vgold_role'] ?? '') === 'admin' ? 'admin' : 'member';
+            if ($crmRole === '') continue;
+            // Upsert the mapping row.
+            $existing = DB::fetch("SELECT id FROM crm_role_map WHERE crm_role = ?", [$crmRole]);
+            if ($existing) {
+                DB::update('crm_role_map', ['vgold_role' => $vgoldRole], 'id = ?', [(int)$existing['id']]);
+            } else {
+                DB::insert('crm_role_map', ['crm_role' => $crmRole, 'vgold_role' => $vgoldRole]);
+            }
+            $updated++;
+
+            // Optionally re-apply the mapping to all linked users with this CRM role,
+            // keeping the last-admin safeguard intact.
+            if ($applyToUsers) {
+                $targets = DB::fetchAll("SELECT id, role FROM users WHERE crm_role = ? AND crm_user_id IS NOT NULL", [$crmRole]);
+                foreach ($targets as $t) {
+                    if ($t['role'] === $vgoldRole) continue;
+                    if ($t['role'] === 'admin' && $vgoldRole === 'member') {
+                        $adminCount = DB::fetch("SELECT COUNT(*) c FROM users WHERE role='admin' AND is_active=1");
+                        if ((int)$adminCount['c'] <= 1) continue; // never demote last admin
+                    }
+                    DB::update('users', ['role' => $vgoldRole], 'id = ?', [(int)$t['id']]);
+                    DB::update('workspace_members', ['role' => $vgoldRole], 'user_id = ? AND workspace_id = ?', [(int)$t['id'], Auth::workspaceId()]);
+                }
+            }
+        }
+        jsonResponse(['ok' => true, 'updated' => $updated, 'applied_to_users' => $applyToUsers]);
+    }
 }
