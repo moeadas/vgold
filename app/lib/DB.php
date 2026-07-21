@@ -1,5 +1,9 @@
 <?php
 // Simple PDO database wrapper
+// Guarded so files that `require` (not require_once) this more than once —
+// e.g. migration/reconcile_users.php pulled in by a web setup runner — don't
+// fatal with "Cannot redeclare class DB".
+if (!class_exists('DB', false)) {
 class DB {
     private static $pdo = null;
 
@@ -59,3 +63,4 @@ class DB {
         return self::query($sql, $params)->rowCount();
     }
 }
+} // end guard: if (!class_exists('DB', false))
