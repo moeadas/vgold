@@ -1,0 +1,18 @@
+# VGold — Root .htaccess (routes to public/ directory)
+# This sits at the vgold document root (e.g. /public_html/vgold/.htaccess)
+
+RewriteEngine On
+
+# Let standalone PHP scripts run directly
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteRule ^(.+\.php)$ - [L]
+
+# Map everything to the public/ directory
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ public/$1 [L]
+
+# Also map direct file requests to public/
+RewriteCond %{REQUEST_URI} ^/(assets|sw.js|api|migrate.php|index\.(php|html))
+RewriteRule ^(.*)$ public/$1 [L]

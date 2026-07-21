@@ -1,0 +1,33 @@
+# Environment & credentials
+config/.env
+*.env
+!config/.env.example
+
+# Logs
+*.log
+php_errorlog
+pages/php_errorlog
+
+# Uploads
+uploads/*
+!uploads/.gitkeep
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Database dumps (keep schema only)
+database.sql
+
+# CSV data files
+pages/*.csv
+
+# Default placeholder
+Default.html
+proposal_page_1.png

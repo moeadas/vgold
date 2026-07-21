@@ -1,0 +1,105 @@
+# Victory Genomics CRM - Apache Configuration (SiteGround Optimized)
+
+# Enable Rewrite Engine
+RewriteEngine On
+
+# Force HTTPS (SiteGround provides free SSL)
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Prevent directory listing
+Options -Indexes
+
+# Protect .env files
+<FilesMatch "\.env(\.\w+)?$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect configuration files
+<FilesMatch "^(database\.php|config\.php)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect database files
+<FilesMatch "\.(sql|db|sqlite)$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Protect log files
+<Files "*.log">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Protect CSV data files
+<FilesMatch "^VG_.*\.csv$">
+    Order allow,deny
+    Deny from all
+</FilesMatch>
+
+# Block access to .git directory
+RedirectMatch 404 /\.git
+
+# Set default index files
+DirectoryIndex login.php index.php
+
+# PHP Security Settings (SiteGround compatible)
+<IfModule mod_php7.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value max_execution_time 300
+    php_value max_input_time 300
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value memory_limit 256M
+    php_value session.cookie_httponly 1
+    php_value session.use_only_cookies 1
+</IfModule>
+
+# Also support PHP 8.x on SiteGround
+<IfModule mod_php.c>
+    php_flag display_errors Off
+    php_flag log_errors On
+    php_value max_execution_time 300
+    php_value max_input_time 300
+    php_value upload_max_filesize 10M
+    php_value post_max_size 10M
+    php_value memory_limit 256M
+    php_value session.cookie_httponly 1
+    php_value session.use_only_cookies 1
+</IfModule>
+
+# Enable compression
+<IfModule mod_deflate.c>
+    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
+    AddOutputFilterByType DEFLATE text/javascript application/javascript application/json
+    AddOutputFilterByType DEFLATE image/svg+xml
+</IfModule>
+
+# Browser caching
+<IfModule mod_expires.c>
+    ExpiresActive On
+    ExpiresByType image/jpg "access plus 1 year"
+    ExpiresByType image/jpeg "access plus 1 year"
+    ExpiresByType image/png "access plus 1 year"
+    ExpiresByType image/svg+xml "access plus 1 year"
+    ExpiresByType text/css "access plus 1 month"
+    ExpiresByType application/javascript "access plus 1 month"
+    ExpiresByType font/woff2 "access plus 1 year"
+    ExpiresByType font/woff "access plus 1 year"
+</IfModule>
+
+# Security headers (backup for PHP headers)
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>
+
+# Custom error pages
+ErrorDocument 404 /login.php
+ErrorDocument 403 /login.php

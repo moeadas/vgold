@@ -1,0 +1,45 @@
+# Production credentials
+config/database.sg.php
+
+# Local DB config
+config/database.php
+
+# Uploaded files
+storage/uploads/
+
+# Migration scripts
+public/migrate*.php
+
+# Debug/fix/test scripts
+public/debug*.php
+public/fixpw*.php
+public/smtp_*.php
+public/test_*.php
+
+# OS
+.DS_Store
+
+# Secrets / credentials (never commit)
+config/graph.php
+config/app_key.php
+config/push.php
+config/database.sg.php
+database.sg.php
+certs/
+.audit/
+
+# Dependencies
+vendor/
+composer.phar
+
+# Logs
+storage/logs/*.txt
+storage/logs/*.log
+
+# CRM module — secrets, uploads, logs, and the large data dump
+crm/config/.env
+crm/uploads/*
+!crm/uploads/.gitkeep
+crm/**/php_errorlog
+crm/database/victory-genomics-crm-v2-complete.sql
+migration/data/

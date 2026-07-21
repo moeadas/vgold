@@ -1,0 +1,6 @@
+{
+    "require": {
+        "firebase/php-jwt": "^7.1",
+        "minishlink/web-push": "^10.1"
+    }
+}

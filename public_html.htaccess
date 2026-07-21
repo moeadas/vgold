@@ -1,0 +1,29 @@
+# VGold — Main .htaccess (only if serving from a shared public_html; subdomain docroot preferred)
+DirectoryIndex index.php index.html
+
+RewriteEngine On
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# API routes → public/index.php
+RewriteRule ^api(.*)$ vgold/public/index.php [QSA,L]
+
+# Static assets → vgold/public/assets/
+RewriteRule ^assets/(.*)$ vgold/public/assets/$1 [L]
+
+# Service worker
+RewriteRule ^sw.js$ vgold/public/sw.js [L]
+
+# SPA fallback → serve index.php (with auto cache-busting)
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api
+RewriteCond %{REQUEST_URI} !^/assets
+RewriteCond %{REQUEST_URI} !^/vgold
+RewriteRule ^ vgold/public/index.php [QSA,L]
+
+# Security
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"

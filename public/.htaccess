@@ -1,0 +1,55 @@
+# VGold — SiteGround .htaccess
+# Rewrite engine for SPA routing + API
+
+RewriteEngine On
+
+# Let standalone PHP scripts in vgo root run directly
+RewriteCond %{REQUEST_URI} ^/(sp_setup|migrate008|migrate4?)\.php [NC]
+RewriteRule ^ - [L]
+
+# Force HTTPS
+RewriteCond %{HTTPS} off
+RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# API routes — pass to public/index.php
+RewriteRule ^api(.*)$ index.php [QSA,L]
+
+# SPA fallback — all non-file routes go to index.php
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteCond %{REQUEST_URI} !^/api
+RewriteCond %{REQUEST_URI} !^/assets
+RewriteCond %{REQUEST_URI} !^/sw.js
+RewriteCond %{REQUEST_URI} !^/manifest.json
+RewriteRule ^ index.php [QSA,L]
+
+# Security headers
+Header set X-Content-Type-Options "nosniff"
+Header set X-Frame-Options "SAMEORIGIN"
+Header set Referrer-Policy "strict-origin-when-cross-origin"
+
+# Gzip compression
+<IfModule mod_deflate.c>
+  AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript application/javascript application/json
+</IfModule>
+
+# Cache static assets
+<IfModule mod_expires.c>
+  ExpiresActive On
+  ExpiresByType text/css "access plus 1 month"
+  ExpiresByType application/javascript "access plus 1 month"
+  ExpiresByType image/png "access plus 1 month"
+  ExpiresByType image/jpeg "access plus 1 month"
+  ExpiresByType image/svg+xml "access plus 1 month"
+</IfModule>
+
+# SW and manifest: no-cache + correct types
+<FilesMatch "sw\.js$">
+  Header set Cache-Control "no-cache, no-store, must-revalidate"
+</FilesMatch>
+<FilesMatch "manifest\.json$">
+  Header set Content-Type "application/manifest+json"
+  Header set Cache-Control "no-cache"
+</FilesMatch>
+# Opcache is left enabled in production for performance (M4).
+# (Previously force-disabled here and reset on every request.)
