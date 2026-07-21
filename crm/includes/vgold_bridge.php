@@ -35,6 +35,12 @@ require_once $appConfig;   // defines DB_*, APP_*, SESSION_LIFETIME, etc.
 require_once $dbLib;
 require_once $authLib;
 
+// Path prefix at which the CRM is mounted inside the unified shell. All
+// externally-shared CRM URLs (webhook URLs, OAuth redirect, uploaded-media
+// links, in-email deep links) must include this so they resolve to the
+// mounted routes rather than the app root. Standalone CRM defines it as ''.
+if (!defined('CRM_BASE')) define('CRM_BASE', '/crm');
+
 // Start / attach to the unified VGold session (uses VGold's cookie params).
 Auth::init();
 

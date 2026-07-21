@@ -54,11 +54,15 @@ def_if('UPLOAD_DIR', __DIR__ . '/../uploads/');
 def_if('MAX_FILE_SIZE', 10485760); // 10MB
 def_if('ALLOWED_EXTENSIONS', ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png']);
 
+// CRM mount base path. When running inside the unified VGold shell the bridge
+// has already set this to '/crm'; standalone CRM lives at the web root so ''.
+if (!defined('CRM_BASE')) define('CRM_BASE', '');
+
 // Microsoft OAuth2 Configuration (Azure AD App Registration)
 def_if('MS_CLIENT_ID',     getenv('MS_CLIENT_ID')     ?: '');
 def_if('MS_CLIENT_SECRET', getenv('MS_CLIENT_SECRET') ?: '');
 def_if('MS_TENANT_ID',     getenv('MS_TENANT_ID')     ?: '');
-def_if('MS_REDIRECT_URI',  APP_URL . '/api/microsoft-callback.php');
+def_if('MS_REDIRECT_URI',  APP_URL . CRM_BASE . '/api/microsoft-callback.php');
 
 // Pagination
 def_if('RECORDS_PER_PAGE', 25);

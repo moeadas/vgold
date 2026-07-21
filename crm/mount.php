@@ -32,14 +32,18 @@ $path = str_replace(['..', "\0"], '', $path);
 $crmRoot = __DIR__;
 $target  = realpath($crmRoot . '/' . $path);
 
-// Serve CRM static assets (css/js/images/fonts) directly, no auth needed.
-if ($target && is_file($target) && preg_match('/\.(css|js|svg|png|jpe?g|gif|ico|woff2?|ttf|map)$/i', $path)) {
+// Serve CRM static assets (css/js/images/fonts) and uploaded media directly,
+// no auth needed. Media URLs under /crm/uploads/* are shared with external
+// services (e.g. WhatsApp) so they must be publicly fetchable.
+if ($target && is_file($target) && preg_match('/\.(css|js|svg|png|jpe?g|gif|ico|webp|woff2?|ttf|map|pdf|mp4|mp3|ogg|wav|webm|doc|docx|xls|xlsx|ppt|pptx)$/i', $path)) {
     $ext = strtolower(pathinfo($target, PATHINFO_EXTENSION));
     $types = [
         'css'=>'text/css','js'=>'application/javascript','svg'=>'image/svg+xml',
         'png'=>'image/png','jpg'=>'image/jpeg','jpeg'=>'image/jpeg','gif'=>'image/gif',
-        'ico'=>'image/x-icon','woff'=>'font/woff','woff2'=>'font/woff2','ttf'=>'font/ttf',
-        'map'=>'application/json',
+        'webp'=>'image/webp','ico'=>'image/x-icon','woff'=>'font/woff','woff2'=>'font/woff2',
+        'ttf'=>'font/ttf','map'=>'application/json','pdf'=>'application/pdf',
+        'mp4'=>'video/mp4','mp3'=>'audio/mpeg','ogg'=>'audio/ogg','wav'=>'audio/wav',
+        'webm'=>'video/webm',
     ];
     if (isset($types[$ext])) header('Content-Type: ' . $types[$ext]);
     header('Cache-Control: public, max-age=3600');
@@ -47,8 +51,24 @@ if ($target && is_file($target) && preg_match('/\.(css|js|svg|png|jpe?g|gif|ico|
     exit;
 }
 
+// ── Public integration endpoints ───────────────────────────────────────────
+// These are called by third parties (lead-capture forms, Twilio VoIP, WhatsApp
+// Cloud API, the sheets cron) WITHOUT a VGold session. They authenticate
+// themselves via their own secret/key/signature, so they must bypass the
+// unified-session gate. They still run through the bridge (already loaded above)
+// so the CRM table-rewrite + unified DB apply. Fine-grained action gating is
+// handled inside each endpoint (e.g. whatsapp.php/voip.php public-action branch).
+$publicEndpoints = [
+    'api/leads-webhook.php',      // inbound leads (?key=)
+    'api/cron-sync.php',          // sheets cron (?secret=)
+    'api/microsoft-callback.php', // per-user email OAuth redirect
+    'api/whatsapp.php',           // WA verify + inbound webhook (public actions)
+    'api/voip.php',               // Twilio status/voice callbacks (public actions)
+];
+$isPublicEndpoint = in_array($path, $publicEndpoints, true);
+
 // Everything else requires an authenticated, CRM-linked session.
-if (!$bridgeOk) {
+if (!$bridgeOk && !$isPublicEndpoint) {
     // Not signed in (or not CRM-linked): send to the unified SPA login.
     header('Location: /?next=' . rawurlencode($uri));
     exit;
@@ -70,13 +90,18 @@ if (preg_match('/^(migrate_|mount\.php|router\.php)/', $base)) {
     exit;
 }
 
-// 3. Run the CRM page from within crm/ so its relative requires resolve.
-//    Rewrite root-absolute CRM URLs (href="/…", src="/…", action="/…",
+// 3. Run the CRM page from within ITS OWN directory so both styles of relative
+//    require resolve: pages in crm/pages/ do `require '../includes/…'`, while
+//    endpoints in crm/api/ do `require __DIR__.'/../…'`. chdir'ing to the
+//    target file's directory (not always crmRoot) makes cwd-relative requires
+//    resolve exactly as they would when the file is hit directly on the server.
+//
+//    We also rewrite root-absolute CRM URLs (href="/…", src="/…", action="/…",
 //    fetch('/api/…'), location='/…') to live under the /crm mount, so the
 //    legacy pages keep working unchanged inside the VGold shell. We only touch
 //    URLs that resolve to real CRM paths (assets, pages, api, dashboard,
 //    logout, includes) to avoid clobbering links into the VGold SPA.
-chdir($crmRoot);
+chdir(dirname($target));
 
 $crmTopSegments = 'assets|pages|api|dashboard\.php|logout\.php|login\.php|includes|profile\.php|index\.php';
 
