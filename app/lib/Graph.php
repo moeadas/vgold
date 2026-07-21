@@ -65,6 +65,12 @@ class Graph {
         return self::raw($method, $url, $body, $headers);
     }
 
+    /** Unauthenticated raw HTTP call (no app-only Bearer token added).
+     *  Used by the OIDC login code-exchange, which must NOT carry an app token. */
+    public static function rawCall($method, $url, $body = null, $headers = []) {
+        return self::raw($method, $url, $body, $headers);
+    }
+
     private static function raw($method, $url, $body, $headers) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [

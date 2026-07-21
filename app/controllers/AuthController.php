@@ -191,8 +191,11 @@ class AuthController {
             $tokenParams['client_assertion'] = $assertion;
         }
 
-        $resp = Graph::request('POST', $tokenUrl, http_build_query($tokenParams),
-            ['Content-Type: application/x-www-form-urlencoded'], true);
+        // Use an UNAUTHENTICATED raw call: the OIDC code-exchange must not carry
+        // an app-only Bearer token (Graph::request would fetch one and fail if the
+        // app credentials are misconfigured, masking the real login flow).
+        $resp = Graph::rawCall('POST', $tokenUrl, http_build_query($tokenParams),
+            ['Content-Type: application/x-www-form-urlencoded']);
         
         $d = json_decode($resp['body'], true);
         if (empty($d['id_token'])) jsonError('Login failed', 401);
