@@ -1,47 +1,51 @@
-# VGold — Root .htaccess  (document root = this directory; app served from public/)
-# All dynamic routing funnels through public/index.php, which dispatches:
-#   /api/*   -> app/router.php
-#   /crm/*   -> crm/mount.php   (unified session + table-rewrite; NEVER hit crm/*.php directly)
-#   else     -> SPA shell
+# VGold — Root .htaccess  (SiteGround subdomain docroot = this directory)
+# The application front controller lives in public/index.php. Everything is
+# funnelled there, which dispatches:
+#   /api/*  -> app/router.php
+#   /crm/*  -> crm/mount.php  (unified session + table-rewrite; never hit crm/*.php direct)
+#   else    -> SPA shell
 #
-# IMPORTANT: we deliberately do NOT let arbitrary existing *.php files execute
-# from the docroot. crm/pages/*.php must run THROUGH the mount so the bridge,
-# auth gate and public-endpoint allowlist apply. Only public/ is web-facing.
+# NOTE: the docroot itself has no index.php (it's in public/), so we point
+# DirectoryIndex into public/ AND rewrite the bare root explicitly, otherwise
+# mod_dir + "Options -Indexes" would 403 the homepage.
 
 Options -Indexes
-DirectoryIndex index.php index.html
+DirectoryIndex index.php public/index.php
 RewriteEngine On
+RewriteBase /
 
-# ── Force HTTPS ─────────────────────────────────────────────────────────────
+# ── Force HTTPS ──────────────────────────────────────────────────────────────
 RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# ── Block sensitive paths outright (defense in depth; app also protects them) ─
-# Use mod_rewrite (not mod_alias Redirect) so ordering vs the rules below is
-# deterministic. manifest.json / sw.js live under public/ and are served by the
-# public/ passthrough, so we do NOT blanket-block .json here.
-RewriteRule (?i)(^|/)\.git(/|$)                    - [F,L]
-RewriteRule (?i)^(config|app|migration|vendor)(/|$) - [F,L]
-RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$) - [F,L]
-RewriteRule (?i)\.(sql|db|sqlite|env|log|lock)$    - [F,L]
+# ── Block sensitive paths (defense in depth; app also guards them) ────────────
+RewriteRule (?i)(^|/)\.git(/|$)                             - [F,L]
+RewriteRule (?i)^(config|app|migration|vendor)(/|$)          - [F,L]
+RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$)  - [F,L]
+RewriteRule (?i)\.(sql|db|sqlite|env|log|lock)$              - [F,L]
 
-# ── CRM: force every /crm/* request through the front controller (mount) ──────
-# Do this BEFORE the "serve real files" rules so crm/*.php can never run direct.
+# ── Bare root -> front controller (must come before the -d skip below) ────────
+RewriteRule ^$ public/index.php [QSA,L]
+
+# ── CRM + API always through the front controller ────────────────────────────
 RewriteRule ^crm(/.*)?$ public/index.php [QSA,L]
-
-# ── API through the front controller ─────────────────────────────────────────
 RewriteRule ^api(/.*)?$ public/index.php [QSA,L]
 
-# ── Serve real files/dirs that live under public/ (assets, sw.js, manifest) ───
-RewriteCond %{DOCUMENT_ROOT}/public%{REQUEST_URI} -f
-RewriteRule ^(.*)$ public/$1 [L]
+# ── Serve real files that physically live under public/ (assets, sw.js, etc.) ─
+# Only rewrite into public/ when the target file actually exists there, so we
+# don't shadow legitimate 404s. Skip anything already prefixed with public/.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{DOCUMENT_ROOT}/public/$1 -f
+RewriteRule ^(.+)$ public/$1 [L]
 
 # ── Everything else -> SPA front controller ──────────────────────────────────
+# Loop guard: don't re-rewrite requests that already resolve to a real file
+# (the rewritten /public/index.php) or that are already under public/.
+RewriteCond %{REQUEST_URI} !^/public/
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^ public/index.php [QSA,L]
 
-# ── Security headers ─────────────────────────────────────────────────────────
+# ── Security headers ──────────────────────────────────────────────────────────
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
