@@ -41,6 +41,22 @@ const MS_DOMAIN = 'victorygenomics.com';
 $pdo = DB::conn();
 $pdo->beginTransaction();
 try {
+    // ---- 0. Prune demo seed users FIRST --------------------------------------
+    // IMPORTANT: this must run BEFORE we select/create the primary workspace.
+    // The initial seed migration creates a demo workspace whose `created_by`
+    // points at a demo user, and `workspaces.created_by` is
+    // `ON DELETE CASCADE`. If we pruned demo users AFTER attaching our real
+    // users/categories to that demo workspace, deleting the demo owner would
+    // cascade-delete the whole workspace (and its members + CRM category).
+    // Pruning first guarantees we build a fresh workspace owned by a real user.
+    if ($PRUNE) {
+        $demo = DB::fetchAll("SELECT id, email FROM users WHERE crm_user_id IS NULL AND email LIKE '%@northwind.studio'");
+        foreach ($demo as $d) {
+            if (!$DRY) DB::query("DELETE FROM users WHERE id=?", [$d['id']]);
+            say("  - pruned demo user #{$d['id']} {$d['email']}");
+        }
+    }
+
     // ---- 1. Role map ----------------------------------------------------------
     $roleMap = [];
     foreach (DB::fetchAll("SELECT crm_role, vgold_role FROM crm_role_map") as $r) {
@@ -56,7 +72,7 @@ try {
     $rolesByUid = [];        // uid => vgold role
     foreach ($crmUsers as $cu) {
         $email = trim($cu['email']);
-        $emailLc = mb_strtolower($email);
+        $emailLc = strtolower($email);
         $isMs = (bool)preg_match('/@' . preg_quote(MS_DOMAIN, '/') . '$/i', $email);
         $provider = $isMs ? 'microsoft' : 'password';
         $vgoRole  = $roleMap[$cu['role']] ?? 'member';
@@ -106,16 +122,27 @@ try {
     }
 
     // ---- 2b. Primary workspace (created_by requires an existing user) --------
-    $ws = DB::fetch("SELECT id FROM workspaces ORDER BY id ASC LIMIT 1");
-    if (!$ws) {
-        $adminU = DB::fetch("SELECT id FROM users WHERE role='admin' AND crm_user_id IS NOT NULL ORDER BY id LIMIT 1");
-        $creator = $adminU ? (int)$adminU['id'] : ($uids[0] ?? null);
+    // Prefer an admin among the reconciled CRM users as the workspace owner so
+    // the workspace never depends on a demo/placeholder user (which could be
+    // removed later and cascade-delete the workspace).
+    $adminU  = DB::fetch("SELECT id FROM users WHERE role='admin' AND crm_user_id IS NOT NULL ORDER BY id LIMIT 1");
+    $creator = $adminU ? (int)$adminU['id'] : ($uids[0] ?? null);
+
+    // Reuse an existing workspace ONLY if it is owned by a linked CRM user;
+    // otherwise its owner may be a demo user with a cascading FK.
+    $ws = DB::fetch(
+        "SELECT w.id, w.created_by FROM workspaces w
+         JOIN users u ON u.id = w.created_by
+         WHERE u.crm_user_id IS NOT NULL
+         ORDER BY w.id ASC LIMIT 1"
+    );
+    if ($ws) {
+        $wsId = (int)$ws['id'];
+    } else {
         if (!$DRY && $creator) {
             $wsId = DB::insert('workspaces', ['name'=>'Victory Genomics', 'created_by'=>$creator]);
             say("Created workspace #$wsId (Victory Genomics)");
         } else { $wsId = 0; say("[dry-run] would create workspace Victory Genomics"); }
-    } else {
-        $wsId = (int)$ws['id'];
     }
 
     // ---- 2c. Workspace membership + default settings for each user ----------
@@ -149,14 +176,7 @@ try {
         say("CRM root category already exists (project #{$crmCat['id']})");
     }
 
-    // ---- 4. Prune demo seed users (optional) ---------------------------------
-    if ($PRUNE) {
-        $demo = DB::fetchAll("SELECT id, email FROM users WHERE crm_user_id IS NULL AND email LIKE '%@northwind.studio'");
-        foreach ($demo as $d) {
-            if (!$DRY) DB::query("DELETE FROM users WHERE id=?", [$d['id']]);
-            say("  - pruned demo user #{$d['id']} {$d['email']}");
-        }
-    }
+    // ---- 4. (Demo seed users are pruned in step 0, before workspace setup) ---
 
     if ($DRY) { $pdo->rollBack(); say("\n[dry-run] rolled back — no changes written."); }
     else      { $pdo->commit();  say("\nDone. linked=$linked created=$created updated=$updated"); }
