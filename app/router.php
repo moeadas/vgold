@@ -30,6 +30,8 @@ Auth::init();
 // Ensure Feature-batch-B schema exists (folders, card order, DM/comment reads,
 // notification defaults). Idempotent and self-guarding; no-op once present.
 Schema::ensureFeatureBatchB();
+// Ensure CRM integration linkage (users.crm_* columns + crm_role_map). Idempotent.
+Schema::ensureCrm();
 
 // Route table: pattern => [Controller::method, requiresAuth]
 // Pattern format: "METHOD path/with/{params}"

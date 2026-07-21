@@ -43,3 +43,9 @@ crm/uploads/*
 crm/**/php_errorlog
 crm/database/victory-genomics-crm-v2-complete.sql
 migration/data/
+
+# CRM data migration — contains real customer lead data / PII. NEVER commit.
+# Regenerate on the server from the source dump with build_crm_import.py.
+migration/sql/crm_data_import.sql
+migration/sql/*.sql
+*.dump.sql
