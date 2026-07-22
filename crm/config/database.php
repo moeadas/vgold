@@ -24,15 +24,11 @@ if (file_exists($envFile)) {
     }
 }
 
-// When mounted inside VGold, the unified config/app.php has already defined
-// DB_* / APP_NAME / APP_URL / SESSION_LIFETIME / MAX_FILE_SIZE pointing at the
-// unified database and app. Guard every define() so we defer to those and never
-// trigger "constant already defined" notices or reconnect to the old CRM DB.
-if (!defined('def_if')) {
-    function def_if($k, $v) { if (!defined($k)) define($k, $v); }
+if (!function_exists('def_if')) {
+    function def_if($key, $value) { if (!defined($key)) define($key, $value); }
 }
 
-// Database Configuration — reads from .env, falls back to defaults
+// Database Configuration — defer to VGold's unified config when mounted.
 def_if('DB_HOST',    getenv('DB_HOST')    ?: 'localhost');
 def_if('DB_NAME',    getenv('DB_NAME')    ?: 'your_database_name');
 def_if('DB_USER',    getenv('DB_USER')    ?: 'your_database_user');
@@ -53,9 +49,6 @@ def_if('PASSWORD_MIN_LENGTH', 8);
 def_if('UPLOAD_DIR', __DIR__ . '/../uploads/');
 def_if('MAX_FILE_SIZE', 10485760); // 10MB
 def_if('ALLOWED_EXTENSIONS', ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png']);
-
-// CRM mount base path. When running inside the unified VGold shell the bridge
-// has already set this to '/crm'; standalone CRM lives at the web root so ''.
 if (!defined('CRM_BASE')) define('CRM_BASE', '');
 
 // Microsoft OAuth2 Configuration (Azure AD App Registration)
@@ -106,9 +99,6 @@ class Database {
                 PDO::ATTR_EMULATE_PREPARES   => false,
                 PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
             ];
-            // When mounted inside VGold (unified DB), CRM tables live under a
-            // `crm_` prefix. Use a rewriting PDO so the legacy CRM queries
-            // (FROM leads / users / …) transparently target crm_leads / crm_users.
             $rewriteFile = __DIR__ . '/../includes/crm_table_rewrite.php';
             if (defined('VGOLD_BRIDGE_LOADED') && is_file($rewriteFile)) {
                 require_once $rewriteFile;

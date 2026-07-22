@@ -66,7 +66,7 @@ class TaskController {
                     'task', $id, $data['project_id']
                 );
                 // Send email notification
-                $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a new task:</p><p style='font-size:16px'><b>{$data['title']}</b></p><p><a href='https://vgo.victorygenomics.com'>View in VGo →</a></p>";
+                $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a new task:</p><p style='font-size:16px'><b>{$data['title']}</b></p><p><a href='https://vgold.victorygenomics.com'>View in VGold →</a></p>";
                 Mail::sendNotification($uid, 'New task assigned: ' . $data['title'], $html, 'assignment');
             }
         }
@@ -84,6 +84,7 @@ class TaskController {
             $cycle = ['in_progress' => 'completed', 'completed' => 'in_progress'];
             $newStatus = $cycle[$task['status']] ?? 'in_progress';
             DB::update('tasks', ['status' => $newStatus, 'completed_at' => $newStatus === 'completed' ? date('Y-m-d H:i:s') : null], 'id = ?', [$id]);
+            CRMTaskBridge::syncTaskStatus((int)$id, $newStatus);
             jsonResponse(['ok' => true, 'status' => $newStatus]);
             return;
         }
@@ -131,7 +132,7 @@ class TaskController {
                             $task['title'],
                             'task', $id, $task['project_id']
                         );
-                        $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a task:</p><p style='font-size:16px'><b>{$task['title']}</b></p><p><a href='https://vgo.victorygenomics.com'>View in VGo →</a></p>";
+                        $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a task:</p><p style='font-size:16px'><b>{$task['title']}</b></p><p><a href='https://vgold.victorygenomics.com'>View in VGold →</a></p>";
                         Mail::sendNotification($aid, 'New task assigned: ' . $task['title'], $html, 'assignment');
                     }
                 }
@@ -157,6 +158,10 @@ class TaskController {
             // Sync task_assignees
             DB::query("INSERT IGNORE INTO task_assignees (task_id, user_id) VALUES (?, ?)", [$id, (int)$update['assigned_to']]);
         }
+
+        if (isset($update['status'])) {
+            CRMTaskBridge::syncTaskStatus((int)$id, $update['status']);
+        }
         
         jsonResponse(['ok' => true]);
     }
@@ -170,6 +175,7 @@ class TaskController {
             'status' => $newStatus,
             'completed_at' => $newStatus === 'completed' ? date('Y-m-d H:i:s') : null,
         ], 'id = ?', [$id]);
+        CRMTaskBridge::syncTaskStatus((int)$id, $newStatus);
         
         // Notify all assignees when completed
         if ($newStatus === 'completed') {
@@ -332,6 +338,7 @@ class TaskController {
     
     public static function delete($id) {
         Authz::requireTaskAccess($id);
+        CRMTaskBridge::unlinkTask((int)$id);
         DB::delete('tasks', 'id = ?', [$id]);
         jsonResponse(['ok' => true]);
     }
@@ -468,6 +475,8 @@ class TaskController {
         $result = array_map(fn($t) => [
             'id' => (int)$t['id'],
             'title' => $t['title'],
+            'description' => $t['description'] ?? '',
+            'source_module' => $t['source_module'] ?? null,
             'status' => $t['status'],
             'status_label' => statusLabel($t['status']),
             'status_color' => statusColor($t['status']),
@@ -532,6 +541,8 @@ class TaskController {
         $formatItem = fn($t) => [
             'id' => (int)$t['id'],
             'title' => $t['title'],
+            'description' => $t['description'] ?? '',
+            'source_module' => $t['source_module'] ?? null,
             'status' => $t['status'],
             'status_label' => statusLabel($t['status']),
             'status_color' => statusColor($t['status']),
@@ -795,6 +806,8 @@ class TaskController {
         $taskList = array_map(fn($t) => [
             'id' => (int)$t['id'],
             'title' => $t['title'],
+            'description' => $t['description'] ?? '',
+            'source_module' => $t['source_module'] ?? null,
             'status' => $t['status'],
             'status_label' => statusLabel($t['status']),
             'status_color' => statusColor($t['status']),

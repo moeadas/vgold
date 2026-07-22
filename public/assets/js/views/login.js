@@ -29,7 +29,7 @@ function renderLogin() {
       <div class="login-right">
         <div class="login-card">
           <div class="login-logo-wrap">
-            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGo" class="login-logo-img" />
+            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGold" class="login-logo-img" />
           </div>
           <h1 class="login-title">Welcome back</h1>
           <p class="login-subtitle">Sign in to your workspace</p>

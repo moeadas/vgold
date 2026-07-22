@@ -62,9 +62,6 @@ class AuthController {
     public static function login() {
         $data = input();
         requireFields(['email', 'password'], $data);
-        // Accept EITHER an email or a legacy CRM username as the identifier, so
-        // external (non-Microsoft) users migrated from the CRM can sign in with
-        // whichever they remember. Matching is case-insensitive.
         $identifier = trim($data['email']);
         $identifierLc = strtolower($identifier);
         $password = $data['password'];
@@ -82,7 +79,6 @@ class AuthController {
             jsonError('Too many login attempts. Please try again in 15 minutes.', 429);
         }
         
-        // Resolve by email first, then by carried-over CRM username.
         $user = DB::fetch("SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1", [$identifierLc]);
         if (!$user) {
             $user = DB::fetch("SELECT * FROM users WHERE LOWER(crm_username) = ? AND is_active = 1", [$identifierLc]);
@@ -102,8 +98,8 @@ class AuthController {
         
         // Set auth_provider + CRM linkage in session from the user's DB record.
         $_SESSION['auth_provider'] = $user['auth_provider'] ?? 'password';
-        $_SESSION['crm_user_id']   = $user['crm_user_id'] ?? null;
-        $_SESSION['crm_role']      = $user['crm_role'] ?? null;
+        $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
+        $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         
         Auth::login($user['id'], $wm['workspace_id']);
         jsonResponse(['ok' => true, 'csrf_token' => Csrf::token(), 'user' => [
@@ -137,6 +133,7 @@ class AuthController {
             'default_screen' => $defaultScreen,
             'crm_user_id' => $user['crm_user_id'] ?? null,
             'crm_role' => $user['crm_role'] ?? null,
+            'modules' => Authz::grantedModules((int)$user['id'], Auth::workspaceId()),
         ], 'csrf_token' => Csrf::token()]);
     }
     
@@ -191,9 +188,6 @@ class AuthController {
             $tokenParams['client_assertion'] = $assertion;
         }
 
-        // Use an UNAUTHENTICATED raw call: the OIDC code-exchange must not carry
-        // an app-only Bearer token (Graph::request would fetch one and fail if the
-        // app credentials are misconfigured, masking the real login flow).
         $resp = Graph::rawCall('POST', $tokenUrl, http_build_query($tokenParams),
             ['Content-Type: application/x-www-form-urlencoded']);
         
@@ -223,8 +217,8 @@ class AuthController {
         if (!$wm) jsonError('No workspace assigned. Ask an admin.', 403);
         
         $_SESSION['auth_provider'] = 'microsoft'; // drives edit-button visibility
-        $_SESSION['crm_user_id']   = $user['crm_user_id'] ?? null;
-        $_SESSION['crm_role']      = $user['crm_role'] ?? null;
+        $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
+        $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         Auth::login($user['id'], $wm['workspace_id']);
         header('Location: /');
         exit;

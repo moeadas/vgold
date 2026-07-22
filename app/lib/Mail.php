@@ -38,7 +38,7 @@ class Mail {
         $port = (int)$cfg['port'];
         $username = $cfg['username'];
         $password = Crypto::decrypt($cfg['password']); // encrypted at rest (H6)
-        $fromName = $cfg['from_name'] ?: 'VGo';
+        $fromName = $cfg['from_name'] ?: 'VGold';
         $fromEmail = $cfg['from_email'];
         $encryption = $cfg['encryption'] ?: 'ssl';
 
@@ -66,7 +66,7 @@ class Mail {
         if (strpos($greeting, '220') !== 0) { fclose($socket); return false; }
 
         // EHLO
-        self::sendCmd($socket, 'EHLO vgo.victorygenomics.com');
+        self::sendCmd($socket, 'EHLO vgold.victorygenomics.com');
 
         // STARTTLS upgrade for explicit-TLS connections
         if ($useStartTls) {
@@ -81,7 +81,7 @@ class Mail {
                 return false;
             }
             // Re-issue EHLO over the now-encrypted channel
-            self::sendCmd($socket, 'EHLO vgo.victorygenomics.com');
+            self::sendCmd($socket, 'EHLO vgold.victorygenomics.com');
         }
 
         // AUTH LOGIN

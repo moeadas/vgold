@@ -10,12 +10,7 @@ if (strpos($uri, '/api/') === 0 || $uri === '/api') {
     exit;
 }
 
-// ── CRM mount (Phase 3) ────────────────────────────────────────────────────
-// Everything under /crm/* is the (progressively re-skinned) legacy CRM,
-// running against the unified VGold database & session. The vgold_bridge
-// establishes the unified session first, then maps it onto the CRM session
-// variables the legacy pages expect. Table names are rewritten to crm_* by
-// crm/config/database.php (see CrmRewritingPDO).
+// Full CRM functionality mounted inside the unified VGold identity/database.
 if ($uri === '/crm' || strpos($uri, '/crm/') === 0) {
     require __DIR__ . '/../crm/mount.php';
     exit;
@@ -84,6 +79,7 @@ echo '<!DOCTYPE html>
 <script src="/assets/js/views/mytasks.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskoverview.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/settings.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/crm.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/assignee-picker.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/modals.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>

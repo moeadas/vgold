@@ -12,7 +12,7 @@ function renderAskModal() {
       <div class="ask-modal" onclick="event.stopPropagation()">
         <div class="ask-header">
           ${I.sparkle}
-          <input class="ask-input" id="ask-input" placeholder="Ask anything, or tell VGo what to do…" onkeydown="if(event.key==='Enter')runAskFromInput();if(event.key==='Escape')closeAsk()">
+          <input class="ask-input" id="ask-input" placeholder="Ask anything, or tell VGold what to do…" onkeydown="if(event.key==='Enter')runAskFromInput();if(event.key==='Escape')closeAsk()">
           <span class="ask-esc">esc</span>
         </div>
         <div id="ask-body" class="ask-body">
@@ -55,13 +55,13 @@ async function refreshDayPlan() {
 
 async function runAsk(prompt) {
   const body = document.getElementById('ask-body');
-  body.innerHTML = `<div style="padding:20px 22px 24px 22px"><div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><div class="ai-badge" style="width:22px;height:22px;border-radius:6px">${I.sparkle}</div><span style="font-size:13px;font-weight:700">VGo is thinking…</span></div><p style="font-family:var(--serif);font-size:19px;color:var(--muted)">Analyzing your workspace…</p></div>`;
+  body.innerHTML = `<div style="padding:20px 22px 24px 22px"><div style="display:flex;align-items:center;gap:9px;margin-bottom:14px"><div class="ai-badge" style="width:22px;height:22px;border-radius:6px">${I.sparkle}</div><span style="font-size:13px;font-weight:700">VGold is thinking…</span></div><p style="font-family:var(--serif);font-size:19px;color:var(--muted)">Analyzing your workspace…</p></div>`;
   try {
     const res = await API.ask(prompt);
     body.innerHTML = `<div class="ask-answer">
       <div style="display:flex;align-items:center;gap:9px;margin-bottom:14px">
         <div class="ai-badge" style="width:22px;height:22px;border-radius:6px">${I.sparkle}</div>
-        <span style="font-size:13px;font-weight:700">VGo</span>
+        <span style="font-size:13px;font-weight:700">VGold</span>
       </div>
       <div class="ask-answer-html">${res.answer_html ? sanitizeHtml(res.answer_html) : esc(res.answer || 'No response')}</div>
     </div>`;
@@ -320,4 +320,3 @@ async function removeProjectMember(pid, uid, name) {
     render();
   } catch(e) { toast(e.message, 'error'); }
 }
-

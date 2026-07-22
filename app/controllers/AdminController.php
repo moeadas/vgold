@@ -19,9 +19,12 @@ class AdminController {
         DB::conn()->beginTransaction();
         try {
             // Delete in dependency order
+            DB::query("DELETE FROM workspace_settings WHERE workspace_id = ?", [$wsId]);
+            DB::query("DELETE FROM user_module_access WHERE workspace_id = ?", [$wsId]);
             if ($pIds) {
                 $placeholders = implode(',', array_fill(0, count($pIds), '?'));
                 DB::query("DELETE FROM task_comments WHERE task_id IN (SELECT id FROM tasks WHERE project_id IN ($placeholders))", $pIds);
+                DB::query("DELETE FROM crm_task_links WHERE task_id IN (SELECT id FROM tasks WHERE project_id IN ($placeholders))", $pIds);
                 DB::query("DELETE FROM tasks WHERE project_id IN ($placeholders)", $pIds);
                 DB::query("DELETE FROM files WHERE project_id IN ($placeholders)", $pIds);
                 DB::query("DELETE FROM project_chat WHERE project_id IN ($placeholders)", $pIds);

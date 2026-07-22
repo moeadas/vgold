@@ -21,9 +21,16 @@ async function renderSettings() {
   if (smtp === undefined) {
     try { const res = await API.smtp(); smtp = res.settings; State.smtpSettings = smtp; } catch(e) { smtp = null; }
   }
-  // CRM role mapping (admin-only).
+  let moduleAccess = State.moduleAccess;
+  let crmConfig = State.crmSettings;
   let crmRoleMap = State.crmRoleMap;
-  if (user.role === 'admin' && !crmRoleMap) {
+  if (user.role === 'admin' && moduleAccess === undefined) {
+    try { moduleAccess = await API.moduleAccess(); State.moduleAccess = moduleAccess; } catch(e) { moduleAccess = null; }
+  }
+  if (user.role === 'admin' && crmConfig === undefined) {
+    try { const res = await API.crmSettings(); crmConfig = res.settings; State.crmSettings = crmConfig; } catch(e) { crmConfig = null; }
+  }
+  if (user.role === 'admin' && crmRoleMap === undefined) {
     try { const res = await API.crmRoleMap(); crmRoleMap = res.mappings; State.crmRoleMap = crmRoleMap; } catch(e) { crmRoleMap = []; }
   }
 
@@ -114,7 +121,7 @@ async function renderSettings() {
   const smtpSection = smtp ? `
     <div class="settings-card">
       <h3>Email Notifications (SMTP)</h3>
-      <div class="desc">Configure how VGo sends email notifications to your team.</div>
+      <div class="desc">Configure how VGold sends email notifications to your team.</div>
       <div style="display:flex;align-items:center;gap:8px;margin:10px 0 14px;padding:8px 12px;background:var(--primary-bg);border-radius:8px;font-size:13px">
         <span style="font-size:16px">✅</span>
         <span>SMTP is configured — emails will be sent from <b>${esc(smtp.from_email)}</b> via <b>${esc(smtp.host)}:${smtp.port}</b></span>
@@ -130,13 +137,73 @@ async function renderSettings() {
     </div>
   `;
 
+  const moduleAccessSection = user.role === 'admin' && moduleAccess ? `
+    <div class="settings-card settings-card-wide" id="settings-access">
+      <div class="settings-section-head"><div><span class="settings-section-kicker">Access control</span><h3>Team module access</h3><div class="desc">Workflow is available to everyone. Choose which CRM areas each person can open.</div></div><span class="workflow-always-pill">Workflow · Always on</span></div>
+      <div class="module-access-table">
+        ${(moduleAccess.members || []).map(member => `
+          <div class="module-access-row">
+            <div class="module-access-person"><strong>${esc(member.name)}</strong><small>${esc(member.email)}</small></div>
+            <div class="module-access-options">
+              ${(moduleAccess.modules || []).map(mod => {
+                const checked = member.role === 'admin' || (member.access || []).includes(mod.key);
+                return `<label class="module-access-chip ${checked ? 'checked' : ''} ${member.role === 'admin' ? 'locked' : ''}">
+                  <input type="checkbox" data-user="${member.id}" data-module="${esc(mod.key)}" ${checked ? 'checked' : ''} ${member.role === 'admin' ? 'disabled' : ''} onchange="saveModuleAccess(${member.id})"><span>${esc(mod.label)}</span>
+                </label>`;
+              }).join('')}
+            </div>
+          </div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const crmSettingsSection = user.role === 'admin' && crmConfig ? `
+    <div class="settings-card settings-card-wide" id="settings-crm">
+      <div class="settings-section-head"><div><span class="settings-section-kicker">CRM configuration</span><h3>Company & follow-up defaults</h3><div class="desc">CRM settings now live here with the rest of VGold administration.</div></div></div>
+      <div class="form-row" style="gap:12px">
+        <div class="form-field" style="flex:1"><label class="form-label">Company name</label><input class="form-input" id="crm-setting-company" value="${esc(crmConfig.company_name || '')}"></div>
+        <div class="form-field" style="flex:1"><label class="form-label">Company email</label><input class="form-input" id="crm-setting-email" type="email" value="${esc(crmConfig.company_email || '')}"></div>
+        <div class="form-field" style="flex:1"><label class="form-label">Company phone</label><input class="form-input" id="crm-setting-phone" value="${esc(crmConfig.company_phone || '')}"></div>
+      </div>
+      <div class="form-row" style="gap:12px;margin-top:12px">
+        <div class="form-field" style="flex:1"><label class="form-label">Timezone</label><input class="form-input" id="crm-setting-timezone" value="${esc(crmConfig.timezone || 'Europe/Madrid')}"></div>
+        <div class="form-field" style="flex:1"><label class="form-label">Leads per page</label><input class="form-input" id="crm-setting-page-size" type="number" min="10" max="200" value="${esc(crmConfig.leads_per_page || '25')}"></div>
+        <div class="form-field" style="flex:1"><label class="form-label">Workflow project</label><input class="form-input" id="crm-setting-project" value="${esc(crmConfig.follow_up_project_name || 'CRM Follow-ups')}"></div>
+      </div>
+      <label class="settings-check-row"><input type="checkbox" id="crm-setting-auto-assign" ${String(crmConfig.auto_assign_leads) === '1' ? 'checked' : ''}><span><strong>Auto-assign new leads</strong><small>Use the CRM assignment rules when no owner is selected.</small></span></label>
+      <button class="btn-primary" style="margin-top:14px" onclick="saveCrmSettings()">Save CRM settings</button>
+      <div class="settings-subsection">
+        <h4>Legacy CRM role mapping</h4>
+        <div class="desc">Map imported CRM roles to VGold account roles. Module permissions above remain the detailed access control.</div>
+        <div class="crm-rolemap-list">
+          ${(crmRoleMap || []).map(mapping => `
+            <div class="crm-rolemap-row">
+              <div><strong>${esc(mapping.crm_role)}</strong><small>${mapping.user_count} linked user${mapping.user_count === 1 ? '' : 's'}</small></div>
+              <span>→</span>
+              <select class="form-input" data-crm-role="${esc(mapping.crm_role)}">
+                <option value="member" ${mapping.vgold_role !== 'admin' ? 'selected' : ''}>Member</option>
+                <option value="admin" ${mapping.vgold_role === 'admin' ? 'selected' : ''}>Admin</option>
+              </select>
+            </div>`).join('') || '<div class="desc">No imported CRM roles are available.</div>'}
+        </div>
+        <label class="settings-check-row"><input type="checkbox" id="crm-rolemap-apply"><span><strong>Apply role changes to linked users now</strong><small>The last administrator is always protected.</small></span></label>
+        <button class="btn-secondary" style="margin-top:12px" onclick="saveCrmRoleMap()">Save role mapping</button>
+      </div>
+      <details class="settings-subsection crm-advanced-settings">
+        <summary>Advanced CRM integrations and proposal settings</summary>
+        <p class="desc">Email delivery, Twilio/VoIP, WhatsApp, lead notifications, and proposal defaults from the original CRM are managed here.</p>
+        <iframe src="/crm/pages/settings.php?embedded=1" title="Advanced CRM settings"></iframe>
+      </details>
+    </div>` : '';
+
   setTimeout(renderPushNotifState, 50);
   return `
     <div class="fade-in settings-page">
-      <div class="section-label">Settings</div>
-      <h1 class="page-title-sm" style="margin-bottom:26px">Your account</h1>
+      <div class="section-label">VGold settings</div>
+      <h1 class="page-title-sm">Account & administration</h1>
+      <p class="page-desc" style="margin-bottom:20px">Manage Workflow, CRM, integrations, and team access from one place.</p>
+      <nav class="settings-index" aria-label="Settings sections"><a href="#settings-account">Account</a>${user.role === 'admin' ? '<a href="#settings-access">Module access</a><a href="#settings-crm">CRM</a><a href="#settings-integrations">Integrations</a>' : ''}<a href="#settings-team">Team</a></nav>
       
-      <div class="settings-card">
+      <div class="settings-card" id="settings-account">
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px">
           <div class="avatar avatar-lg" style="background:${user.avatar_color || '#9C8060'}">${user.initials || '??'}</div>
           <div style="flex:1">
@@ -197,15 +264,19 @@ async function renderSettings() {
         </div>
       </div>
 
-      ${user.role === 'admin' ? smtpSection : ''}
+      ${moduleAccessSection}
 
-      <div class="settings-card">
+      ${crmSettingsSection}
+
+      <div id="settings-integrations">${user.role === 'admin' ? smtpSection : ''}</div>
+
+      <div class="settings-card" id="settings-ai">
         <h3>AI Connections</h3>
-        <div class="desc">Connect your AI provider API keys to power VGo's AI features.</div>
+        <div class="desc">Connect your AI provider API keys to power VGold's AI features.</div>
         ${aiKeys}
       </div>
 
-      <div class="settings-card">
+      <div class="settings-card" id="settings-team">
         <div style="display:flex;align-items:center;gap:9px;margin-bottom:4px">
           <span style="font-size:15px;font-weight:700">Team members</span>
           ${user.role === 'admin' ? '<span style="font-size:11px;font-weight:700;color:var(--primary-dark);background:var(--primary-bg);border-radius:999px;padding:3px 9px">Admin</span>' : ''}
@@ -319,7 +390,7 @@ function renderSmtpForm(smtp) {
       <div class="form-row" style="gap:12px">
         <div class="form-field" style="flex:1">
           <label class="form-label">From Name</label>
-          <input class="form-input" id="smtp-from-name" value="${esc(s.from_name || 'VGo')}" placeholder="VGo">
+          <input class="form-input" id="smtp-from-name" value="${esc(s.from_name || 'VGold')}" placeholder="VGold">
         </div>
         <div class="form-field" style="flex:1">
           <label class="form-label">From Email</label>
@@ -407,7 +478,7 @@ async function saveSmtp() {
     port: parseInt(document.getElementById('smtp-port')?.value) || 465,
     encryption: document.getElementById('smtp-encryption')?.value,
     username: document.getElementById('smtp-username')?.value.trim(),
-    from_name: document.getElementById('smtp-from-name')?.value.trim() || 'VGo',
+    from_name: document.getElementById('smtp-from-name')?.value.trim() || 'VGold',
     from_email: document.getElementById('smtp-from-email')?.value.trim(),
   };
   const pw = document.getElementById('smtp-password')?.value;
@@ -520,6 +591,7 @@ async function createUser() {
     if (authProvider === 'password') payload.password = pass;
     await API.createUser(payload);
     State.teamData = null;
+    State.moduleAccess = undefined;
     const msg = authProvider === 'microsoft' 
       ? 'User added: ' + name + ' (sign in with Microsoft)'
       : 'User invited: ' + name + ' (password email sent)';
@@ -634,6 +706,59 @@ async function changePassword() {
     document.getElementById('pw-confirm').value = '';
     toast('Password updated successfully', 'success');
   } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+}
+
+async function saveModuleAccess(userId) {
+  const checks = Array.from(document.querySelectorAll(`input[data-user="${userId}"][data-module]`));
+  const modules = checks.filter(input => input.checked).map(input => input.dataset.module);
+  checks.forEach(input => input.disabled = true);
+  try {
+    await API.updateModuleAccess(userId, modules);
+    const member = State.moduleAccess?.members?.find(item => item.id === userId);
+    if (member) member.access = modules;
+    checks.forEach(input => input.closest('.module-access-chip')?.classList.toggle('checked', input.checked));
+    toast('Module access updated', 'success');
+  } catch (e) {
+    State.moduleAccess = undefined;
+    toast(e.message, 'error');
+    render();
+  } finally {
+    checks.forEach(input => input.disabled = false);
+  }
+}
+
+async function saveCrmSettings() {
+  const data = {
+    company_name: document.getElementById('crm-setting-company')?.value || '',
+    company_email: document.getElementById('crm-setting-email')?.value || '',
+    company_phone: document.getElementById('crm-setting-phone')?.value || '',
+    timezone: document.getElementById('crm-setting-timezone')?.value || '',
+    leads_per_page: document.getElementById('crm-setting-page-size')?.value || '25',
+    follow_up_project_name: document.getElementById('crm-setting-project')?.value || 'CRM Follow-ups',
+    auto_assign_leads: !!document.getElementById('crm-setting-auto-assign')?.checked,
+  };
+  try {
+    await API.updateCrmSettings(data);
+    State.crmSettings = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, typeof value === 'boolean' ? (value ? '1' : '0') : value]));
+    toast('CRM settings saved', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+async function saveCrmRoleMap() {
+  const mappings = Array.from(document.querySelectorAll('select[data-crm-role]')).map(select => ({
+    crm_role: select.dataset.crmRole,
+    vgold_role: select.value,
+  }));
+  try {
+    await API.updateCrmRoleMap({
+      mappings,
+      apply_to_users: !!document.getElementById('crm-rolemap-apply')?.checked,
+    });
+    State.crmRoleMap = undefined;
+    State.teamData = null;
+    toast('CRM role mapping saved', 'success');
+    render();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 async function masterReset() {

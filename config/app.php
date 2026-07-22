@@ -6,9 +6,6 @@ if (!function_exists('esc')) {
 
 // VGold Application Configuration
 // Unified ERP: VGo workflow management + Victory Genomics CRM in one app.
-// Idempotent include guard so scripts that legitimately require this file more
-// than once (e.g. migration/reconcile_users.php pulled in by a web setup runner)
-// don't trigger "constant already defined" warnings or re-detect the env.
 if (defined('APP_NAME')) { return; }
 define('APP_NAME', 'VGold');
 
@@ -28,7 +25,7 @@ if ($isSiteGround) {
 }
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.21.1');
+define('ASSET_VERSION', '2026.07.21.3');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

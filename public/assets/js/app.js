@@ -32,6 +32,10 @@ const State = {
   commentsUnread: 0,
   viewComments: false,
   cardOrders: null,
+  crmDashboard: null,
+  crmLeads: null,
+  crmInteractions: null,
+  activeCrmModule: null,
 };
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -175,6 +179,15 @@ async function render() {
       case 'messages': mainContent = await renderMessages(); break;
       case 'task': mainContent = await renderTaskPage(State.activeTaskId); break;
       case 'settings': mainContent = await renderSettings(); break;
+      case 'crm-dashboard': mainContent = await renderCrmDashboard(); break;
+      case 'crm-leads': mainContent = await renderCrmLeads(); break;
+      case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
+      case 'crm-proposals':
+      case 'crm-email':
+      case 'crm-communications':
+      case 'crm-automation':
+      case 'crm-reports':
+      case 'crm-knowledge': mainContent = await renderCrmModule(State.screen.replace('-', '.')); break;
       default: mainContent = await renderMyTasks();
     }
   } catch(e) {
@@ -217,7 +230,7 @@ async function render() {
               <div class="notif-list" id="notif-list"></div>
             </div>
           </div>
-            <button class="ask-btn" onclick="openAsk()" aria-label="Ask VGo AI assistant">${I.sparkle}<span>Ask VGo</span><span class="kbd" aria-hidden="true">⌘K</span></button>
+            <button class="ask-btn" onclick="openAsk()" aria-label="Ask VGold AI assistant">${I.sparkle}<span>Ask VGold</span><span class="kbd" aria-hidden="true">⌘K</span></button>
           </div>
         </div>
         <div class="content" id="main-content" role="main" tabindex="-1">${mainContent}</div>
@@ -308,6 +321,13 @@ function routeFromHash() {
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'settings') { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
+  else if (parts[0] === 'crm' && parts[1]) {
+    const known = ['dashboard','leads','interactions','proposals','email','communications','automation','reports','knowledge'];
+    State.screen = known.includes(parts[1]) ? 'crm-' + parts[1] : 'crm-dashboard';
+    State.activeCrmModule = 'crm.' + parts[1];
+    State.activeProjectId = null;
+    State.activeProject = null;
+  }
   else if (parts[0] === 'project' && parts[1]) { 
     const id = resolveSlug('projects', parts[1]);
     if (id) { State.screen = 'project'; State.activeProjectId = id; State.activeProject = null; }
@@ -329,6 +349,9 @@ function routeFromHash() {
 // Update hash when navigating
 function updateHash() {
   let hash = State.screen;
+  if (State.screen.startsWith('crm-')) {
+    hash = 'crm/' + State.screen.slice(4);
+  }
   if (State.screen === 'task' && State.activeTaskId) {
     hash = 'task/' + State.activeTaskId;
   } else if (State.screen === 'project' && State.activeProject) {
@@ -468,7 +491,7 @@ async function enableNotifications() {
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if (isIOS && !isStandalone) {
-    toast('On iPhone: tap Share → Add to Home Screen, then open VGo from your home screen to enable notifications', 'error');
+    toast('On iPhone: tap Share → Add to Home Screen, then open VGold from your home screen to enable notifications', 'error');
     return;
   }
   const perm = await Notification.requestPermission();

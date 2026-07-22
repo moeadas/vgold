@@ -15,7 +15,9 @@ require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/AIController.php';
 require_once __DIR__ . '/controllers/AdminController.php';
 require_once __DIR__ . '/controllers/NotificationController.php';
+require_once __DIR__ . '/controllers/CRMController.php';
 require_once __DIR__ . '/controllers/CrmSyncController.php';
+require_once __DIR__ . '/lib/CRMTaskBridge.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/lib/Push.php';
@@ -31,8 +33,8 @@ Auth::init();
 // Ensure Feature-batch-B schema exists (folders, card order, DM/comment reads,
 // notification defaults). Idempotent and self-guarding; no-op once present.
 Schema::ensureFeatureBatchB();
-// Ensure CRM integration linkage (users.crm_* columns + crm_role_map). Idempotent.
 Schema::ensureCrm();
+Schema::ensureUnifiedModules();
 
 // Route table: pattern => [Controller::method, requiresAuth]
 // Pattern format: "METHOD path/with/{params}"
@@ -121,9 +123,6 @@ $routes = [
     'GET settings/members' => ['SettingsController::workspaceMembers', true],
     'GET settings/crm-role-map' => ['SettingsController::crmRoleMap', true],
     'PUT settings/crm-role-map' => ['SettingsController::updateCrmRoleMap', true],
-    // CRM ⇆ Task follow-up bridge (Phase 5)
-    'POST crm/sync-followups' => ['CrmSyncController::syncFollowUps', true],
-    'GET tasks/{id}/crm-context' => ['CrmSyncController::taskCrmContext', true],
     'GET settings/smtp' => ['SettingsController::smtp', true],
     'PUT settings/smtp' => ['SettingsController::updateSmtp', true],
     'POST settings/smtp/test' => ['SettingsController::testSmtp', true],
@@ -131,6 +130,20 @@ $routes = [
     'PATCH settings/users/{id}/role' => ['SettingsController::changeRole', true],
     'POST settings/users/{id}/toggle-active' => ['SettingsController::toggleUserActive', true],
     'DELETE settings/users' => ['SettingsController::deleteUser', true],
+    'GET settings/module-access' => ['SettingsController::moduleAccess', true],
+    'PUT settings/module-access' => ['SettingsController::updateModuleAccess', true],
+    'GET settings/crm' => ['SettingsController::crmSettings', true],
+    'PUT settings/crm' => ['SettingsController::updateCrmSettings', true],
+
+    // CRM — native modules inside the VGold SPA and shared session
+    'GET crm/dashboard' => ['CRMController::dashboard', true],
+    'GET crm/leads' => ['CRMController::leads', true],
+    'POST crm/leads' => ['CRMController::createLead', true],
+    'GET crm/lead-options' => ['CRMController::leadOptions', true],
+    'GET crm/interactions' => ['CRMController::interactions', true],
+    'POST crm/interactions' => ['CRMController::createInteraction', true],
+    'POST crm/sync-followups' => ['CrmSyncController::syncFollowUps', true],
+    'GET tasks/{id}/crm-context' => ['CrmSyncController::taskCrmContext', true],
     
     // AI
     'GET ai/providers' => ['AIController::providers', true],

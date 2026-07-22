@@ -70,7 +70,7 @@ const VoIPPhone = {
         }
         try {
             console.log('VoIP: fetching token...');
-            const resp = await fetch('/api/voip.php?action=token');
+            const resp = await fetch('/crm/api/voip.php?action=token');
             console.log('VoIP: token response status:', resp.status);
             const data = await resp.json();
             if (!data.success) {
@@ -117,7 +117,7 @@ const VoIPPhone = {
 
             this.device.on('tokenWillExpire', async () => {
                 try {
-                    const r = await fetch('/api/voip.php?action=token');
+                    const r = await fetch('/crm/api/voip.php?action=token');
                     const d = await r.json();
                     if (d.success) this.device.updateToken(d.token);
                 } catch (e) { console.warn('Token refresh failed:', e); }
@@ -188,7 +188,7 @@ const VoIPPhone = {
 
         // Step 1: Log call in CRM
         try {
-            const resp = await fetch('/api/voip.php?action=call', {
+            const resp = await fetch('/crm/api/voip.php?action=call', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({ to_number: toNumber, lead_id: leadId || 0 })
@@ -268,7 +268,7 @@ const VoIPPhone = {
             }
             // End the call in DB
             if (this.currentCallId) {
-                fetch('/api/voip.php?action=end_call', {
+                fetch('/crm/api/voip.php?action=end_call', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ call_id: this.currentCallId, duration: 0, reason: 'failed' })
@@ -345,7 +345,7 @@ const VoIPPhone = {
         // Save to DB
         if (this.currentCallId) {
             const sid = this.currentCallSid || (this.activeCall && this.activeCall.parameters ? this.activeCall.parameters.CallSid : '') || '';
-            fetch('/api/voip.php?action=end_call', {
+            fetch('/crm/api/voip.php?action=end_call', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
@@ -557,7 +557,7 @@ const VoIPPhone = {
         const notes = document.getElementById('voip-notes')?.value || '';
         if (this.currentCallId) {
             try {
-                const resp = await fetch('/api/voip.php?action=log_call', {
+                const resp = await fetch('/crm/api/voip.php?action=log_call', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ call_id: this.currentCallId, outcome, notes, duration: this.callSeconds })
