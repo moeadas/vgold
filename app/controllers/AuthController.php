@@ -96,7 +96,7 @@ class AuthController {
         unset($_SESSION[$key]);
         unset($_SESSION[$key . '_time']);
         
-        // Set auth_provider in session from the user's DB record
+        // Set auth_provider + CRM linkage in session from the user's DB record.
         $_SESSION['auth_provider'] = $user['auth_provider'] ?? 'password';
         $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
         $_SESSION['crm_role'] = $user['crm_role'] ?? null;
@@ -201,7 +201,9 @@ class AuthController {
         $oid = $claims['oid'] ?? null;
         if (!$email || !$oid) jsonError('Login failed: missing identity claims', 401);
         
-        // Prefer matching by stored oid; fall back to email for first sign-in
+        // Prefer matching by stored oid; fall back to email for first sign-in.
+        // Email match is case-insensitive because CRM-migrated users may have
+        // mixed-case emails (e.g. Zeina@, Omar@, Asif@, Marina@victorygenomics.com).
         $user = DB::fetch("SELECT * FROM users WHERE ms_oid = ? AND is_active = 1", [$oid]);
         if (!$user) {
             $user = DB::fetch("SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1", [$email]);
