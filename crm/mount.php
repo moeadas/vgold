@@ -72,7 +72,8 @@ if (!$isPublicEndpoint) {
     elseif (strpos($path, 'automation') !== false) $module = 'crm.automation';
     elseif (strpos($path, 'report') !== false || strpos($path, 'export') !== false || strpos($path, 'sheets') !== false) $module = 'crm.reports';
     elseif (strpos($path, 'knowledge') !== false || strpos($path, 'quick-guides') !== false) $module = 'crm.knowledge';
-    elseif (preg_match('#(?:^|/)(?:users|user-form|settings)\.php$#', $path)) {
+    elseif (preg_match('#(?:^|/)(?:users|user-form|settings)\.php$#', $path) || $path === 'api/switch-user.php') {
+        // User management, settings, and admin impersonation require VGold admin.
         Auth::requireAdmin();
         $module = null;
     }
@@ -94,6 +95,10 @@ if (!$isPublicEndpoint) {
         // the explicit module grant is authoritative, so grant the minimum
         // legacy role needed to execute the already-authorized screen/API.
         $_SESSION['role'] = 'Sales Manager';
+    } elseif (($_SESSION['role'] ?? '') === 'Admin') {
+        // The VGold role is authoritative: an imported legacy crm_role of
+        // 'Admin' must never grant CRM-admin powers to a non-admin VGold user.
+        $_SESSION['role'] = 'Sales Manager';
     }
 }
 
@@ -108,8 +113,18 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET' && preg_match('#(?:interactions|lead-de
     });
 }
 
-if (!empty($_GET['embedded'])) $_SESSION['vgold_crm_embedded'] = true;
-$embedded = !empty($_SESSION['vgold_crm_embedded']);
+// Embedded (iframe) mode. The flag persists in the session so navigations and
+// API calls issued from INSIDE the embedded iframe keep the embedded styling —
+// but it is cleared again on a top-level standalone visit to /crm/* (detected
+// via Sec-Fetch-Dest), so the flag can no longer permanently "stick" and break
+// the standalone CRM chrome for the rest of the session.
+$secFetchDest = strtolower($_SERVER['HTTP_SEC_FETCH_DEST'] ?? '');
+if (!empty($_GET['embedded'])) {
+    $_SESSION['vgold_crm_embedded'] = true;
+} elseif ($secFetchDest === 'document' && strpos($path, 'api/') !== 0) {
+    unset($_SESSION['vgold_crm_embedded']);
+}
+$embedded = !empty($_GET['embedded']) || !empty($_SESSION['vgold_crm_embedded']);
 chdir(dirname($target));
 
 register_shutdown_function(function () use ($crmTopSegments) {
@@ -123,11 +138,12 @@ register_shutdown_function(function () use ($crmTopSegments) {
     }
 });
 
-ob_start(function ($html) use ($crmTopSegments, $embedded) {
+$crmAssetVersion = defined('ASSET_VERSION') ? ASSET_VERSION : date('Ymd');
+ob_start(function ($html) use ($crmTopSegments, $embedded, $crmAssetVersion) {
     if ($html === '' || stripos($html, '<') === false) return $html;
     $html = preg_replace('#(\b(?:href|src|action)\s*=\s*["\'])/(' . $crmTopSegments . ')#i', '$1/crm/$2', $html);
     $html = preg_replace('#(["\'`])/(' . $crmTopSegments . ')#i', '$1/crm/$2', $html);
-    $html = preg_replace('#(/crm/assets/[^"\']+?\.(?:css|js))(?:\?[^"\']*)?#i', '$1?v=20260721f', $html);
+    $html = preg_replace('#(/crm/assets/[^"\']+?\.(?:css|js))(?:\?[^"\']*)?#i', '$1?v=' . $crmAssetVersion, $html);
     if ($embedded && stripos($html, '</head>') !== false) {
         $style = '<style id="vgold-embedded-crm">'
             . '.sidebar,.sidebar-backdrop,.mobile-menu-toggle,.notif-bell-wrap{display:none!important}'
