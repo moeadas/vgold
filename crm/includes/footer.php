@@ -152,12 +152,17 @@
             if (panelOpen) loadNotifications();
         };
 
+        function notifCsrfToken() {
+            var el = document.getElementById('globalCsrfToken') || document.querySelector('input[name="csrf_token"]');
+            return el ? el.value : '';
+        }
+
         // Click a notification — mark read + navigate
         window.handleNotifClick = function(id, link) {
             fetch('/api/notifications.php?action=mark_read', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ notification_id: id })
+                body: JSON.stringify({ notification_id: id, csrf_token: notifCsrfToken() })
             }).then(function() {
                 pollUnreadCount();
             }).catch(function(){});
@@ -180,7 +185,7 @@
             fetch('/api/notifications.php?action=mark_all_read', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: '{}'
+                body: JSON.stringify({ csrf_token: notifCsrfToken() })
             }).then(function() {
                 pollUnreadCount();
                 // Update UI
