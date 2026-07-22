@@ -142,6 +142,7 @@ class AuthController {
         $cfg = require __DIR__ . '/../../config/graph.php';
         Auth::init();
         $_SESSION['oauth_state'] = bin2hex(random_bytes(16));
+        $_SESSION['oauth_nonce'] = bin2hex(random_bytes(16));
         header('Location: ' . $cfg['login_authority'] . '/oauth2/v2.0/authorize?' . http_build_query([
             'client_id' => $cfg['client_id'],
             'response_type' => 'code',
@@ -149,6 +150,7 @@ class AuthController {
             'response_mode' => 'query',
             'scope' => 'openid profile email User.Read',
             'state' => $_SESSION['oauth_state'],
+            'nonce' => $_SESSION['oauth_nonce'],
         ]));
         exit;
     }
@@ -156,7 +158,12 @@ class AuthController {
     public static function microsoftCallback() {
         $cfg = require __DIR__ . '/../../config/graph.php';
         Auth::init();
-        if (($_GET['state'] ?? '') !== ($_SESSION['oauth_state'] ?? '_')) jsonError('Invalid state', 400);
+        // Constant-time state comparison; require a state was actually issued.
+        $expectedState = $_SESSION['oauth_state'] ?? '';
+        if ($expectedState === '' || !hash_equals($expectedState, (string)($_GET['state'] ?? ''))) {
+            jsonError('Invalid state', 400);
+        }
+        unset($_SESSION['oauth_state']); // single-use: prevent replay
         $code = $_GET['code'] ?? '';
         if (!$code) jsonError('Missing code', 400);
         
@@ -194,9 +201,30 @@ class AuthController {
         $d = json_decode($resp['body'], true);
         if (empty($d['id_token'])) jsonError('Login failed', 401);
         
-        // Decode id_token payload
+        // Decode id_token payload. The id_token is received here directly from
+        // Microsoft's token endpoint over a TLS-verified back-channel (auth-code
+        // flow), so it did not pass through the user's browser. We still validate
+        // the standard claims as defense in depth against token confusion/replay.
         $parts = explode('.', $d['id_token']);
+        if (count($parts) !== 3) jsonError('Login failed: malformed token', 401);
         $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
+        if (!is_array($claims)) jsonError('Login failed: unreadable token', 401);
+        // Audience must be this application.
+        if (($claims['aud'] ?? null) !== $cfg['client_id']) jsonError('Login failed: wrong audience', 401);
+        // Not expired (60s leeway for clock skew).
+        if (!isset($claims['exp']) || (int)$claims['exp'] < (time() - 60)) jsonError('Login failed: token expired', 401);
+        // Issuer must be a Microsoft identity host.
+        $issHost = strtolower(parse_url($claims['iss'] ?? '', PHP_URL_HOST) ?? '');
+        if (!in_array($issHost, ['login.microsoftonline.com', 'sts.windows.net'], true)) {
+            jsonError('Login failed: untrusted issuer', 401);
+        }
+        // Nonce binds the token to this login request (blocks replay/injection).
+        if (!empty($_SESSION['oauth_nonce'])) {
+            if (!isset($claims['nonce']) || !hash_equals($_SESSION['oauth_nonce'], (string)$claims['nonce'])) {
+                jsonError('Login failed: nonce mismatch', 401);
+            }
+        }
+        unset($_SESSION['oauth_nonce']);
         $email = strtolower($claims['email'] ?? $claims['preferred_username'] ?? '');
         $oid = $claims['oid'] ?? null;
         if (!$email || !$oid) jsonError('Login failed: missing identity claims', 401);

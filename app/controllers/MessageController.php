@@ -196,7 +196,13 @@ class MessageController {
         if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
             $file = $_FILES['attachment'];
             $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
-            $storedName = 'msg_' . $id . '_' . time() . '.' . $ext;
+            // Block executable/script extensions (mirror TaskController) to prevent
+            // dropping a webshell into the web-served storage/ tree.
+            $blocked = ['php','php3','php4','php5','php7','php8','phtml','phps','phar','cgi','pl','py','sh','htaccess','exe','bat','com','asp','aspx','jsp'];
+            if (in_array($ext, $blocked, true)) jsonError('File type not allowed');
+            // Non-guessable stored name so a valid attachment path can't be brute-forced.
+            $rand = bin2hex(random_bytes(8));
+            $storedName = 'msg_' . $id . '_' . $rand . ($ext !== '' ? '.' . $ext : '');
             $uploadDir = UPLOAD_PATH . '/messages';
             if (!is_dir($uploadDir)) @mkdir($uploadDir, 0755, true);
             $filePath = $uploadDir . '/' . $storedName;

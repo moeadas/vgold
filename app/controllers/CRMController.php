@@ -5,6 +5,16 @@ class CRMController {
         if (!Authz::hasAnyCrmAccess()) jsonError('You do not have access to CRM', 403);
     }
 
+    // A VGold admin, or a real CRM Admin/Sales Manager, sees all records.
+    // Everyone else is scoped to leads they own or are assigned (mirrors the
+    // legacy crm/api/leads.php scoping so the native SPA endpoints don't leak).
+    private static function isCrmManager() {
+        $u = Auth::user();
+        if ($u && ($u['role'] ?? '') === 'admin') return true;
+        $role = $_SESSION['crm_role'] ?? null;
+        return in_array($role, ['Admin', 'Sales Manager'], true);
+    }
+
     public static function dashboard() {
         self::requireCrm();
         $modules = Authz::grantedModules();
@@ -46,6 +56,16 @@ class CRMController {
         if ($status !== '') {
             $where[] = 'l.lead_status = ?';
             $params[] = $status;
+        }
+        if (!self::isCrmManager()) {
+            $crmId = Auth::crmUserId();
+            if ($crmId) {
+                $where[] = '(l.assigned_to = ? OR l.created_by = ?)';
+                $params[] = $crmId;
+                $params[] = $crmId;
+            } else {
+                $where[] = '1=0'; // no CRM identity → see nothing rather than everything
+            }
         }
         $rows = DB::fetchAll(
             "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name
@@ -102,6 +122,17 @@ class CRMController {
 
     public static function interactions() {
         Authz::requireModuleAccess('crm.interactions');
+        $scopeSql = '';
+        $scopeParams = [];
+        if (!self::isCrmManager()) {
+            $crmId = Auth::crmUserId();
+            if ($crmId) {
+                $scopeSql = ' WHERE (l.assigned_to = ? OR l.created_by = ? OR i.user_id = ?)';
+                $scopeParams = [$crmId, $crmId, $crmId];
+            } else {
+                $scopeSql = ' WHERE 1=0';
+            }
+        }
         $rows = DB::fetchAll(
             "SELECT i.*, l.company_name, l.contact_person, u.name AS user_name,
                     ctl.task_id AS workflow_task_id, t.status AS workflow_task_status
@@ -109,8 +140,9 @@ class CRMController {
              JOIN crm_leads l ON l.lead_id = i.lead_id
              LEFT JOIN users u ON u.crm_user_id = i.user_id
              LEFT JOIN crm_task_links ctl ON ctl.crm_interaction_id = i.interaction_id
-             LEFT JOIN tasks t ON t.id = ctl.task_id
-             ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 200"
+             LEFT JOIN tasks t ON t.id = ctl.task_id" . $scopeSql . "
+             ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 200",
+            $scopeParams
         );
         jsonResponse(['interactions' => array_map(fn($row) => [
             'id' => (int)$row['interaction_id'],

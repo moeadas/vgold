@@ -18,7 +18,7 @@ set -u
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# ── Credentials ──────────────────────────────────────────────────────────────
+# ── Credentials ───────────────────────────────────────────────────────────﻿
 if [ -f "$SCRIPT_DIR/deploy.env" ]; then
     # shellcheck disable=SC1091
     . "$SCRIPT_DIR/deploy.env"
@@ -38,7 +38,7 @@ if [ -z "$USER" ] || [ -z "$PASS" ]; then
     exit 1
 fi
 
-# ── Safety guard ─────────────────────────────────────────────────────────────
+# ── Safety guard ───────────────────────────────────────────────────────﻿
 # A fresh git checkout has no vendor/ dirs. Mirroring with --delete from such a
 # checkout would DELETE vendor/ on the server and take the whole site down.
 if [ ! -d "$LOCAL/vendor" ] || [ ! -d "$LOCAL/crm/vendor" ]; then
@@ -85,6 +85,7 @@ mirror -R --verbose --delete --parallel=4 \
   --exclude ^\.audit/ \
   --exclude ^storage/logs/ \
   --exclude ^storage/uploads/ \
+  --exclude ^uploads/ \
   --exclude ^public/migrate \
   --exclude ^public/debug \
   --exclude ^public/test_ \
