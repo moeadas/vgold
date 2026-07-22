@@ -43,6 +43,7 @@ storage/logs/*.log
 crm/config/.env
 crm/uploads/*
 !crm/uploads/.gitkeep
+!crm/uploads/.htaccess
 crm/**/php_errorlog
 crm/database/victory-genomics-crm-v2-complete.sql
 migration/data/

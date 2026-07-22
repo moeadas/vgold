@@ -1,0 +1,9 @@
+# Hard block: nothing under storage/ may ever be executed as a script.
+# Uploaded attachments live here; without this an uploaded .php would run.
+php_flag engine off
+Options -ExecCGI -Indexes
+RemoveHandler .php .php3 .php4 .php5 .php7 .php8 .phtml .phps .phar .cgi .pl .py
+RemoveType .php .php3 .php4 .php5 .php7 .php8 .phtml .phps .phar
+<FilesMatch "(?i)\.(php|php3|php4|php5|php7|php8|phtml|phps|phar|cgi|pl|py|sh|asp|aspx|jsp)$">
+    Require all denied
+</FilesMatch>
