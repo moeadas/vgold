@@ -94,34 +94,6 @@ class Schema {
         }
     }
 
-    // Keeps the existing CRM user linkage and role mapping available. The
-    // production crm_* tables themselves are managed by migration 011.
-    public static function ensureCrm() {
-        static $done = false;
-        if ($done) return;
-        $done = true;
-        try {
-            self::addColumnIfMissing('users', 'crm_user_id', "ALTER TABLE `users` ADD COLUMN `crm_user_id` INT NULL AFTER `ms_oid`");
-            self::addColumnIfMissing('users', 'crm_role', "ALTER TABLE `users` ADD COLUMN `crm_role` VARCHAR(32) NULL AFTER `crm_user_id`");
-            self::addColumnIfMissing('users', 'crm_username', "ALTER TABLE `users` ADD COLUMN `crm_username` VARCHAR(50) NULL AFTER `crm_role`");
-            try {
-                $has = DB::fetch("SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND INDEX_NAME='uniq_crm_user_id' LIMIT 1");
-                if (!$has) DB::query("ALTER TABLE `users` ADD UNIQUE KEY `uniq_crm_user_id` (`crm_user_id`)");
-            } catch (\Throwable $e) { /* non-fatal */ }
-
-            DB::query("CREATE TABLE IF NOT EXISTS `crm_role_map` (
-                `id` INT AUTO_INCREMENT PRIMARY KEY,
-                `crm_role` VARCHAR(32) NOT NULL,
-                `vgold_role` ENUM('admin','member') NOT NULL DEFAULT 'member',
-                UNIQUE KEY `uniq_crm_role` (`crm_role`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-            DB::query("INSERT IGNORE INTO `crm_role_map` (`crm_role`,`vgold_role`) VALUES
-                ('Admin','admin'),('Sales Manager','member'),('Sales Rep','member'),('Viewer','member')");
-        } catch (\Throwable $e) {
-            error_log('Schema::ensureCrm: ' . $e->getMessage());
-        }
-    }
-
     private static function columnExists($table, $column) {
         try {
             $row = DB::fetch(

@@ -24,7 +24,9 @@ config/graph.php
 config/app_key.php
 config/push.php
 config/database.sg.php
+config/setup_secret.php
 database.sg.php
+deploy.env
 certs/
 .audit/
 

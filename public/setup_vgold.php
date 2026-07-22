@@ -14,18 +14,23 @@
  *   3. Reconciles/links unified users + primary workspace + "CRM" category.
  *   4. Syncs CRM follow-ups -> VGold tasks.
  *
- * SECURITY: requires ?key=<SETUP_SECRET>. DELETE THIS FILE after a successful run
- * (it self-reminds). It refuses to run if the secret is wrong.
+ * SECURITY: requires ?key=<setup secret>. The secret is NOT stored in the repo:
+ * create the gitignored config/setup_secret.php on the server containing
+ *     <?php return 'a-long-random-hex-string';
+ * (e.g. `php -r "echo bin2hex(random_bytes(16));"`). If that file is absent,
+ * this endpoint is fully disabled (403). DELETE THIS FILE after a successful
+ * run (it self-reminds); deploy.sh excludes it from uploads.
  */
 
 @set_time_limit(0);
 @ini_set('memory_limit', '512M');
 header('Content-Type: text/plain; charset=utf-8');
 
-const SETUP_SECRET = '60167658ae9b5d7fe672f3e139341520';
+$secretFile = dirname(__DIR__) . '/config/setup_secret.php';
+$setupSecret = is_file($secretFile) ? (string) (require $secretFile) : '';
 
-$key = $_GET['key'] ?? '';
-if (!hash_equals(SETUP_SECRET, $key)) {
+$key = (string) ($_GET['key'] ?? '');
+if ($setupSecret === '' || strlen($setupSecret) < 16 || !hash_equals($setupSecret, $key)) {
     http_response_code(403);
     echo "Forbidden.\n";
     exit;

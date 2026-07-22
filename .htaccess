@@ -22,7 +22,9 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 RewriteRule (?i)(^|/)\.git(/|$)                             - [F,L]
 RewriteRule (?i)^(config|app|migration|vendor)(/|$)          - [F,L]
 RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$)  - [F,L]
-RewriteRule (?i)\.(sql|db|sqlite|env|log|lock)$              - [F,L]
+RewriteRule (?i)\.(sql|db|sqlite|env|log|lock|sh|bak|dist)$  - [F,L]
+RewriteRule (?i)^(deploy|composer)\.                         - [F,L]
+RewriteRule (?i)(^|/)setup_vgold\.php$                       - [F,L]
 
 # ── Bare root -> front controller (must come before the -d skip below) ────────
 RewriteRule ^$ public/index.php [QSA,L]
