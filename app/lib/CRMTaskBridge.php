@@ -30,8 +30,6 @@ class CRMTaskBridge {
             $interaction['notes'] ? 'Notes: ' . $interaction['notes'] : null,
             $interaction['outcome'] ? 'Outcome: ' . $interaction['outcome'] : null,
             $interaction['company_name'] && $interaction['contact_person'] ? 'Company: ' . $interaction['company_name'] : null,
-            'CRM lead: #' . $interaction['lead_id'],
-            'CRM interaction: #' . $interaction['interaction_id'],
         ]);
         $assignedTo = (int)($interaction['assigned_vgold_id'] ?: $interaction['author_vgold_id'] ?: $createdBy);
         $priority = in_array($interaction['lead_priority'], ['High', 'Urgent'], true) ? 'urgent' : 'normal';
