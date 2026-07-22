@@ -355,9 +355,17 @@ body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; 
 .page-footer { position: absolute; bottom: 36px; left: 48px; right: 48px; text-align: center; font-size: 9px; color: #8d9096; }
 </style></head><body><div class="page">';
 
-    // Header with logo + company info
+    // Header with logo + company info. The logo is embedded as a base64 data
+    // URI: this HTML travels through the JSON API into a preview window /
+    // print-to-PDF, where a root-relative path bypasses the /crm/ mount
+    // rewriter (json_encode escapes the slashes) and 404s. Inlining renders
+    // everywhere — embedded, standalone, and in the printed PDF.
+    $logoFile = dirname(__DIR__) . '/assets/images/VG logo.svg';
+    $logoSrc = is_file($logoFile)
+        ? 'data:image/svg+xml;base64,' . base64_encode(file_get_contents($logoFile))
+        : (defined('CRM_BASE') ? CRM_BASE : '') . '/assets/images/VG%20logo.svg';
     $html .= '<div class="header">';
-    $html .= '<div><img src="/assets/images/VG%20logo.svg" class="logo" alt="Victory Genomics"><div class="company-info" style="margin-top:8px;">';
+    $html .= '<div><img src="' . $logoSrc . '" class="logo" alt="Victory Genomics"><div class="company-info" style="margin-top:8px;">';
     $html .= '<div class="company-name">' . $e($co['name']) . '</div>';
     foreach ($coAddressLines as $line) {
         $html .= '<div>' . $e($line) . '</div>';
