@@ -7,6 +7,7 @@
  *         — or visit via browser (protected by admin check)
  */
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 $db = Database::getInstance()->getConnection();
 

@@ -11,12 +11,13 @@
  */
 
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 $db = Database::getInstance();
 
 $queries = [];
 
-// ── 1. Create webhook_endpoints table ──────────────────────────
+// ── 1. Create webhook_endpoints table ────────────────────
 $queries[] = "
 CREATE TABLE IF NOT EXISTS `webhook_endpoints` (
   `endpoint_id`    INT(11)      NOT NULL AUTO_INCREMENT,

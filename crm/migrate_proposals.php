@@ -9,6 +9,7 @@
  *   curl -s "https://crm.victorygenomics.com/migrate_proposals.php"
  */
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 header('Content-Type: text/plain; charset=utf-8');
 header('Cache-Control: no-cache, no-store, must-revalidate, private');
@@ -19,7 +20,7 @@ $pdo = $db->getConnection();
 
 $results = [];
 
-// ── 1. Create proposals table ────────────────────────────────
+// ── 1. Create proposals table ───────────────────────────
 try {
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS proposals (
@@ -49,7 +50,7 @@ try {
     $results[] = 'ERROR creating proposals table: ' . $e->getMessage();
 }
 
-// ── 2. Seed proposal-related settings ────────────────────────
+// ── 2. Seed proposal-related settings ────────────────────
 $settingsToSeed = [
     ['proposal_company_name',    'Victory Genomics, INC.',                         'text'],
     ['proposal_company_address', "66 High St, Unit 38\nGuilford, CT 06437 US",     'text'],

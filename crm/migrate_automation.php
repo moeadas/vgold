@@ -6,6 +6,7 @@
  */
 
 require_once __DIR__ . '/config/database.php';
+require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 header('Content-Type: text/plain; charset=utf-8');
 
@@ -13,7 +14,7 @@ $pdo = Database::getInstance()->getConnection();
 
 $statements = [
 
-    // ── automation_rules ─────────────────────────────────────
+    // ── automation_rules ──────────────────────────────────
     "CREATE TABLE IF NOT EXISTS `automation_rules` (
         `rule_id`        INT(11)      NOT NULL AUTO_INCREMENT,
         `name`           VARCHAR(200) NOT NULL,
@@ -34,7 +35,7 @@ $statements = [
         KEY `created_by` (`created_by`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Automation rules — triggers, conditions, actions'",
 
-    // ── automation_logs ──────────────────────────────────────
+    // ── automation_logs ───────────────────────────────
     "CREATE TABLE IF NOT EXISTS `automation_logs` (
         `log_id`        INT(11)      NOT NULL AUTO_INCREMENT,
         `rule_id`       INT(11)      NOT NULL,
