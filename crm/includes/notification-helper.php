@@ -54,7 +54,7 @@ function createNotification($userId, $type, $title, $body = '', $link = '', $lea
         $tableChecked = true;
     }
 
-    return $db->insert('notifications', [
+    $crmNotifId = $db->insert('notifications', [
         'user_id'    => $userId,
         'type'       => $type,
         'title'      => $title,
@@ -64,4 +64,43 @@ function createNotification($userId, $type, $title, $body = '', $link = '', $lea
         'is_read'    => 0,
         'created_at' => date('Y-m-d H:i:s'),
     ]);
+
+    // Unified bell: mirror this CRM notification into the VGold Workflow
+    // notification store (keyed by the VGold user id) so it shows in the single
+    // app-wide bell AND triggers web-push — exactly like a Workflow notification.
+    // Guarded so the standalone CRM (no VGold bridge) is unaffected. Best-effort:
+    // a failure here must never break the CRM action that raised the notice.
+    if (defined('VGOLD_BRIDGE_LOADED') && class_exists('DB')) {
+        if (!class_exists('Push') && file_exists(__DIR__ . '/../../app/lib/Push.php')) {
+            require_once __DIR__ . '/../../app/lib/Push.php';
+        }
+        try {
+            $vg = DB::fetch(
+                "SELECT u.id,
+                        (SELECT wm.workspace_id FROM workspace_members wm
+                         WHERE wm.user_id = u.id ORDER BY wm.joined_at ASC LIMIT 1) AS ws
+                 FROM users u WHERE u.crm_user_id = ? LIMIT 1",
+                [(int)$userId]
+            );
+            if ($vg && !empty($vg['id']) && !empty($vg['ws'])) {
+                DB::insert('notifications', [
+                    'workspace_id' => (int)$vg['ws'],
+                    'user_id'      => (int)$vg['id'],
+                    'type'         => $type,
+                    'title'        => $title,
+                    'body'         => $body,
+                    'link_type'    => $leadId ? 'crm_lead' : 'crm',
+                    'link_id'      => $leadId ? (int)$leadId : null,
+                ]);
+                if (class_exists('Push')) {
+                    Push::toUser((int)$vg['id'], $title, $body,
+                        $leadId ? '/crm/pages/lead-detail.php?id=' . (int)$leadId : '/');
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('Unified notification mirror failed: ' . $e->getMessage());
+        }
+    }
+
+    return $crmNotifId;
 }
