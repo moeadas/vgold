@@ -6,6 +6,16 @@ class CrmSyncController {
         jsonResponse(['ok' => true] + CRMTaskBridge::syncAll());
     }
 
+    /**
+     * Programmatic follow-up reconciliation (used by the one-time setup runner).
+     * Returns the CRMTaskBridge::syncAll() result array. The $workspaceId /
+     * $echo params are accepted for backwards compatibility; syncAll reconciles
+     * every linked workspace idempotently.
+     */
+    public static function runSync($workspaceId = null, $echo = false) {
+        return CRMTaskBridge::syncAll();
+    }
+
     public static function taskCrmContext($taskId) {
         Authz::requireTaskAccess((int)$taskId);
         $row = DB::fetch(
