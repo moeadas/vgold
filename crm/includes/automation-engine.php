@@ -359,7 +359,7 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
                   . "<p><strong>Rule:</strong> {$rule['name']}</p>"
                   . "<p><strong>Lead:</strong> {$leadName}</p>"
                   . ($customBody ? "<p>{$customBody}</p>" : "")
-                  . "<p style='margin-top:20px;'><a href='" . APP_URL . "/pages/lead-detail.php?id={$leadId}' "
+                  . "<p style='margin-top:20px;'><a href='" . APP_URL . CRM_BASE . "/pages/lead-detail.php?id={$leadId}' "
                   . "style='background:#0071e3;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;'>View Lead</a></p>"
                   . "<p style='color:#999;font-size:12px;margin-top:30px;'>This is an automated notification from Victory Genomics CRM.</p>"
                   . "</div>";

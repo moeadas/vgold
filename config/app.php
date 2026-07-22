@@ -1,9 +1,15 @@
 <?php
 // HTML escape helper
-function esc($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
+if (!function_exists('esc')) {
+    function esc($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
+}
 
 // VGold Application Configuration
 // Unified ERP: VGo workflow management + Victory Genomics CRM in one app.
+// Idempotent include guard so scripts that legitimately require this file more
+// than once (e.g. migration/reconcile_users.php pulled in by a web setup runner)
+// don't trigger "constant already defined" warnings or re-detect the env.
+if (defined('APP_NAME')) { return; }
 define('APP_NAME', 'VGold');
 
 // Auto-detect environment

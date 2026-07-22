@@ -166,7 +166,7 @@ function createEndpoint($db, $currentUser) {
     jsonSuccess('Webhook endpoint created.', [
         'endpoint_id' => intval($endpointId),
         'api_key'     => $apiKey,
-        'webhook_url' => rtrim(APP_URL, '/') . '/api/leads-webhook.php?key=' . $apiKey,
+        'webhook_url' => rtrim(APP_URL, '/') . CRM_BASE . '/api/leads-webhook.php?key=' . $apiKey,
     ]);
 }
 
@@ -277,7 +277,7 @@ function regenerateKey($db, $currentUser) {
 
     jsonSuccess('API key regenerated. Update your Google Apps Script with the new key.', [
         'api_key'     => $newKey,
-        'webhook_url' => rtrim(APP_URL, '/') . '/api/leads-webhook.php?key=' . $newKey,
+        'webhook_url' => rtrim(APP_URL, '/') . CRM_BASE . '/api/leads-webhook.php?key=' . $newKey,
     ]);
 }
 

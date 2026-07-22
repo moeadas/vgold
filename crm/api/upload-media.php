@@ -110,7 +110,7 @@ if (!move_uploaded_file($file['tmp_name'], $destPath)) {
 
 // Build the public URL
 $relativePath = '/uploads/wa-media/' . date('Y-m') . '/' . $uniqueName;
-$publicUrl = rtrim(APP_URL, '/') . $relativePath;
+$publicUrl = rtrim(APP_URL, '/') . (defined('CRM_BASE') ? CRM_BASE : '') . $relativePath;
 
 // Determine media category for UI display
 $isImage = strpos($detectedType, 'image/') === 0;

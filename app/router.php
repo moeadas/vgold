@@ -15,6 +15,7 @@ require_once __DIR__ . '/controllers/SettingsController.php';
 require_once __DIR__ . '/controllers/AIController.php';
 require_once __DIR__ . '/controllers/AdminController.php';
 require_once __DIR__ . '/controllers/NotificationController.php';
+require_once __DIR__ . '/controllers/CrmSyncController.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/lib/Push.php';
@@ -30,6 +31,8 @@ Auth::init();
 // Ensure Feature-batch-B schema exists (folders, card order, DM/comment reads,
 // notification defaults). Idempotent and self-guarding; no-op once present.
 Schema::ensureFeatureBatchB();
+// Ensure CRM integration linkage (users.crm_* columns + crm_role_map). Idempotent.
+Schema::ensureCrm();
 
 // Route table: pattern => [Controller::method, requiresAuth]
 // Pattern format: "METHOD path/with/{params}"
@@ -116,6 +119,11 @@ $routes = [
     'GET settings/team' => ['SettingsController::team', true],
     'POST settings/invite' => ['SettingsController::invite', true],
     'GET settings/members' => ['SettingsController::workspaceMembers', true],
+    'GET settings/crm-role-map' => ['SettingsController::crmRoleMap', true],
+    'PUT settings/crm-role-map' => ['SettingsController::updateCrmRoleMap', true],
+    // CRM ⇆ Task follow-up bridge (Phase 5)
+    'POST crm/sync-followups' => ['CrmSyncController::syncFollowUps', true],
+    'GET tasks/{id}/crm-context' => ['CrmSyncController::taskCrmContext', true],
     'GET settings/smtp' => ['SettingsController::smtp', true],
     'PUT settings/smtp' => ['SettingsController::updateSmtp', true],
     'POST settings/smtp/test' => ['SettingsController::testSmtp', true],

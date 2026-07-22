@@ -37,7 +37,15 @@ class TwilioHelper {
         $this->whatsappFromNumber = $dbSettings['whatsapp_from_number']  ?? getenv('WHATSAPP_FROM_NUMBER')  ?: '';
         $this->apiKey             = $dbSettings['twilio_api_key']        ?? getenv('TWILIO_API_KEY')        ?: '';
         $this->apiSecret          = $dbSettings['twilio_api_secret']     ?? getenv('TWILIO_API_SECRET')     ?: '';
-        $this->appUrl             = $dbSettings['app_url']               ?? getenv('APP_URL')               ?: 'https://crm.victorygenomics.com';
+        // Inside the unified VGold shell, all Twilio/WhatsApp callbacks must
+        // resolve to the mounted CRM (APP_URL + CRM_BASE), regardless of any
+        // stale app_url stored in the CRM settings table. Standalone CRM keeps
+        // using the DB/env/default value.
+        if (defined('VGOLD_BRIDGE_LOADED')) {
+            $this->appUrl = rtrim(APP_URL, '/') . (defined('CRM_BASE') ? CRM_BASE : '');
+        } else {
+            $this->appUrl = $dbSettings['app_url'] ?? getenv('APP_URL') ?: 'https://crm.victorygenomics.com';
+        }
         $this->voipEnabled        = ($dbSettings['voip_enabled'] ?? getenv('VOIP_ENABLED') ?: '1') === '1';
         $this->voipRecordingEnabled = ($dbSettings['voip_recording_enabled'] ?? getenv('VOIP_RECORDING_ENABLED') ?: '0') === '1';
 

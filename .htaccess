@@ -1,18 +1,53 @@
-# VGold — Root .htaccess (routes to public/ directory)
-# This sits at the vgold document root (e.g. /public_html/vgold/.htaccess)
+# VGold — Root .htaccess  (SiteGround subdomain docroot = this directory)
+# The application front controller lives in public/index.php. Everything is
+# funnelled there, which dispatches:
+#   /api/*  -> app/router.php
+#   /crm/*  -> crm/mount.php  (unified session + table-rewrite; never hit crm/*.php direct)
+#   else    -> SPA shell
+#
+# NOTE: the docroot itself has no index.php (it's in public/), so we point
+# DirectoryIndex into public/ AND rewrite the bare root explicitly, otherwise
+# mod_dir + "Options -Indexes" would 403 the homepage.
 
+Options -Indexes
+DirectoryIndex index.php public/index.php
 RewriteEngine On
+RewriteBase /
 
-# Let standalone PHP scripts run directly
-RewriteCond %{REQUEST_FILENAME} -f
-RewriteRule ^(.+\.php)$ - [L]
+# ── Force HTTPS ──────────────────────────────────────────────────────────────
+RewriteCond %{HTTPS} off
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Map everything to the public/ directory
+# ── Block sensitive paths (defense in depth; app also guards them) ────────────
+RewriteRule (?i)(^|/)\.git(/|$)                             - [F,L]
+RewriteRule (?i)^(config|app|migration|vendor)(/|$)          - [F,L]
+RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$)  - [F,L]
+RewriteRule (?i)\.(sql|db|sqlite|env|log|lock)$              - [F,L]
+
+# ── Bare root -> front controller (must come before the -d skip below) ────────
+RewriteRule ^$ public/index.php [QSA,L]
+
+# ── CRM + API always through the front controller ────────────────────────────
+RewriteRule ^crm(/.*)?$ public/index.php [QSA,L]
+RewriteRule ^api(/.*)?$ public/index.php [QSA,L]
+
+# ── Serve real files that physically live under public/ (assets, sw.js, etc.) ─
+# Only rewrite into public/ when the target file actually exists there, so we
+# don't shadow legitimate 404s. Skip anything already prefixed with public/.
+RewriteCond %{REQUEST_URI} !^/public/
+RewriteCond %{DOCUMENT_ROOT}/public/$1 -f
+RewriteRule ^(.+)$ public/$1 [L]
+
+# ── Everything else -> SPA front controller ──────────────────────────────────
+# Loop guard: don't re-rewrite requests that already resolve to a real file
+# (the rewritten /public/index.php) or that are already under public/.
 RewriteCond %{REQUEST_URI} !^/public/
 RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ public/$1 [L]
+RewriteRule ^ public/index.php [QSA,L]
 
-# Also map direct file requests to public/
-RewriteCond %{REQUEST_URI} ^/(assets|sw.js|api|migrate.php|index\.(php|html))
-RewriteRule ^(.*)$ public/$1 [L]
+# ── Security headers ──────────────────────────────────────────────────────────
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

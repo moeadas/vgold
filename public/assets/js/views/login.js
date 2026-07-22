@@ -46,8 +46,8 @@ function renderLogin() {
           <div class="login-divider"><span>or sign in with password (external collaborators)</span></div>
           <form id="login-form" onsubmit="return handleLogin(event)" style="margin-top:14px">
             <div class="input-group">
-              <label class="input-label">Email</label>
-              <input class="input-field" type="email" id="login-email" placeholder="you@company.com" required autocomplete="email">
+              <label class="input-label">Email or username</label>
+              <input class="input-field" type="text" id="login-email" placeholder="you@company.com or username" required autocomplete="username">
             </div>
             <div class="input-group">
               <label class="input-label">Password</label>

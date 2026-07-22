@@ -10,6 +10,17 @@ if (strpos($uri, '/api/') === 0 || $uri === '/api') {
     exit;
 }
 
+// ── CRM mount (Phase 3) ────────────────────────────────────────────────────
+// Everything under /crm/* is the (progressively re-skinned) legacy CRM,
+// running against the unified VGold database & session. The vgold_bridge
+// establishes the unified session first, then maps it onto the CRM session
+// variables the legacy pages expect. Table names are rewritten to crm_* by
+// crm/config/database.php (see CrmRewritingPDO).
+if ($uri === '/crm' || strpos($uri, '/crm/') === 0) {
+    require __DIR__ . '/../crm/mount.php';
+    exit;
+}
+
 // Static assets
 if (preg_match('/\.(css|js|ico|png|jpg|svg|woff2?)$/', $uri)) {
     // Prevent path traversal

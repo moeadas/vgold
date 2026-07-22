@@ -117,6 +117,9 @@ const API = {
   team: () => API.req('/settings/team'),
   invite: (email, role) => API.req('/settings/invite', { method: 'POST', body: JSON.stringify({ email, role }) }),
   members: () => API.req('/settings/members'),
+  // CRM role mapping (Phase 4)
+  crmRoleMap: () => API.req('/settings/crm-role-map'),
+  updateCrmRoleMap: (data) => API.req('/settings/crm-role-map', { method: 'PUT', body: JSON.stringify(data) }),
   // SMTP
   smtp: () => API.req('/settings/smtp'),
   updateSmtp: (data) => API.req('/settings/smtp', { method: 'PUT', body: JSON.stringify(data) }),
