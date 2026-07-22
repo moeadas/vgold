@@ -106,7 +106,7 @@ function formatDate(dateStr) {
 function deleteLead(leadId, csrfToken) {
     if (!confirm('Are you sure you want to delete this lead?')) return;
 
-    fetch('/api/leads.php?action=delete&id=' + leadId, {
+    fetch('/crm/api/leads.php?action=delete&id=' + leadId, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ csrf_token: csrfToken })
@@ -128,7 +128,7 @@ function deleteLead(leadId, csrfToken) {
  * Update lead status
  */
 function updateLeadStatus(leadId, status, csrfToken) {
-    fetch('/api/leads.php?action=status', {
+    fetch('/crm/api/leads.php?action=status', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ lead_id: leadId, status: status, csrf_token: csrfToken })
@@ -149,5 +149,5 @@ function updateLeadStatus(leadId, status, csrfToken) {
  * Export data
  */
 function exportToCSV(type) {
-    window.location.href = '/api/export.php?type=' + type;
+    window.location.href = '/crm/api/export.php?type=' + type;
 }

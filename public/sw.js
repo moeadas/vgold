@@ -4,7 +4,7 @@ self.addEventListener('push', function(event) {
   try {
     var data = event.data.json();
     event.waitUntil(
-      self.registration.showNotification(data.title || 'VGo', {
+      self.registration.showNotification(data.title || 'VGold', {
         body: data.body || '',
         icon: '/assets/img/vgo-logo.png',
         badge: '/assets/img/vgo-logo.png',

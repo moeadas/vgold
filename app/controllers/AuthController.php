@@ -62,7 +62,8 @@ class AuthController {
     public static function login() {
         $data = input();
         requireFields(['email', 'password'], $data);
-        $email = strtolower(trim($data['email']));
+        $identifier = trim($data['email']);
+        $identifierLc = strtolower($identifier);
         $password = $data['password'];
         
         // Rate limiting: max 5 attempts per 15 min per IP
@@ -78,7 +79,10 @@ class AuthController {
             jsonError('Too many login attempts. Please try again in 15 minutes.', 429);
         }
         
-        $user = DB::fetch("SELECT * FROM users WHERE email = ? AND is_active = 1", [$email]);
+        $user = DB::fetch("SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1", [$identifierLc]);
+        if (!$user) {
+            $user = DB::fetch("SELECT * FROM users WHERE LOWER(crm_username) = ? AND is_active = 1", [$identifierLc]);
+        }
         if (!$user || !password_verify($password, $user['password'])) {
             $_SESSION[$key] = $attempts + 1;
             if (!isset($_SESSION[$key . '_time'])) $_SESSION[$key . '_time'] = time();
@@ -94,6 +98,8 @@ class AuthController {
         
         // Set auth_provider in session from the user's DB record
         $_SESSION['auth_provider'] = $user['auth_provider'] ?? 'password';
+        $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
+        $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         
         Auth::login($user['id'], $wm['workspace_id']);
         jsonResponse(['ok' => true, 'csrf_token' => Csrf::token(), 'user' => [
@@ -125,6 +131,9 @@ class AuthController {
             'avatar_color' => $user['avatar_color'],
             'initials' => initials($user['name']),
             'default_screen' => $defaultScreen,
+            'crm_user_id' => $user['crm_user_id'] ?? null,
+            'crm_role' => $user['crm_role'] ?? null,
+            'modules' => Authz::grantedModules((int)$user['id'], Auth::workspaceId()),
         ], 'csrf_token' => Csrf::token()]);
     }
     
@@ -179,8 +188,8 @@ class AuthController {
             $tokenParams['client_assertion'] = $assertion;
         }
 
-        $resp = Graph::request('POST', $tokenUrl, http_build_query($tokenParams),
-            ['Content-Type: application/x-www-form-urlencoded'], true);
+        $resp = Graph::rawCall('POST', $tokenUrl, http_build_query($tokenParams),
+            ['Content-Type: application/x-www-form-urlencoded']);
         
         $d = json_decode($resp['body'], true);
         if (empty($d['id_token'])) jsonError('Login failed', 401);
@@ -195,7 +204,7 @@ class AuthController {
         // Prefer matching by stored oid; fall back to email for first sign-in
         $user = DB::fetch("SELECT * FROM users WHERE ms_oid = ? AND is_active = 1", [$oid]);
         if (!$user) {
-            $user = DB::fetch("SELECT * FROM users WHERE email = ? AND is_active = 1", [$email]);
+            $user = DB::fetch("SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1", [$email]);
             if ($user && empty($user['ms_oid'])) {
                 DB::update('users', ['ms_oid' => $oid, 'auth_provider' => 'microsoft'], 'id = ?', [$user['id']]);
             }
@@ -206,6 +215,8 @@ class AuthController {
         if (!$wm) jsonError('No workspace assigned. Ask an admin.', 403);
         
         $_SESSION['auth_provider'] = 'microsoft'; // drives edit-button visibility
+        $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
+        $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         Auth::login($user['id'], $wm['workspace_id']);
         header('Location: /');
         exit;

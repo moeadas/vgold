@@ -495,7 +495,7 @@
     const html = getHTML();
     if (state.saveTarget.kind === 'campaign') {
       return {
-        url: '/api/email.php?action=campaign_save&_cb=' + Date.now(),
+        url: '/crm/api/email.php?action=campaign_save&_cb=' + Date.now(),
         body: {
           csrf_token: state.csrfToken,
           campaign_id: state.saveTarget.id,
@@ -507,7 +507,7 @@
       };
     }
     return {
-      url: '/api/email.php?action=template_save&_cb=' + Date.now(),
+      url: '/crm/api/email.php?action=template_save&_cb=' + Date.now(),
       body: {
         csrf_token: state.csrfToken,
         template_id: state.saveTarget.id,
@@ -1541,7 +1541,7 @@
       const f = $file.files[0]; if (!f) return;
       const fd = new FormData(); fd.append('image', f); fd.append('csrf_token', state.csrfToken);
       setStatus('Uploading…');
-      fetch('/api/email-builder-upload.php', { method: 'POST', body: fd, credentials: 'same-origin' })
+      fetch('/crm/api/email-builder-upload.php', { method: 'POST', body: fd, credentials: 'same-origin' })
         .then(r => r.json())
         .then(resp => {
           if (resp && resp.success && resp.url) {
@@ -1885,7 +1885,7 @@ ${preheader}
   }
   function sendTest(to) {
     setStatus('Sending test…');
-    fetch('/api/email.php?action=send_test&_cb=' + Date.now(), {
+    fetch('/crm/api/email.php?action=send_test&_cb=' + Date.now(), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',

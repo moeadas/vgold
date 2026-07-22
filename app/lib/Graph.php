@@ -65,6 +65,11 @@ class Graph {
         return self::raw($method, $url, $body, $headers);
     }
 
+    /** Unauthenticated raw HTTP call for OAuth code exchange. */
+    public static function rawCall($method, $url, $body = null, $headers = []) {
+        return self::raw($method, $url, $body, $headers);
+    }
+
     private static function raw($method, $url, $body, $headers) {
         $ch = curl_init($url);
         curl_setopt_array($ch, [

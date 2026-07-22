@@ -10,6 +10,12 @@ if (strpos($uri, '/api/') === 0 || $uri === '/api') {
     exit;
 }
 
+// Full CRM functionality mounted inside the unified VGold identity/database.
+if ($uri === '/crm' || strpos($uri, '/crm/') === 0) {
+    require __DIR__ . '/../crm/mount.php';
+    exit;
+}
+
 // Static assets
 if (preg_match('/\.(css|js|ico|png|jpg|svg|woff2?)$/', $uri)) {
     // Prevent path traversal
@@ -73,6 +79,7 @@ echo '<!DOCTYPE html>
 <script src="/assets/js/views/mytasks.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskoverview.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/settings.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/crm.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/assignee-picker.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/modals.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>

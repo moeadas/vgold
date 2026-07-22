@@ -29,7 +29,7 @@ function renderLogin() {
       <div class="login-right">
         <div class="login-card">
           <div class="login-logo-wrap">
-            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGo" class="login-logo-img" />
+            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGold" class="login-logo-img" />
           </div>
           <h1 class="login-title">Welcome back</h1>
           <p class="login-subtitle">Sign in to your workspace</p>
@@ -46,8 +46,8 @@ function renderLogin() {
           <div class="login-divider"><span>or sign in with password (external collaborators)</span></div>
           <form id="login-form" onsubmit="return handleLogin(event)" style="margin-top:14px">
             <div class="input-group">
-              <label class="input-label">Email</label>
-              <input class="input-field" type="email" id="login-email" placeholder="you@company.com" required autocomplete="email">
+              <label class="input-label">Email or username</label>
+              <input class="input-field" type="text" id="login-email" placeholder="you@company.com or username" required autocomplete="username">
             </div>
             <div class="input-group">
               <label class="input-label">Password</label>

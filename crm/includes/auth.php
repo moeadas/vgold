@@ -11,6 +11,10 @@ require_once __DIR__ . '/functions.php';
  * Start secure session with hardened settings
  */
 function startSecureSession() {
+    if (defined('VGOLD_BRIDGE_LOADED')) {
+        sendSecurityHeaders();
+        return;
+    }
     if (session_status() === PHP_SESSION_NONE) {
         $isHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
                    || (isset($_SERVER['HTTP_X_FORWARDED_PROTO']) && $_SERVER['HTTP_X_FORWARDED_PROTO'] === 'https');
@@ -39,7 +43,7 @@ function isLoggedIn() {
  */
 function requireLogin() {
     if (!isLoggedIn()) {
-        header('Location: /login.php');
+        header('Location: ' . (defined('VGOLD_BRIDGE_LOADED') ? '/' : '/login.php'));
         exit;
     }
 }

@@ -26,18 +26,39 @@ ecosystem that can grow into a full ERP.
   (`Admin`/`Sales Manager`/`Sales Rep`/`Viewer`) coexist, with an admin-editable
   role-mapping + per-module access matrix.
 
-### Merge strategy (two layers)
-1. **Layer 1 (fast):** the existing CRM multi-page screens run inside VGold under `/crm/*`,
-   sharing the unified session and `users` table. Zero data-logic rewrites.
-2. **Layer 2 (progressive):** CRM screens are re-skinned to the VGo look and the
-   highest-value ones (Leads, Lead detail, Interactions) are ported to native SPA views
-   backed by `/api/crm/*`.
+### Integration strategy
+
+VGold is one application, not two applications mounted together. Workflow and CRM use
+the same SPA shell, login, user directory, settings area, authorization layer, and task
+model. The complete original CRM remains in `crm/` and is mounted below `/crm/*`
+with the unified VGold session and database. Its duplicate navigation is removed
+when embedded, so the full pages and APIs run inside the VGold CRM module rather
+than as a separately signed-in product.
+
+Native CRM screens are backed by `/api/crm/*`. Module permissions are stored per user
+and enforced on the server as well as in the sidebar. Workflow remains available to
+every workspace member.
 
 ### Task ↔ CRM bridge
 CRM "actionable" items (follow-ups, calls, demos, proposals-to-send, certain lead
 statuses) automatically become **VGo tasks** under a dedicated **"CRM" category**,
 assigned to the same user and linked back to the lead. Task state is the single source
 of truth and syncs both ways.
+
+The native bridge names tasks with the customer identity (for example,
+`Follow-up: Lead Name`) and carries the next action, interaction subject, notes,
+company, and CRM record reference into the Workflow task description.
+
+### Integrated foundation
+
+- Collapsible **Workflow** and **CRM** sidebar groups in the shared SPA.
+- Per-user access controls for nine CRM module areas in centralized admin settings.
+- Native CRM overview, leads, interactions, and follow-up entry screens.
+- Central CRM company/follow-up settings alongside Workflow, SMTP, AI, and team settings.
+- Two-way CRM follow-up ↔ Workflow task status synchronization.
+- Embedded full-function CRM modules for proposals, email campaigns/templates/lists,
+  VoIP, WhatsApp, automations, reports/exports, knowledge guides, lead details/imports,
+  and the related APIs.
 
 ---
 
@@ -53,7 +74,7 @@ vgold/
 │   └── graph.php            # Real Azure/Graph config (gitignored)
 ├── app/                     # VGo workflow backend (controllers, lib, migrations, router)
 ├── public/                  # VGo SPA shell + assets (the VGold design system)
-├── crm/                     # CRM source (mounted under /crm/* in Layer 1)
+├── crm/                     # Full CRM source mounted inside the VGold shell
 ├── migration/               # One-off scripts for the CRM → VGold data migration (Phase 1)
 └── storage/                 # uploads + logs (gitignored)
 ```

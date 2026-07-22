@@ -91,7 +91,7 @@ async function renderDayPlan() {
           </div>
           <div style="background:var(--text);border-radius:16px;padding:20px;color:var(--bg)">
             <div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#C9B398;margin-bottom:10px">Tip</div>
-            <div style="font-family:var(--serif);font-size:19px;line-height:1.35">Press <span style="font-family:var(--mono);font-size:13px;border:1px solid #C9B398;border-radius:5px;padding:1px 6px">⌘K</span> to ask VGo anything</div>
+            <div style="font-family:var(--serif);font-size:19px;line-height:1.35">Press <span style="font-family:var(--mono);font-size:13px;border:1px solid #C9B398;border-radius:5px;padding:1px 6px">⌘K</span> to ask VGold anything</div>
           </div>
         </div>
       </div>

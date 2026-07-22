@@ -1,9 +1,12 @@
 <?php
 // HTML escape helper
-function esc($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
+if (!function_exists('esc')) {
+    function esc($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
+}
 
 // VGold Application Configuration
 // Unified ERP: VGo workflow management + Victory Genomics CRM in one app.
+if (defined('APP_NAME')) { return; }
 define('APP_NAME', 'VGold');
 
 // Auto-detect environment
@@ -22,7 +25,7 @@ if ($isSiteGround) {
 }
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.21.1');
+define('ASSET_VERSION', '2026.07.21.3');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

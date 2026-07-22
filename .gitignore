@@ -35,6 +35,7 @@ composer.phar
 # Logs
 storage/logs/*.txt
 storage/logs/*.log
+.playwright-cli/
 
 # CRM module — secrets, uploads, logs, and the large data dump
 crm/config/.env

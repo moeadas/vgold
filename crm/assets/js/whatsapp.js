@@ -45,7 +45,7 @@ const WhatsAppChat = {
     async checkWindow() {
         if (!this.currentToNumber) return;
         try {
-            const resp = await fetch('/api/whatsapp.php?action=check_window&phone=' + encodeURIComponent(this.currentToNumber));
+            const resp = await fetch('/crm/api/whatsapp.php?action=check_window&phone=' + encodeURIComponent(this.currentToNumber));
             const data = await resp.json();
             if (data.success) {
                 this.insideWindow = data.inside_window;
@@ -219,7 +219,7 @@ const WhatsAppChat = {
             fd.append('file', file);
             fd.append('csrf_token', csrfToken);
 
-            const resp = await fetch('/api/upload-media.php', {
+            const resp = await fetch('/crm/api/upload-media.php', {
                 method: 'POST',
                 credentials: 'same-origin',
                 body: fd
@@ -297,7 +297,7 @@ const WhatsAppChat = {
             if (this.currentLeadId) params.set('lead_id', this.currentLeadId);
             else if (this.currentToNumber) params.set('to_number', this.currentToNumber);
 
-            const resp = await fetch('/api/whatsapp.php?action=chat_history&' + params.toString());
+            const resp = await fetch('/crm/api/whatsapp.php?action=chat_history&' + params.toString());
             if (!resp.ok) throw new Error('Server returned ' + resp.status);
             const data = await resp.json();
 
@@ -423,7 +423,7 @@ const WhatsAppChat = {
                 payload.media_url = mediaUrl;
             }
 
-            const resp = await fetch('/api/whatsapp.php?action=send', {
+            const resp = await fetch('/crm/api/whatsapp.php?action=send', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload)
@@ -448,7 +448,7 @@ const WhatsAppChat = {
     /** Load Twilio Content Templates (Meta-approved) */
     async loadContentTemplates() {
         try {
-            const resp = await fetch('/api/whatsapp.php?action=content_templates');
+            const resp = await fetch('/crm/api/whatsapp.php?action=content_templates');
             if (!resp.ok) throw new Error('Server returned ' + resp.status);
             const data = await resp.json();
             if (data.success) {
@@ -696,7 +696,7 @@ const WhatsAppChat = {
         }
 
         try {
-            const resp = await fetch('/api/whatsapp.php?action=send_content_template', {
+            const resp = await fetch('/crm/api/whatsapp.php?action=send_content_template', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({

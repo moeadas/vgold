@@ -117,6 +117,8 @@ const API = {
   team: () => API.req('/settings/team'),
   invite: (email, role) => API.req('/settings/invite', { method: 'POST', body: JSON.stringify({ email, role }) }),
   members: () => API.req('/settings/members'),
+  crmRoleMap: () => API.req('/settings/crm-role-map'),
+  updateCrmRoleMap: (data) => API.req('/settings/crm-role-map', { method: 'PUT', body: JSON.stringify(data) }),
   // SMTP
   smtp: () => API.req('/settings/smtp'),
   updateSmtp: (data) => API.req('/settings/smtp', { method: 'PUT', body: JSON.stringify(data) }),
@@ -126,7 +128,18 @@ const API = {
   deleteUser: (userId, extra) => API.req('/settings/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId, ...(extra || {}) }) }),
   changeRole: (userId, role) => API.req('/settings/users/' + userId + '/role', { method: 'PATCH', body: JSON.stringify({ user_id: userId, role }) }),
   toggleUserActive: (userId) => API.req('/settings/users/' + userId + '/toggle-active', { method: 'POST', body: JSON.stringify({ user_id: userId }) }),
+  moduleAccess: () => API.req('/settings/module-access'),
+  updateModuleAccess: (userId, modules) => API.req('/settings/module-access', { method: 'PUT', body: JSON.stringify({ user_id: userId, modules }) }),
+  crmSettings: () => API.req('/settings/crm'),
+  updateCrmSettings: (data) => API.req('/settings/crm', { method: 'PUT', body: JSON.stringify(data) }),
   myCategories: () => API.req('/categories/mine'),
+  // Native CRM modules
+  crmDashboard: () => API.req('/crm/dashboard'),
+  crmLeads: (params = {}) => API.req('/crm/leads?' + new URLSearchParams(params).toString()),
+  createCrmLead: (data) => API.req('/crm/leads', { method: 'POST', body: JSON.stringify(data) }),
+  crmLeadOptions: () => API.req('/crm/lead-options'),
+  crmInteractions: () => API.req('/crm/interactions'),
+  createCrmInteraction: (data) => API.req('/crm/interactions', { method: 'POST', body: JSON.stringify(data) }),
   // AI
   providers: () => API.req('/ai/providers'),
   ask: (prompt) => API.req('/ai/ask', { method: 'POST', body: JSON.stringify({ prompt }) }),

@@ -124,7 +124,7 @@ class SettingsController {
             'host' => $data['host'] ?? '',
             'port' => (int)($data['port'] ?? 465),
             'username' => $data['username'] ?? '',
-            'from_name' => $data['from_name'] ?? 'VGo',
+            'from_name' => $data['from_name'] ?? 'VGold',
             'from_email' => $data['from_email'] ?? '',
             'encryption' => $data['encryption'] ?? 'ssl',
             'is_active' => isset($data['is_active']) ? ($data['is_active'] ? 1 : 0) : 1,
@@ -155,9 +155,9 @@ class SettingsController {
             jsonError('SMTP is not configured yet');
         }
         
-        $html = '<h2>VGo SMTP Test</h2><p>This is a test email from VGo. If you received this, your SMTP settings are working correctly.</p><p>Sent: ' . date('Y-m-d H:i:s') . '</p>';
+        $html = '<h2>VGold SMTP Test</h2><p>This is a test email from VGold. If you received this, your SMTP settings are working correctly.</p><p>Sent: ' . date('Y-m-d H:i:s') . '</p>';
         
-        $sent = Mail::send($user['email'], $user['name'], 'VGo SMTP Test', $html);
+        $sent = Mail::send($user['email'], $user['name'], 'VGold SMTP Test', $html);
         if ($sent) {
             jsonResponse(['ok' => true, 'message' => 'Test email sent to ' . $user['email']]);
         } else {
@@ -308,6 +308,17 @@ class SettingsController {
         ]);
         
         DB::insert('user_settings', ['user_id' => $userId]);
+
+        foreach (($data['module_access'] ?? []) as $moduleKey) {
+            if (!isset(Authz::CRM_MODULES[$moduleKey])) continue;
+            DB::insert('user_module_access', [
+                'workspace_id' => Auth::workspaceId(),
+                'user_id' => $userId,
+                'module_key' => $moduleKey,
+                'can_access' => 1,
+                'updated_by' => Auth::userId(),
+            ]);
+        }
         
         // Assign to selected projects
         foreach (($data['project_ids'] ?? []) as $pid) {
@@ -327,16 +338,16 @@ class SettingsController {
             ]);
             // Try to send notification email
             try {
-                Mail::sendNotification($userId, 'You have been invited to VGo',
-                    "<p>An admin added you to VGo. Set your password to get started:</p>" .
-                    "<p><a href='https://vgo.victorygenomics.com/set-password?token={$token}'>Set your password</a></p>");
+                Mail::sendNotification($userId, 'You have been invited to VGold',
+                    "<p>An admin added you to VGold. Set your password to get started:</p>" .
+                    "<p><a href='https://vgold.victorygenomics.com/set-password?token={$token}'>Set your password</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         } else {
             // For MS users: send welcome email
             try {
-                Mail::sendNotification($userId, 'You have been added to VGo',
-                    "<p>You can now sign in to VGo using your victorygenomics Microsoft account.</p>" .
-                    "<p><a href='https://vgo.victorygenomics.com'>Open VGo</a></p>");
+                Mail::sendNotification($userId, 'You have been added to VGold',
+                    "<p>You can now sign in to VGold using your Victory Genomics Microsoft account.</p>" .
+                    "<p><a href='https://vgold.victorygenomics.com'>Open VGold</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         }
         
@@ -364,6 +375,118 @@ class SettingsController {
         DB::update('workspace_members', ['role' => $role], 'user_id = ? AND workspace_id = ?', [$userId, Auth::workspaceId()]);
         
         jsonResponse(['ok' => true]);
+    }
+
+    // ===== Unified module access =====
+    public static function moduleAccess() {
+        Auth::requireAdmin();
+        $workspaceId = Auth::workspaceId();
+        $members = DB::fetchAll(
+            "SELECT u.id, u.name, u.email, wm.role
+             FROM users u JOIN workspace_members wm ON wm.user_id = u.id
+             WHERE wm.workspace_id = ? ORDER BY wm.role DESC, u.name ASC",
+            [$workspaceId]
+        );
+        jsonResponse([
+            'modules' => Authz::moduleDefinitions(),
+            'members' => array_map(fn($member) => [
+                'id' => (int)$member['id'],
+                'name' => $member['name'],
+                'email' => $member['email'],
+                'role' => $member['role'],
+                'access' => Authz::grantedModules((int)$member['id'], $workspaceId),
+            ], $members),
+        ]);
+    }
+
+    public static function updateModuleAccess() {
+        Auth::requireAdmin();
+        $data = input();
+        requireFields(['user_id', 'modules'], $data);
+        if (!is_array($data['modules'])) jsonError('Modules must be a list');
+        $userId = (int)$data['user_id'];
+        $workspaceId = Auth::workspaceId();
+        $member = DB::fetch(
+            "SELECT wm.role FROM workspace_members wm WHERE wm.workspace_id = ? AND wm.user_id = ?",
+            [$workspaceId, $userId]
+        );
+        if (!$member) jsonError('User is not a member of this workspace', 404);
+
+        $modules = array_values(array_unique(array_filter(
+            $data['modules'],
+            fn($key) => is_string($key) && isset(Authz::CRM_MODULES[$key])
+        )));
+        DB::conn()->beginTransaction();
+        try {
+            DB::delete('user_module_access', 'workspace_id = ? AND user_id = ?', [$workspaceId, $userId]);
+            foreach ($modules as $moduleKey) {
+                DB::insert('user_module_access', [
+                    'workspace_id' => $workspaceId,
+                    'user_id' => $userId,
+                    'module_key' => $moduleKey,
+                    'can_access' => 1,
+                    'updated_by' => Auth::userId(),
+                ]);
+            }
+            DB::conn()->commit();
+        } catch (\Throwable $e) {
+            DB::conn()->rollBack();
+            throw $e;
+        }
+        jsonResponse(['ok' => true, 'modules' => $modules]);
+    }
+
+    // ===== Centralized CRM settings =====
+    public static function crmSettings() {
+        Auth::requireAdmin();
+        $defaults = self::crmSettingDefaults();
+        $rows = DB::fetchAll("SELECT setting_key, setting_value FROM crm_settings");
+        foreach ($rows as $row) {
+            if (array_key_exists($row['setting_key'], $defaults)) $defaults[$row['setting_key']] = $row['setting_value'];
+        }
+        $followUp = DB::fetch(
+            "SELECT setting_value FROM workspace_settings WHERE workspace_id = ? AND setting_group = 'crm' AND setting_key = 'follow_up_project_name'",
+            [Auth::workspaceId()]
+        );
+        if ($followUp) $defaults['follow_up_project_name'] = $followUp['setting_value'];
+        jsonResponse(['settings' => $defaults]);
+    }
+
+    public static function updateCrmSettings() {
+        Auth::requireAdmin();
+        $data = input();
+        $allowed = array_keys(self::crmSettingDefaults());
+        foreach ($allowed as $key) {
+            if (!array_key_exists($key, $data)) continue;
+            $value = is_bool($data[$key]) ? ($data[$key] ? '1' : '0') : trim((string)$data[$key]);
+            if ($key === 'follow_up_project_name') {
+                DB::query(
+                    "INSERT INTO workspace_settings (workspace_id, setting_group, setting_key, setting_value, updated_by)
+                     VALUES (?, 'crm', ?, ?, ?)
+                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value), updated_by = VALUES(updated_by)",
+                    [Auth::workspaceId(), $key, $value, Auth::userId()]
+                );
+            } else {
+                DB::query(
+                    "INSERT INTO crm_settings (setting_key, setting_value, setting_type)
+                     VALUES (?, ?, 'text') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
+                    [$key, $value]
+                );
+            }
+        }
+        jsonResponse(['ok' => true]);
+    }
+
+    private static function crmSettingDefaults() {
+        return [
+            'company_name' => 'Victory Genomics',
+            'company_email' => '',
+            'company_phone' => '',
+            'timezone' => 'Europe/Madrid',
+            'leads_per_page' => '25',
+            'auto_assign_leads' => '0',
+            'follow_up_project_name' => 'CRM Follow-ups',
+        ];
     }
     
     // Toggle user active status (admin only, with last-admin safeguard)
@@ -403,12 +526,20 @@ class SettingsController {
         if ($userId === Auth::userId()) jsonError('You cannot delete your own account');
         
         // Can't delete another admin
-        $target = DB::fetch("SELECT role FROM users WHERE id = ?", [$userId]);
+        $target = DB::fetch("SELECT role, crm_user_id FROM users WHERE id = ?", [$userId]);
         if (!$target) jsonError('User not found');
         if ($target['role'] === 'admin') jsonError('Cannot delete an admin user');
         
         // Can't reassign to the user being deleted
         if ($reassignTo && $reassignTo === $userId) jsonError('Cannot reassign to the user being removed');
+        $reassignUser = null;
+        if ($reassignTo) {
+            $reassignUser = DB::fetch(
+                "SELECT u.crm_user_id FROM users u JOIN workspace_members wm ON wm.user_id = u.id WHERE u.id = ? AND wm.workspace_id = ?",
+                [$reassignTo, Auth::workspaceId()]
+            );
+            if (!$reassignUser) jsonError('Reassignment user is not in this workspace');
+        }
         
         // If reassigning, transfer ownership of projects, tasks, and files
         if ($reassignTo) {
@@ -429,6 +560,13 @@ class SettingsController {
             
             // Transfer file uploads (keep original uploader but mark reassigned)
             DB::query("UPDATE files SET uploaded_by = ? WHERE uploaded_by = ?", [$reassignTo, $userId]);
+
+            // CRM records use legacy CRM user IDs, not VGold user IDs.
+            if (!empty($target['crm_user_id']) && !empty($reassignUser['crm_user_id'])) {
+                DB::query("UPDATE crm_leads SET assigned_to = ? WHERE assigned_to = ?", [$reassignUser['crm_user_id'], $target['crm_user_id']]);
+                DB::query("UPDATE crm_leads SET created_by = ? WHERE created_by = ?", [$reassignUser['crm_user_id'], $target['crm_user_id']]);
+                DB::query("UPDATE crm_interactions SET user_id = ? WHERE user_id = ?", [$reassignUser['crm_user_id'], $target['crm_user_id']]);
+            }
         }
         
         // Remove from workspace
@@ -443,7 +581,12 @@ class SettingsController {
         // Unassign tasks (only if not reassigned)
         if (!$reassignTo) {
             DB::update('tasks', ['assigned_to' => null], 'assigned_to = ?', [$userId]);
+            if (!empty($target['crm_user_id'])) {
+                DB::query("UPDATE crm_leads SET assigned_to = NULL WHERE assigned_to = ?", [$target['crm_user_id']]);
+            }
         }
+
+        DB::delete('user_module_access', 'workspace_id = ? AND user_id = ?', [Auth::workspaceId(), $userId]);
         
         // Delete the user
         DB::delete('users', 'id = ?', [$userId]);
@@ -469,5 +612,55 @@ class SettingsController {
             'roleBg' => $m['role'] === 'admin' ? '#E4EDE7' : '#F2E6CF',
             'roleColor' => $m['role'] === 'admin' ? '#25563F' : '#6E5638',
         ], $members)]);
+    }
+
+    public static function crmRoleMap() {
+        Auth::requireAdmin();
+        $rows = DB::fetchAll("SELECT id, crm_role, vgold_role FROM crm_role_map ORDER BY id");
+        $counts = [];
+        foreach (DB::fetchAll("SELECT crm_role, COUNT(*) c FROM users WHERE crm_user_id IS NOT NULL AND crm_role IS NOT NULL GROUP BY crm_role") as $row) {
+            $counts[$row['crm_role']] = (int)$row['c'];
+        }
+        jsonResponse(['mappings' => array_map(fn($row) => [
+            'id' => (int)$row['id'],
+            'crm_role' => $row['crm_role'],
+            'vgold_role' => $row['vgold_role'],
+            'user_count' => $counts[$row['crm_role']] ?? 0,
+        ], $rows)]);
+    }
+
+    public static function updateCrmRoleMap() {
+        Auth::requireAdmin();
+        $data = input();
+        $mappings = $data['mappings'] ?? null;
+        if (!is_array($mappings) || !$mappings) jsonError('No mappings provided');
+
+        $applyToUsers = !empty($data['apply_to_users']);
+        $updated = 0;
+        foreach ($mappings as $mapping) {
+            $crmRole = trim($mapping['crm_role'] ?? '');
+            $vgoldRole = ($mapping['vgold_role'] ?? '') === 'admin' ? 'admin' : 'member';
+            if ($crmRole === '') continue;
+            DB::query(
+                "INSERT INTO crm_role_map (crm_role, vgold_role) VALUES (?, ?)
+                 ON DUPLICATE KEY UPDATE vgold_role = VALUES(vgold_role)",
+                [$crmRole, $vgoldRole]
+            );
+            $updated++;
+
+            if ($applyToUsers) {
+                $targets = DB::fetchAll("SELECT id, role FROM users WHERE crm_role = ? AND crm_user_id IS NOT NULL", [$crmRole]);
+                foreach ($targets as $targetUser) {
+                    if ($targetUser['role'] === $vgoldRole) continue;
+                    if ($targetUser['role'] === 'admin' && $vgoldRole === 'member') {
+                        $adminCount = DB::fetch("SELECT COUNT(*) c FROM users WHERE role = 'admin' AND is_active = 1");
+                        if ((int)$adminCount['c'] <= 1) continue;
+                    }
+                    DB::update('users', ['role' => $vgoldRole], 'id = ?', [(int)$targetUser['id']]);
+                    DB::update('workspace_members', ['role' => $vgoldRole], 'user_id = ? AND workspace_id = ?', [(int)$targetUser['id'], Auth::workspaceId()]);
+                }
+            }
+        }
+        jsonResponse(['ok' => true, 'updated' => $updated, 'applied_to_users' => $applyToUsers]);
     }
 }

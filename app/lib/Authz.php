@@ -2,6 +2,57 @@
 // VGo Authorization helpers — workspace-scoped access control
 
 class Authz {
+    public const CRM_MODULES = [
+        'crm.dashboard' => 'CRM overview',
+        'crm.leads' => 'Leads',
+        'crm.interactions' => 'Interactions & follow-ups',
+        'crm.proposals' => 'Proposals',
+        'crm.email' => 'Email marketing',
+        'crm.communications' => 'VoIP & WhatsApp',
+        'crm.automation' => 'Automations',
+        'crm.reports' => 'Reports & exports',
+        'crm.knowledge' => 'Knowledge hub',
+    ];
+
+    public static function moduleDefinitions() {
+        return array_map(
+            fn($key, $label) => ['key' => $key, 'label' => $label],
+            array_keys(self::CRM_MODULES),
+            array_values(self::CRM_MODULES)
+        );
+    }
+
+    public static function grantedModules($userId = null, $workspaceId = null) {
+        $userId = $userId ?? Auth::userId();
+        $workspaceId = $workspaceId ?? Auth::workspaceId();
+        $user = DB::fetch(
+            "SELECT wm.role FROM workspace_members wm WHERE wm.user_id = ? AND wm.workspace_id = ?",
+            [$userId, $workspaceId]
+        );
+        if ($user && $user['role'] === 'admin') return array_keys(self::CRM_MODULES);
+
+        $rows = DB::fetchAll(
+            "SELECT module_key FROM user_module_access WHERE workspace_id = ? AND user_id = ? AND can_access = 1",
+            [$workspaceId, $userId]
+        );
+        return array_values(array_filter(
+            array_map(fn($row) => $row['module_key'], $rows),
+            fn($key) => isset(self::CRM_MODULES[$key])
+        ));
+    }
+
+    public static function hasModuleAccess($moduleKey) {
+        if (!isset(self::CRM_MODULES[$moduleKey])) return false;
+        return in_array($moduleKey, self::grantedModules(), true);
+    }
+
+    public static function hasAnyCrmAccess() {
+        return count(self::grantedModules()) > 0;
+    }
+
+    public static function requireModuleAccess($moduleKey) {
+        if (!self::hasModuleAccess($moduleKey)) jsonError('You do not have access to this CRM module', 403);
+    }
     
     public static function requireTaskAccess($taskId) {
         $task = DB::fetch("SELECT t.*, p.workspace_id, p.parent_id FROM tasks t JOIN projects p ON t.project_id = p.id WHERE t.id = ?", [$taskId]);

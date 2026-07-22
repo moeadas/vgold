@@ -156,7 +156,7 @@ function overviewTaskRowHTML(t) {
   return `
     <div class="task-row" onclick="goTaskPage(${t.id}, ${t.project_id})">
       <div class="task-checkbox ${t.done ? 'done' : ''}" onclick="event.stopPropagation();toggleOverviewTask(${t.id},this)">${I.check}</div>
-      <span class="task-name ${t.done ? 'done' : ''}">${esc(t.title)}</span>
+      <span class="task-name-wrap"><span class="task-name ${t.done ? 'done' : ''}">${esc(t.title)}</span>${t.source_module === 'crm.follow_up' && t.description ? `<small class="task-crm-context">${esc(t.description.split('\n')[0])}</small>` : ''}</span>
       ${t.priority === 'urgent' ? '<span style="font-size:11px;font-weight:700;color:#FFF;background:#B0432B;border-radius:99px;padding:2px 8px">URGENT</span>' : ''}
       <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
         <span style="width:6px;height:6px;border-radius:99px;background:${t.project_color}"></span>${esc(t.project_name)}

@@ -24,36 +24,41 @@ if (file_exists($envFile)) {
     }
 }
 
-// Database Configuration — reads from .env, falls back to defaults
-define('DB_HOST',    getenv('DB_HOST')    ?: 'localhost');
-define('DB_NAME',    getenv('DB_NAME')    ?: 'your_database_name');
-define('DB_USER',    getenv('DB_USER')    ?: 'your_database_user');
-define('DB_PASS',    getenv('DB_PASS')    ?: 'your_database_password');
-define('DB_CHARSET', getenv('DB_CHARSET') ?: 'utf8mb4');
+if (!function_exists('def_if')) {
+    function def_if($key, $value) { if (!defined($key)) define($key, $value); }
+}
+
+// Database Configuration — defer to VGold's unified config when mounted.
+def_if('DB_HOST',    getenv('DB_HOST')    ?: 'localhost');
+def_if('DB_NAME',    getenv('DB_NAME')    ?: 'your_database_name');
+def_if('DB_USER',    getenv('DB_USER')    ?: 'your_database_user');
+def_if('DB_PASS',    getenv('DB_PASS')    ?: 'your_database_password');
+def_if('DB_CHARSET', getenv('DB_CHARSET') ?: 'utf8mb4');
 
 // Application Configuration
-define('APP_NAME',    getenv('APP_NAME')    ?: 'Victory Genomics CRM');
-define('APP_URL',     getenv('APP_URL')     ?: 'https://crm.victorygenomics.com');
-define('APP_VERSION', '2.0.0');
+def_if('APP_NAME',    getenv('APP_NAME')    ?: 'Victory Genomics CRM');
+def_if('APP_URL',     getenv('APP_URL')     ?: 'https://crm.victorygenomics.com');
+def_if('APP_VERSION', '2.0.0');
 
 // Security Configuration
-define('SESSION_NAME', 'VG_CRM_SESSION');
-define('SESSION_LIFETIME', 3600 * 8); // 8 hours
-define('PASSWORD_MIN_LENGTH', 8);
+def_if('SESSION_NAME', 'VG_CRM_SESSION');
+def_if('SESSION_LIFETIME', 3600 * 8); // 8 hours
+def_if('PASSWORD_MIN_LENGTH', 8);
 
 // File Upload Configuration
-define('UPLOAD_DIR', __DIR__ . '/../uploads/');
-define('MAX_FILE_SIZE', 10485760); // 10MB
-define('ALLOWED_EXTENSIONS', ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png']);
+def_if('UPLOAD_DIR', __DIR__ . '/../uploads/');
+def_if('MAX_FILE_SIZE', 10485760); // 10MB
+def_if('ALLOWED_EXTENSIONS', ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'jpg', 'jpeg', 'png']);
+if (!defined('CRM_BASE')) define('CRM_BASE', '');
 
 // Microsoft OAuth2 Configuration (Azure AD App Registration)
-define('MS_CLIENT_ID',     getenv('MS_CLIENT_ID')     ?: '');
-define('MS_CLIENT_SECRET', getenv('MS_CLIENT_SECRET') ?: '');
-define('MS_TENANT_ID',     getenv('MS_TENANT_ID')     ?: '');
-define('MS_REDIRECT_URI',  APP_URL . '/api/microsoft-callback.php');
+def_if('MS_CLIENT_ID',     getenv('MS_CLIENT_ID')     ?: '');
+def_if('MS_CLIENT_SECRET', getenv('MS_CLIENT_SECRET') ?: '');
+def_if('MS_TENANT_ID',     getenv('MS_TENANT_ID')     ?: '');
+def_if('MS_REDIRECT_URI',  APP_URL . CRM_BASE . '/api/microsoft-callback.php');
 
 // Pagination
-define('RECORDS_PER_PAGE', 25);
+def_if('RECORDS_PER_PAGE', 25);
 
 // Timezone
 date_default_timezone_set('UTC');
@@ -94,7 +99,13 @@ class Database {
                 PDO::ATTR_EMULATE_PREPARES   => false,
                 PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci",
             ];
-            $this->connection = new PDO($dsn, DB_USER, DB_PASS, $options);
+            $rewriteFile = __DIR__ . '/../includes/crm_table_rewrite.php';
+            if (defined('VGOLD_BRIDGE_LOADED') && is_file($rewriteFile)) {
+                require_once $rewriteFile;
+                $this->connection = new CrmRewritingPDO($dsn, DB_USER, DB_PASS, $options);
+            } else {
+                $this->connection = new PDO($dsn, DB_USER, DB_PASS, $options);
+            }
         } catch (PDOException $e) {
             error_log("Database Connection Failed: " . $e->getMessage());
             die("Database connection error. Please try again later.");
