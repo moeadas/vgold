@@ -94,6 +94,7 @@ async function renderTaskPage(taskId) {
               <span class="edit-hint">${I.pencil || ''}<span>Click to edit</span></span>
             </div>
             <div id="task-page-desc" class="editable-field${t.description ? '' : ' is-empty'}" data-value="${esc(t.description || '')}" onclick="editTaskPageDesc(${t.id},this)" title="Click to edit description" style="font-family:var(--serif);font-size:17px;line-height:1.6">${esc(t.description || 'No description yet. Click to add one.')}</div>
+            ${t.source_module === 'crm.follow_up' && t.crm_lead_id ? `<a href="/crm/pages/lead-detail.php?id=${t.crm_lead_id}" target="_blank" rel="noopener" class="crm-lead-link" style="display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:8px 14px;border-radius:99px;background:#F4ECDD;color:#8E6B3A;font-size:13px;font-weight:600;text-decoration:none">View lead in CRM →</a>` : ''}
           </div>
 
           <!-- Files -->
