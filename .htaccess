@@ -14,7 +14,7 @@ DirectoryIndex index.php public/index.php
 RewriteEngine On
 RewriteBase /
 
-# ── Force HTTPS ──────────────────────────────────────────────────────────────
+# ── Force HTTPS ──────────────────────────────────────────────────────────────﻿
 RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
@@ -29,7 +29,7 @@ RewriteRule (?i)(^|/)setup_vgold\.php$                       - [F,L]
 # ── Bare root -> front controller (must come before the -d skip below) ────────
 RewriteRule ^$ public/index.php [QSA,L]
 
-# ── CRM + API always through the front controller ────────────────────────────
+# ── CRM + API always through the front controller ──────────────────────────
 RewriteRule ^crm(/.*)?$ public/index.php [QSA,L]
 RewriteRule ^api(/.*)?$ public/index.php [QSA,L]
 
@@ -40,16 +40,22 @@ RewriteCond %{REQUEST_URI} !^/public/
 RewriteCond %{DOCUMENT_ROOT}/public/$1 -f
 RewriteRule ^(.+)$ public/$1 [L]
 
-# ── Everything else -> SPA front controller ──────────────────────────────────
+# ── Everything else -> SPA front controller ───────────────────────────────
 # Loop guard: don't re-rewrite requests that already resolve to a real file
 # (the rewritten /public/index.php) or that are already under public/.
 RewriteCond %{REQUEST_URI} !^/public/
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ public/index.php [QSA,L]
 
-# ── Security headers ──────────────────────────────────────────────────────────
+# ── Security headers ────────────────────────────────────────────────────﻿
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
+    # HTTPS is already forced above; HSTS stops TLS-strip on the first hit.
+    Header always set Strict-Transport-Security "max-age=31536000; includeSubDomains"
 </IfModule>
+
+# Defense in depth: never serve/execute anything under storage/ or uploads/
+# directly (attachments are served through authenticated PHP endpoints).
+RewriteRule (?i)^(storage|uploads)/.*\.(php|php3|php4|php5|php7|php8|phtml|phps|phar|cgi|pl|py|sh)$ - [F,L]

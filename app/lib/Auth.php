@@ -28,8 +28,13 @@ class Auth {
     }
 
     public static function logout() {
-        session_destroy();
         $_SESSION = [];
+        // Expire the session cookie client-side (session_destroy alone leaves it).
+        if (ini_get('session.use_cookies')) {
+            $p = session_get_cookie_params();
+            setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'], $p['secure'], $p['httponly']);
+        }
+        session_destroy();
     }
 
     public static function check() {
@@ -114,7 +119,14 @@ class Auth {
 
     public static function user() {
         if (!self::check()) return null;
-        return DB::fetch("SELECT u.*, wm.role FROM users u JOIN workspace_members wm ON u.id = wm.user_id WHERE u.id = ? AND wm.workspace_id = ?", [self::userId(), self::workspaceId()]);
+        // is_active = 0 means the account was deactivated after this session began;
+        // reject it so a disabled/compromised user loses access immediately.
+        $u = DB::fetch("SELECT u.*, wm.role FROM users u JOIN workspace_members wm ON u.id = wm.user_id WHERE u.id = ? AND wm.workspace_id = ?", [self::userId(), self::workspaceId()]);
+        if ($u && isset($u['is_active']) && (int)$u['is_active'] === 0) {
+            self::logout();
+            return null;
+        }
+        return $u;
     }
 
     public static function requireAuth() {

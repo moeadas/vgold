@@ -9,8 +9,16 @@ require_once __DIR__ . '/../includes/functions.php';
 startSecureSession();
 requireLogin();
 
-// Only admins and sales managers can export
-if (!hasRole('Admin') && !hasRole('Sales Manager')) {
+// Only admins and sales managers can export.
+// IMPORTANT: the VGold /crm mount elevates any user holding the "reports" module
+// to a temporary 'Sales Manager' role for the request, so hasRole('Sales Manager')
+// alone is NOT a trust boundary here — a reports-only Sales Rep would pass it and
+// dump the whole company's data. Gate on the user's REAL role instead: either a
+// true VGold admin ($_SESSION['role']==='Admin', set by the mount only for VGold
+// admins) or a genuinely-assigned CRM Admin/Sales Manager (crm_role).
+$vgoldIsAdmin = (($_SESSION['role'] ?? '') === 'Admin');
+$realCrmRole  = $_SESSION['crm_role'] ?? '';
+if (!$vgoldIsAdmin && !in_array($realCrmRole, ['Admin', 'Sales Manager'], true)) {
     http_response_code(403);
     header('Content-Type: application/json');
     echo json_encode(['success' => false, 'message' => 'Only Admin and Sales Manager can export data']);
@@ -34,9 +42,9 @@ try {
     echo json_encode(['success' => false, 'message' => 'Export error: ' . $e->getMessage()]);
 }
 
-// ─────────────────────────────────────
+// ───────────────────────────────────
 // JSON EXPORT
-// ─────────────────────────────────────
+// ───────────────────────────────────
 function exportJSON($db, $scope) {
     $data = [];
 
@@ -87,9 +95,9 @@ function exportJSON($db, $scope) {
     echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 }
 
-// ─────────────────────────────────────
+// ───────────────────────────────────
 // CSV EXPORT (multi-sheet via ZIP)
-// ─────────────────────────────────────
+// ───────────────────────────────────
 function exportCSV($db, $scope) {
     // If exporting all, create a ZIP with multiple CSV files
     if ($scope === 'all') {
