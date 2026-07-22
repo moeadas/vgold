@@ -139,7 +139,8 @@ async function renderSettings() {
 
   const moduleAccessSection = user.role === 'admin' && moduleAccess ? `
     <div class="settings-card settings-card-wide" id="settings-access">
-      <div class="settings-section-head"><div><span class="settings-section-kicker">Access control</span><h3>Team module access</h3><div class="desc">Workflow is available to everyone. Choose which CRM areas each person can open.</div></div><span class="workflow-always-pill">Workflow · Always on</span></div>
+      <div class="settings-section-head"><div><span class="settings-section-kicker">Access control</span><h3>Team module access</h3><div class="desc">Workflow is available to everyone. Choose which CRM areas each person can open. This applies to <strong>every</strong> user — internal or external — the account type does not matter.</div></div><span class="workflow-always-pill">Workflow · Always on</span></div>
+      <div class="desc" style="margin:-4px 0 12px;padding:10px 12px;background:var(--sand-light,#faf8f4);border:1px solid var(--border);border-radius:10px;font-size:12.5px">💡 <strong>Admins automatically get every module</strong>, so their toggles are locked green. To give an external (or any) user a specific set of modules, set their role to <strong>Member</strong>, then tick the modules on their row below.</div>
       <div class="module-access-table">
         ${(moduleAccess.members || []).map(member => `
           <div class="module-access-row">
@@ -258,10 +259,11 @@ async function renderSettings() {
 
       <div class="settings-card">
         <h3>Push Notifications</h3>
-        <div class="desc">Get real-time notifications on your device, even when the app is closed.</div>
+        <div class="desc">Get real-time notifications on your device, even when the app is closed. Install VGold to your home screen to use it like a native app.</div>
         <div id="push-notif-section">
           <div id="push-notif-state"></div>
         </div>
+        <button class="btn install-app-btn" onclick="promptInstall()" style="margin-top:12px;display:${typeof window!=='undefined' && window.__canInstall ? 'inline-flex' : 'none'}">📲 Install app</button>
       </div>
 
       ${moduleAccessSection}
@@ -300,6 +302,12 @@ async function renderSettings() {
               <button id="new-user-admin" onclick="setNewUserRole('admin')">Admin</button>
             </div>
             <button class="btn-primary" style="flex:none;padding:9px 16px;font-size:13.5px" onclick="createUser()">Add user</button>
+          </div>
+          <div id="new-user-modules" style="margin-top:12px">
+            <div style="font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">CRM modules for this member <span style="font-weight:400;text-transform:none">(Members only — admins get all)</span></div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              ${(moduleAccess?.modules || []).map(mod => `<label class="module-access-chip"><input type="checkbox" class="new-user-module" value="${esc(mod.key)}"><span>${esc(mod.label)}</span></label>`).join('')}
+            </div>
           </div>
           <div id="auth-provider-hint" style="font-size:11px;color:var(--muted);margin-top:6px"></div>
           <div id="new-user-error" class="pw-error" style="display:none;margin-top:8px"></div>
@@ -589,6 +597,10 @@ async function createUser() {
   try {
     const payload = { name, email, role: newUserRole, auth_provider: authProvider };
     if (authProvider === 'password') payload.password = pass;
+    // Members can be granted specific CRM modules at creation (admins get all).
+    if (newUserRole !== 'admin') {
+      payload.module_access = Array.from(document.querySelectorAll('.new-user-module:checked')).map(c => c.value);
+    }
     await API.createUser(payload);
     State.teamData = null;
     State.moduleAccess = undefined;

@@ -400,6 +400,7 @@ document.addEventListener('DOMContentLoaded', () => {
       setInterval(loadMsgUnread, 45000);
       startRealtimePolling();
       initPushNotifications();
+      initInstallPrompt();
     }).catch(() => {
       routeFromHash();
       render();
@@ -745,11 +746,38 @@ async function loadNotifList() {
   } catch(e) {}
 }
 
+// ===== PWA install prompt (Android/Chrome custom "Install app" button) =====
+let deferredInstallPrompt = null;
+function initInstallPrompt() {
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    window.__canInstall = true;
+    document.querySelectorAll('.install-app-btn').forEach(b => b.style.display = 'inline-flex');
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    window.__canInstall = false;
+    document.querySelectorAll('.install-app-btn').forEach(b => b.style.display = 'none');
+  });
+}
+async function promptInstall() {
+  if (!deferredInstallPrompt) {
+    toast('To install: open your browser menu and choose "Install app" / "Add to Home Screen".', 'info');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  try { await deferredInstallPrompt.userChoice; } catch(e) {}
+  deferredInstallPrompt = null;
+}
+
 function handleNotifClick(type, id, projectId) {
-  if (!type || !id) return;
+  if (!type) return;
   toggleNotifPanel();
-  if (type === 'task') navigateToTask(id, projectId);
-  else if (type === 'project') goProject(id);
+  if (type === 'task' && id) navigateToTask(id, projectId);
+  else if (type === 'project' && id) goProject(id);
+  else if (type === 'crm_lead' && id) window.open('/crm/pages/lead-detail.php?id=' + id, '_blank', 'noopener');
+  else if (type === 'crm') window.open('/crm/', '_blank', 'noopener');
 }
 
 async function markNotifRead(id) {
