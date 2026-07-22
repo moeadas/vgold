@@ -265,9 +265,13 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
             $subject = processEmailVars($template['subject'] ?? $template['name'] ?? 'Victory Genomics', $lead);
             $html    = processEmailVars($template['content_html'] ?? '', $lead);
 
-            require_once __DIR__ . '/../api/email.php';
-            $sent = sendEmailViaSMTP($to, $subject, $html);
-            if (!$sent) throw new \Exception("SMTP send failed to {$to}");
+            // Include-safe mailer — never require api/email.php here: that file
+            // executes its endpoint dispatcher on load and exit()s the request.
+            require_once __DIR__ . '/mailer.php';
+            $sent = crmSendEmail($to, $subject, $html);
+            if (empty($sent['success'])) {
+                throw new \Exception("SMTP send failed to {$to}: " . ($sent['error'] ?? 'unknown error'));
+            }
 
             return "Sent email template \"{$template['name']}\" to {$to}";
 
@@ -364,9 +368,12 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
                   . "<p style='color:#999;font-size:12px;margin-top:30px;'>This is an automated notification from Victory Genomics CRM.</p>"
                   . "</div>";
 
-            require_once __DIR__ . '/../api/email.php';
-            $sent = sendEmailViaSMTP($to, processEmailVars($customSubject, $lead), $html);
-            if (!$sent) throw new \Exception("Notification email failed to {$to}");
+            // Include-safe mailer (see note in send_email_template above).
+            require_once __DIR__ . '/mailer.php';
+            $sent = crmSendEmail($to, processEmailVars($customSubject, $lead), $html);
+            if (empty($sent['success'])) {
+                throw new \Exception("Notification email failed to {$to}: " . ($sent['error'] ?? 'unknown error'));
+            }
 
             return "Sent notification email to {$to}";
 
