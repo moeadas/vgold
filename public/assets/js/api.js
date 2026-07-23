@@ -137,6 +137,8 @@ const API = {
   crmDashboard: () => API.req('/crm/dashboard'),
   crmLeads: (params = {}) => API.req('/crm/leads?' + new URLSearchParams(params).toString()),
   createCrmLead: (data) => API.req('/crm/leads', { method: 'POST', body: JSON.stringify(data) }),
+  crmLeadDetail: (id) => API.req('/crm/leads/' + id),
+  updateCrmLead: (id, data) => API.req('/crm/leads/' + id, { method: 'PUT', body: JSON.stringify(data) }),
   crmLeadOptions: () => API.req('/crm/lead-options'),
   crmInteractions: () => API.req('/crm/interactions'),
   createCrmInteraction: (data) => API.req('/crm/interactions', { method: 'POST', body: JSON.stringify(data) }),
