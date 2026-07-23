@@ -94,7 +94,7 @@ function createNotification($userId, $type, $title, $body = '', $link = '', $lea
                 ]);
                 if (class_exists('Push')) {
                     Push::toUser((int)$vg['id'], $title, $body,
-                        $leadId ? '/crm/pages/lead-detail.php?id=' . (int)$leadId : '/');
+                        $leadId ? '/#crm/lead/' . (int)$leadId : '/');
                 }
             }
         } catch (\Throwable $e) {

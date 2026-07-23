@@ -144,7 +144,110 @@ class CRMController {
              ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 200",
             $scopeParams
         );
-        jsonResponse(['interactions' => array_map(fn($row) => [
+        jsonResponse(['interactions' => array_map([self::class, 'formatInteraction'], $rows)]);
+    }
+
+    // Native lead detail: the single lead plus its full interaction/follow-up
+    // timeline. Same owner-scoping as the list endpoints so reps can't read a
+    // lead that isn't theirs by guessing an id.
+    public static function leadDetail($id) {
+        Authz::requireModuleAccess('crm.leads');
+        $id = (int)$id;
+        $lead = DB::fetch(
+            "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_vgold_name,
+                    cu.full_name AS assigned_crm_name, cb.full_name AS created_crm_name
+             FROM crm_leads l
+             LEFT JOIN users u ON u.crm_user_id = l.assigned_to
+             LEFT JOIN crm_users cu ON cu.user_id = l.assigned_to
+             LEFT JOIN crm_users cb ON cb.user_id = l.created_by
+             WHERE l.lead_id = ?",
+            [$id]
+        );
+        if (!$lead) jsonError('Lead not found', 404);
+        self::assertLeadAccess($lead);
+
+        $rows = DB::fetchAll(
+            "SELECT i.*, l.company_name, l.contact_person, u.name AS user_name,
+                    ctl.task_id AS workflow_task_id, t.status AS workflow_task_status
+             FROM crm_interactions i
+             JOIN crm_leads l ON l.lead_id = i.lead_id
+             LEFT JOIN users u ON u.crm_user_id = i.user_id
+             LEFT JOIN crm_task_links ctl ON ctl.crm_interaction_id = i.interaction_id
+             LEFT JOIN tasks t ON t.id = ctl.task_id
+             WHERE i.lead_id = ?
+             ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 100",
+            [$id]
+        );
+        jsonResponse([
+            'lead' => self::formatLeadDetail($lead),
+            'interactions' => array_map([self::class, 'formatInteraction'], $rows),
+        ]);
+    }
+
+    public static function updateLead($id) {
+        Authz::requireModuleAccess('crm.leads');
+        $id = (int)$id;
+        $lead = DB::fetch("SELECT * FROM crm_leads WHERE lead_id = ?", [$id]);
+        if (!$lead) jsonError('Lead not found', 404);
+        self::assertLeadAccess($lead);
+        $data = input();
+
+        $fields = [];
+        foreach (['company_name','contact_person','title_position','city','address','phone','mobile','email','website','specialization','horse_breed','horse_sex','notes','facebook_url','instagram_url','linkedin_url','twitter_url','youtube_url'] as $f) {
+            if (array_key_exists($f, $data)) $fields[$f] = self::nullable($data[$f]);
+        }
+        // country + region are NOT NULL — only overwrite when a real value is sent.
+        if (array_key_exists('country', $data) && trim((string)$data['country']) !== '') {
+            $fields['country'] = trim($data['country']);
+        }
+        if (array_key_exists('region', $data) && trim((string)$data['region']) !== '') {
+            $fields['region'] = self::choice($data['region'], ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other'], $lead['region']);
+        }
+        if (array_key_exists('lead_type', $data)) {
+            $fields['lead_type'] = self::choice($data['lead_type'], ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'], $lead['lead_type']);
+        }
+        if (array_key_exists('status', $data)) {
+            $fields['lead_status'] = self::choice($data['status'], ['New Lead','Contacted','Interested','Not Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold'], $lead['lead_status']);
+        }
+        if (array_key_exists('priority', $data)) {
+            $fields['priority'] = self::choice($data['priority'], ['Low','Medium','High','Urgent'], $lead['priority']);
+        }
+        if (array_key_exists('lead_source', $data)) {
+            $fields['lead_source'] = self::choice($data['lead_source'], ['Website','Facebook','Instagram','Google Ads','LinkedIn','Referral','Cold Outreach','Event','Import','Other'], $lead['lead_source']);
+        }
+        if (array_key_exists('facility_type', $data)) {
+            $fields['facility_type'] = trim((string)$data['facility_type']) === '' ? null
+                : self::choice($data['facility_type'], ['Breeding','Racing','Training','Multi-Purpose','Other'], null);
+        }
+        if (array_key_exists('number_of_horses', $data)) {
+            $fields['number_of_horses'] = ($data['number_of_horses'] === '' || $data['number_of_horses'] === null) ? null : (int)$data['number_of_horses'];
+        }
+        if (array_key_exists('assigned_to', $data)) {
+            $assignedVgoldId = !empty($data['assigned_to']) ? (int)$data['assigned_to'] : null;
+            $fields['assigned_to'] = $assignedVgoldId ? self::crmUserIdForWorkspaceMember($assignedVgoldId, true) : null;
+        }
+
+        if (empty($fields)) jsonError('No changes provided');
+        $finalCompany = array_key_exists('company_name', $fields) ? $fields['company_name'] : $lead['company_name'];
+        $finalContact = array_key_exists('contact_person', $fields) ? $fields['contact_person'] : $lead['contact_person'];
+        if (($finalCompany === null || $finalCompany === '') && ($finalContact === null || $finalContact === '')) {
+            jsonError('A lead or company name is required');
+        }
+
+        DB::update('crm_leads', $fields, 'lead_id = ?', [$id]);
+        jsonResponse(['ok' => true, 'id' => $id]);
+    }
+
+    private static function assertLeadAccess($lead) {
+        if (self::isCrmManager()) return;
+        $crmId = Auth::crmUserId();
+        if (!$crmId || ((int)$lead['assigned_to'] !== (int)$crmId && (int)$lead['created_by'] !== (int)$crmId)) {
+            jsonError('You do not have access to this lead', 403);
+        }
+    }
+
+    private static function formatInteraction($row) {
+        return [
             'id' => (int)$row['interaction_id'],
             'lead_id' => (int)$row['lead_id'],
             'lead_name' => $row['contact_person'] ?: $row['company_name'] ?: ('Lead #' . $row['lead_id']),
@@ -159,7 +262,45 @@ class CRMController {
             'workflow_task_id' => $row['workflow_task_id'] ? (int)$row['workflow_task_id'] : null,
             'follow_up_completed' => $row['workflow_task_status'] === 'completed',
             'user_name' => $row['user_name'] ?: 'CRM user',
-        ], $rows)]);
+        ];
+    }
+
+    private static function formatLeadDetail($row) {
+        return [
+            'id' => (int)$row['lead_id'],
+            'company_name' => $row['company_name'],
+            'contact_person' => $row['contact_person'],
+            'display_name' => $row['contact_person'] ?: $row['company_name'] ?: ('Lead #' . $row['lead_id']),
+            'title_position' => $row['title_position'] ?? null,
+            'email' => $row['email'],
+            'phone' => $row['phone'],
+            'mobile' => $row['mobile'] ?? null,
+            'website' => $row['website'] ?? null,
+            'country' => $row['country'],
+            'city' => $row['city'] ?? null,
+            'region' => $row['region'],
+            'address' => $row['address'] ?? null,
+            'lead_type' => $row['lead_type'],
+            'status' => $row['lead_status'],
+            'priority' => $row['priority'],
+            'lead_source' => $row['lead_source'] ?? null,
+            'facility_type' => $row['facility_type'] ?? null,
+            'number_of_horses' => isset($row['number_of_horses']) && $row['number_of_horses'] !== null ? (int)$row['number_of_horses'] : null,
+            'specialization' => $row['specialization'] ?? null,
+            'horse_breed' => $row['horse_breed'] ?? null,
+            'horse_sex' => $row['horse_sex'] ?? null,
+            'notes' => $row['notes'],
+            'facebook_url' => $row['facebook_url'] ?? null,
+            'instagram_url' => $row['instagram_url'] ?? null,
+            'linkedin_url' => $row['linkedin_url'] ?? null,
+            'twitter_url' => $row['twitter_url'] ?? null,
+            'youtube_url' => $row['youtube_url'] ?? null,
+            'assigned_to' => $row['assigned_vgold_id'] ? (int)$row['assigned_vgold_id'] : null,
+            'assigned_name' => $row['assigned_vgold_name'] ?: $row['assigned_crm_name'] ?: null,
+            'created_name' => $row['created_crm_name'] ?: null,
+            'created_at' => $row['created_at'] ?? null,
+            'updated_at' => $row['updated_at'],
+        ];
     }
 
     public static function createInteraction() {
