@@ -181,6 +181,7 @@ async function render() {
       case 'settings': mainContent = await renderSettings(); break;
       case 'crm-dashboard': mainContent = await renderCrmDashboard(); break;
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
+      case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
       case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
       case 'crm-proposals':
       case 'crm-email':
@@ -321,6 +322,13 @@ function routeFromHash() {
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'settings') { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
+  else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2]) {
+    State.screen = 'crm-lead';
+    State.activeCrmLeadId = parseInt(parts[2]) || null;
+    State.activeProjectId = null;
+    State.activeProject = null;
+    State.activeCategoryId = null;
+  }
   else if (parts[0] === 'crm' && parts[1]) {
     const known = ['dashboard','leads','interactions','proposals','email','communications','automation','reports','knowledge'];
     State.screen = known.includes(parts[1]) ? 'crm-' + parts[1] : 'crm-dashboard';
@@ -352,7 +360,9 @@ function updateHash() {
   if (State.screen.startsWith('crm-')) {
     hash = 'crm/' + State.screen.slice(4);
   }
-  if (State.screen === 'task' && State.activeTaskId) {
+  if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
+    hash = 'crm/lead/' + State.activeCrmLeadId;
+  } else if (State.screen === 'task' && State.activeTaskId) {
     hash = 'task/' + State.activeTaskId;
   } else if (State.screen === 'project' && State.activeProject) {
     hash = 'project/' + slugify(State.activeProject.name || State.activeProjectId);
@@ -776,8 +786,8 @@ function handleNotifClick(type, id, projectId) {
   toggleNotifPanel();
   if (type === 'task' && id) navigateToTask(id, projectId);
   else if (type === 'project' && id) goProject(id);
-  else if (type === 'crm_lead' && id) window.open('/crm/pages/lead-detail.php?id=' + id, '_blank', 'noopener');
-  else if (type === 'crm') window.open('/crm/', '_blank', 'noopener');
+  else if (type === 'crm_lead' && id) goCrmLead(id);
+  else if (type === 'crm') nav('crm-dashboard');
 }
 
 async function markNotifRead(id) {
