@@ -129,6 +129,30 @@ if (!empty($_GET['embedded'])) {
     unset($_SESSION['vgold_crm_embedded']);
 }
 $embedded = !empty($_GET['embedded']) || !empty($_SESSION['vgold_crm_embedded']);
+
+// One app, not two: a top-level (non-embedded) hit on a legacy CRM *page* bounces
+// into the native VGold SPA route, so the standalone CRM chrome can never appear
+// as a "second app" — even from a stale cached link. Embedded editors
+// (?embedded=1) and JSON API calls (/crm/api/*) are unaffected.
+if (!$embedded && ($path === 'dashboard.php' || preg_match('#^pages/([a-z0-9-]+)\.php$#', $path, $pm))) {
+    $page = $path === 'dashboard.php' ? 'dashboard' : $pm[1];
+    if (!in_array($page, ['users', 'user-form', 'settings', 'profile', 'migrate'], true)) {
+        $id = isset($_GET['id']) ? (int) $_GET['id'] : 0;
+        $dest = '/#crm/dashboard';
+        if ($page === 'lead-detail' && $id) $dest = '/#crm/lead/' . $id;
+        elseif (in_array($page, ['leads', 'lead-form', 'import-leads', 'export-leads'], true)) $dest = '/#crm/leads';
+        elseif ($page === 'interactions') $dest = '/#crm/interactions';
+        elseif (strpos($page, 'proposal') !== false) $dest = '/#crm/proposals';
+        elseif (strpos($page, 'email') !== false) $dest = '/#crm/email';
+        elseif (strpos($page, 'voip') !== false || strpos($page, 'whatsapp') !== false) $dest = '/#crm/communications';
+        elseif (strpos($page, 'automation') !== false) $dest = '/#crm/automation';
+        elseif (strpos($page, 'report') !== false || strpos($page, 'export') !== false) $dest = '/#crm/reports';
+        elseif (strpos($page, 'quick-guides') !== false || strpos($page, 'knowledge') !== false) $dest = '/#crm/knowledge';
+        header('Location: ' . $dest);
+        exit;
+    }
+}
+
 chdir(dirname($target));
 
 register_shutdown_function(function () use ($crmTopSegments) {
