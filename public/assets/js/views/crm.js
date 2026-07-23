@@ -13,6 +13,43 @@ function crmHas(moduleKey) {
   return (State.user?.modules || []).includes(moduleKey);
 }
 
+// Styles for the native lead-detail view are injected once so we don't have to
+// ship them in the global stylesheet. Idempotent — guarded by element id.
+function ensureCrmDetailStyles() {
+  if (typeof document === 'undefined' || document.getElementById('crm-native-styles')) return;
+  const style = document.createElement('style');
+  style.id = 'crm-native-styles';
+  style.textContent = `
+.crm-back{background:none;border:none;cursor:pointer;color:var(--muted);font-size:13px;font-weight:600;padding:4px 0;margin-bottom:12px}
+.crm-back:hover{color:var(--gold)}
+.crm-linkish{background:none;border:none;padding:0;cursor:pointer;color:inherit;font:inherit;text-align:left}
+.crm-linkish:hover{color:var(--gold);text-decoration:underline}
+.crm-detail-head{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;flex-wrap:wrap;margin-bottom:18px}
+.crm-detail-id{display:flex;align-items:flex-start;gap:14px}
+.crm-lead-avatar.lg{width:52px;height:52px;border-radius:15px;font-size:17px}
+.crm-detail-sub{color:var(--muted);font-size:13px;margin-top:3px}
+.crm-detail-badges{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:9px}
+.crm-chip{display:inline-flex;align-items:center;padding:3px 11px;border-radius:99px;background:#F0E8DC;color:#745A3F;font-size:11px;font-weight:700}
+.crm-detail-actions{display:flex;gap:10px;flex-wrap:wrap}
+.crm-detail-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr);gap:18px;align-items:start}
+.crm-detail-main{display:flex;flex-direction:column;gap:18px;min-width:0}
+.crm-detail-side{display:flex;flex-direction:column;gap:18px}
+.crm-detail-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}
+.crm-detail-section-head h3{font-size:15px;font-weight:700}
+.crm-detail-h{font-size:12px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.crm-detail-item{display:flex;justify-content:space-between;gap:14px;padding:7px 0;border-bottom:1px solid rgba(0,0,0,.05);font-size:13px}
+.crm-detail-item:last-child{border-bottom:none}
+.crm-detail-label{color:var(--muted);flex:none}
+.crm-detail-value{text-align:right;font-weight:600;word-break:break-word}
+.crm-detail-value a{color:var(--gold);text-decoration:none}
+.crm-detail-value a:hover{text-decoration:underline}
+.crm-notes-body{white-space:pre-wrap;font-size:13px;line-height:1.6;color:var(--text-2)}
+.crm-outcome{font-size:12px;color:var(--muted);margin-top:6px}
+.btn-sm{padding:6px 12px;font-size:12px}
+@media (max-width:900px){.crm-detail-grid{grid-template-columns:1fr}}`;
+  document.head.appendChild(style);
+}
+
 function crmAccessDenied(moduleKey) {
   const label = CRM_MODULE_COPY[moduleKey]?.title || 'CRM';
   return `<div class="fade-in crm-page"><div class="crm-empty card card-pad"><div class="crm-empty-mark">VG</div><h2>${esc(label)} access is not enabled</h2><p>Ask a VGold administrator to enable this module in Settings → Team module access.</p></div></div>`;
@@ -20,7 +57,6 @@ function crmAccessDenied(moduleKey) {
 
 async function renderCrmDashboard() {
   if (!(State.user?.modules || []).length) return crmAccessDenied('crm.dashboard');
-  return renderCrmEmbeddedModule('crm.dashboard');
   let data = State.crmDashboard;
   if (!data) {
     data = await API.crmDashboard();
@@ -54,12 +90,11 @@ async function renderCrmDashboard() {
 
 async function renderCrmLeads() {
   if (!crmHas('crm.leads')) return crmAccessDenied('crm.leads');
-  return renderCrmEmbeddedModule('crm.leads');
   const data = await API.crmLeads();
   State.crmLeads = data.leads || [];
   const rows = State.crmLeads.map(lead => `
     <tr>
-      <td><button class="crm-lead-link" onclick="openCrmInteractionModal(${lead.id})"><span class="crm-lead-avatar">${esc((lead.display_name || '?').slice(0,2).toUpperCase())}</span><span><strong>${esc(lead.display_name)}</strong><small>${esc(lead.company_name && lead.company_name !== lead.display_name ? lead.company_name : lead.lead_type)}</small></span></button></td>
+      <td><button class="crm-lead-link" onclick="goCrmLead(${lead.id})"><span class="crm-lead-avatar">${esc((lead.display_name || '?').slice(0,2).toUpperCase())}</span><span><strong>${esc(lead.display_name)}</strong><small>${esc(lead.company_name && lead.company_name !== lead.display_name ? lead.company_name : lead.lead_type)}</small></span></button></td>
       <td><span class="crm-status ${crmStatusClass(lead.status)}">${esc(lead.status)}</span></td>
       <td><span class="crm-priority ${String(lead.priority).toLowerCase()}">${esc(lead.priority)}</span></td>
       <td>${esc(lead.assigned_name || 'Unassigned')}</td>
@@ -98,7 +133,7 @@ async function searchCrmLeads() {
 
 async function renderCrmInteractions() {
   if (!crmHas('crm.interactions')) return crmAccessDenied('crm.interactions');
-  return renderCrmEmbeddedModule('crm.interactions');
+  ensureCrmDetailStyles();
   const data = await API.crmInteractions();
   State.crmInteractions = data.interactions || [];
   const cards = State.crmInteractions.map(item => {
@@ -107,7 +142,7 @@ async function renderCrmInteractions() {
       <div class="crm-interaction-rail ${crmInteractionClass(item.type)}"></div>
       <div class="crm-interaction-main">
         <div class="crm-interaction-top"><span class="crm-type">${esc(item.type)}</span><time>${crmFormatDate(item.occurred_at)}</time></div>
-        <h3>${esc(item.lead_name)}</h3>
+        <h3><button class="crm-linkish" onclick="goCrmLead(${item.lead_id})">${esc(item.lead_name)}</button></h3>
         ${item.company_name && item.company_name !== item.lead_name ? `<div class="crm-company">${esc(item.company_name)}</div>` : ''}
         ${item.subject ? `<p class="crm-subject">${esc(item.subject)}</p>` : ''}
         ${item.notes ? `<p class="crm-notes">${esc(item.notes)}</p>` : ''}
@@ -250,6 +285,191 @@ async function saveCrmInteraction() {
     Modal.close();
     toast(result.workflow_task_id ? 'Interaction saved and Workflow task created' : 'Interaction saved', 'success');
     if (State.screen === 'crm-leads') nav('crm-interactions'); else render();
+  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+}
+
+// ===== Native lead detail =====
+function goCrmLead(id) {
+  State.screen = 'crm-lead';
+  State.activeCrmLeadId = Number(id);
+  State.activeProjectId = null;
+  State.activeProject = null;
+  State.activeCategoryId = null;
+  updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+  closeMobileSidebar();
+}
+
+function crmDetailRow(label, value, opts = {}) {
+  if (value === null || value === undefined || value === '') return '';
+  const inner = opts.href
+    ? `<a href="${esc(value.startsWith('http') ? value : 'https://' + value)}" target="_blank" rel="noopener">${esc(opts.text || value)}</a>`
+    : opts.mailto
+    ? `<a href="mailto:${esc(value)}">${esc(value)}</a>`
+    : opts.tel
+    ? `<a href="tel:${esc(value)}">${esc(value)}</a>`
+    : esc(value);
+  return `<div class="crm-detail-item"><div class="crm-detail-label">${esc(label)}</div><div class="crm-detail-value">${inner}</div></div>`;
+}
+
+async function renderCrmLeadDetail(id) {
+  if (!crmHas('crm.leads')) return crmAccessDenied('crm.leads');
+  ensureCrmDetailStyles();
+  if (!id) { nav('crm-leads'); return ''; }
+  let data;
+  try {
+    data = await API.crmLeadDetail(id);
+  } catch (e) {
+    return `<div class="fade-in crm-page"><div class="crm-empty card card-pad"><div class="crm-empty-mark">VG</div><h2>Lead unavailable</h2><p>${esc(e.message || 'This lead could not be loaded.')}</p><button class="btn-secondary" onclick="nav('crm-leads')" style="margin-top:14px">← Back to leads</button></div></div>`;
+  }
+  const lead = data.lead || {};
+  State.crmLeadDetail = lead;
+  const socials = [
+    ['Website', lead.website, { href: true, text: lead.website }],
+    ['Facebook', lead.facebook_url, { href: true, text: 'Facebook' }],
+    ['Instagram', lead.instagram_url, { href: true, text: 'Instagram' }],
+    ['LinkedIn', lead.linkedin_url, { href: true, text: 'LinkedIn' }],
+    ['Twitter / X', lead.twitter_url, { href: true, text: 'Twitter' }],
+    ['YouTube', lead.youtube_url, { href: true, text: 'YouTube' }],
+  ].map(([l, v, o]) => crmDetailRow(l, v, o)).join('');
+
+  const interactions = (data.interactions || []).map(item => {
+    const hasFollowUp = !!item.next_action;
+    return `<article class="crm-interaction-card">
+      <div class="crm-interaction-rail ${crmInteractionClass(item.type)}"></div>
+      <div class="crm-interaction-main">
+        <div class="crm-interaction-top"><span class="crm-type">${esc(item.type)}</span><time>${crmFormatDate(item.occurred_at)}</time></div>
+        ${item.subject ? `<p class="crm-subject">${esc(item.subject)}</p>` : ''}
+        ${item.notes ? `<p class="crm-notes">${esc(item.notes)}</p>` : ''}
+        ${item.outcome ? `<div class="crm-outcome">Outcome: ${esc(item.outcome)}</div>` : ''}
+        ${hasFollowUp ? `<button class="crm-followup ${item.follow_up_completed ? 'complete' : ''}" onclick="${item.workflow_task_id ? `goTaskPage(${item.workflow_task_id})` : ''}">
+          <span>${item.follow_up_completed ? '✓' : '→'}</span><span><b>${esc(item.next_action)}</b><small>${crmFormatDate(item.next_action_date)}${item.workflow_task_id ? ' · Open in Workflow' : ''}</small></span>
+        </button>` : ''}
+      </div>
+      <div class="crm-interaction-user">${esc(item.user_name)}</div>
+    </article>`;
+  }).join('');
+
+  const nameLine = lead.company_name && lead.company_name !== lead.display_name ? esc(lead.company_name) : (lead.title_position ? esc(lead.title_position) : esc(lead.lead_type || ''));
+
+  return `
+    <div class="fade-in crm-page crm-lead-detail">
+      <button class="crm-back" onclick="nav('crm-leads')">← Leads</button>
+      <div class="crm-detail-head">
+        <div class="crm-detail-id">
+          <span class="crm-lead-avatar lg">${esc((lead.display_name || '?').slice(0,2).toUpperCase())}</span>
+          <div>
+            <h1 class="page-title-sm">${esc(lead.display_name)}</h1>
+            <div class="crm-detail-sub">${nameLine}</div>
+            <div class="crm-detail-badges">
+              <span class="crm-status ${crmStatusClass(lead.status)}">${esc(lead.status)}</span>
+              <span class="crm-priority ${String(lead.priority).toLowerCase()}">${esc(lead.priority)}</span>
+              ${lead.region ? `<span class="crm-chip">${esc(lead.region)}</span>` : ''}
+            </div>
+          </div>
+        </div>
+        <div class="crm-detail-actions">
+          <button class="btn-secondary" onclick="openCrmLeadEditModal(${lead.id})">Edit lead</button>
+          <button class="btn-primary" onclick="openCrmInteractionModal(${lead.id})">Log interaction</button>
+        </div>
+      </div>
+
+      <div class="crm-detail-grid">
+        <div class="crm-detail-main">
+          <div class="card card-pad">
+            <div class="crm-detail-section-head"><h3>Interactions & follow-ups</h3><button class="btn-secondary btn-sm" onclick="openCrmInteractionModal(${lead.id})">Log interaction</button></div>
+            <div class="crm-interaction-list">${interactions || `<div class="crm-empty-list">No activity logged yet for this lead.</div>`}</div>
+          </div>
+          ${lead.notes ? `<div class="card card-pad"><h3 class="crm-detail-h">Notes</h3><p class="crm-notes-body">${esc(lead.notes)}</p></div>` : ''}
+        </div>
+        <aside class="crm-detail-side">
+          <div class="card card-pad">
+            <h3 class="crm-detail-h">Contact</h3>
+            ${crmDetailRow('Contact person', lead.contact_person)}
+            ${crmDetailRow('Title / position', lead.title_position)}
+            ${crmDetailRow('Email', lead.email, { mailto: true })}
+            ${crmDetailRow('Phone', lead.phone, { tel: true })}
+            ${crmDetailRow('Mobile', lead.mobile, { tel: true })}
+            ${crmDetailRow('Country', lead.country)}
+            ${crmDetailRow('City', lead.city)}
+            ${crmDetailRow('Address', lead.address)}
+          </div>
+          ${socials ? `<div class="card card-pad"><h3 class="crm-detail-h">Online</h3>${socials}</div>` : ''}
+          <div class="card card-pad">
+            <h3 class="crm-detail-h">Facility</h3>
+            ${crmDetailRow('Lead type', lead.lead_type)}
+            ${crmDetailRow('Facility type', lead.facility_type)}
+            ${crmDetailRow('Number of horses', lead.number_of_horses)}
+            ${crmDetailRow('Specialization', lead.specialization)}
+            ${crmDetailRow('Horse breed', lead.horse_breed)}
+            ${crmDetailRow('Horse sex', lead.horse_sex)}
+          </div>
+          <div class="card card-pad">
+            <h3 class="crm-detail-h">Management</h3>
+            ${crmDetailRow('Owner', lead.assigned_name || 'Unassigned')}
+            ${crmDetailRow('Created by', lead.created_name)}
+            ${crmDetailRow('Lead source', lead.lead_source)}
+            ${crmDetailRow('Created', crmFormatDate(lead.created_at))}
+            ${crmDetailRow('Last updated', crmFormatDate(lead.updated_at))}
+          </div>
+        </aside>
+      </div>
+    </div>`;
+}
+
+async function openCrmLeadEditModal(id) {
+  const lead = (State.crmLeadDetail && State.crmLeadDetail.id === Number(id)) ? State.crmLeadDetail : (await API.crmLeadDetail(id)).lead;
+  const members = (await API.members()).members || [];
+  const sel = (id2, label, value, options) => `<div class="form-field"><label class="form-label">${esc(label)}</label><select class="form-input" id="${id2}">${options.map(o => `<option ${o === (value || '') ? 'selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+  const val = v => esc(v == null ? '' : String(v));
+  Modal.open({
+    title: 'Edit lead',
+    body: `<div class="crm-form-grid">
+      ${crmInput('cl-contact','Lead name','Contact person','text', val(lead.contact_person))}
+      ${crmInput('cl-company','Company / stable','Organization','text', val(lead.company_name))}
+      ${crmInput('cl-title','Title / position','','text', val(lead.title_position))}
+      ${crmInput('cl-email','Email','name@example.com','email', val(lead.email))}
+      ${crmInput('cl-phone','Phone','','tel', val(lead.phone))}
+      ${crmInput('cl-mobile','Mobile','','tel', val(lead.mobile))}
+      ${crmInput('cl-website','Website','https://','text', val(lead.website))}
+      ${crmInput('cl-country','Country','','text', val(lead.country))}
+      ${crmInput('cl-city','City','','text', val(lead.city))}
+      ${sel('cl-region','Region', lead.region, ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other'])}
+      <div class="form-field"><label class="form-label">Owner</label><select class="form-input" id="cl-assignee"><option value="">Unassigned</option>${members.map(m => `<option value="${m.id}" ${m.id === lead.assigned_to ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
+      ${sel('cl-type','Lead type', lead.lead_type, ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'])}
+      ${sel('cl-status','Status', lead.status, ['New Lead','Contacted','Interested','Not Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold'])}
+      ${sel('cl-priority','Priority', lead.priority, ['Low','Medium','High','Urgent'])}
+      ${sel('cl-source','Lead source', lead.lead_source, ['Website','Facebook','Instagram','Google Ads','LinkedIn','Referral','Cold Outreach','Event','Import','Other'])}
+      ${sel('cl-facility','Facility type', lead.facility_type, ['','Breeding','Racing','Training','Multi-Purpose','Other'])}
+      ${crmInput('cl-horses','Number of horses','','number', val(lead.number_of_horses))}
+      ${crmInput('cl-specialization','Specialization','','text', val(lead.specialization))}
+      <div class="form-field crm-form-wide"><label class="form-label">Address</label><input class="form-input" id="cl-address" value="${val(lead.address)}"></div>
+      <div class="form-field crm-form-wide"><label class="form-label">Notes</label><textarea class="form-input" id="cl-notes" rows="4">${val(lead.notes)}</textarea></div>
+    </div><div class="pw-error" id="cl-error" style="display:none"></div>`,
+    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button><button class="btn-primary" onclick="saveCrmLeadEdit(${lead.id})">Save changes</button>`,
+  });
+}
+
+async function saveCrmLeadEdit(id) {
+  const err = document.getElementById('cl-error');
+  const g = i => document.getElementById(i)?.value ?? '';
+  try {
+    await API.updateCrmLead(id, {
+      contact_person: g('cl-contact'), company_name: g('cl-company'), title_position: g('cl-title'),
+      email: g('cl-email'), phone: g('cl-phone'), mobile: g('cl-mobile'), website: g('cl-website'),
+      country: g('cl-country'), city: g('cl-city'), region: g('cl-region'), address: g('cl-address'),
+      assigned_to: g('cl-assignee') ? Number(g('cl-assignee')) : '',
+      lead_type: g('cl-type'), status: g('cl-status'), priority: g('cl-priority'),
+      lead_source: g('cl-source'), facility_type: g('cl-facility'),
+      number_of_horses: g('cl-horses'), specialization: g('cl-specialization'), notes: g('cl-notes'),
+    });
+    State.crmLeadDetail = null;
+    State.crmLeads = null;
+    State.crmDashboard = null;
+    Modal.close();
+    toast('Lead updated', 'success');
+    render();
   } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
 }
 
