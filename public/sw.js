@@ -1,6 +1,6 @@
 // VGo Service Worker
 // Bump CACHE_VERSION whenever the shell assets change to invalidate old caches.
-const CACHE_VERSION = 'vgold-v1';
+const CACHE_VERSION = 'vgold-v3';
 const APP_SHELL = [
   '/',
   '/manifest.json',

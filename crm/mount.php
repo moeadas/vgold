@@ -36,6 +36,10 @@ if ($target && is_file($target) && preg_match('/\.(css|js|svg|png|jpe?g|gif|ico|
 
 $publicEndpoints = [
     'api/leads-webhook.php', 'api/cron-sync.php', 'api/microsoft-callback.php',
+    // csrf.php is not a public endpoint in the anonymous sense — it enforces
+    // login itself — but it must not be gated behind any single CRM module,
+    // since every module's native writes need the shared session CSRF token.
+    'api/csrf.php',
 ];
 $publicEmailActions = ['track_open','track_click','unsubscribe','unsubscribe_confirm'];
 $publicVoipActions = ['twiml','twiml_outbound','twiml_conference','call_status','dial_status','recording_status'];

@@ -80,6 +80,7 @@ echo '<!DOCTYPE html>
 <script src="/assets/js/views/taskoverview.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/settings.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/crm.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/crm-modules.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/assignee-picker.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/modals.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>
