@@ -82,7 +82,7 @@ function renderSidebar() {
         ${accItems.length ? `
         <div class="module-nav-group acc-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('acc')" aria-expanded="${accOpen}">
-            <span class="module-nav-mark acc">A</span><span>Accounting &amp; Finance</span><span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark acc">A</span><span>Accounting</span><span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
           </button>
           <div class="module-nav-items ${accOpen ? '' : 'collapsed'}" id="nav-group-acc">${renderItems(accItems)}</div>
         </div>` : ''}
