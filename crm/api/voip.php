@@ -48,6 +48,9 @@ switch ($action) {
     case 'call_history':
         getCallHistory();
         break;
+    case 'agents':
+        getCallAgents();
+        break;
     case 'call_stats':
         getCallStats();
         break;
@@ -370,6 +373,16 @@ function getCallHistory() {
             $params[] = $leadId;
         }
 
+        // Optional status + text search filters (native VoIP dashboard).
+        $statusFilter = trim($_GET['status'] ?? '');
+        if ($statusFilter !== '') { $where .= ' AND vc.status = ?'; $params[] = $statusFilter; }
+        $search = trim($_GET['search'] ?? '');
+        if ($search !== '') {
+            $where .= ' AND (vc.to_number LIKE ? OR vc.from_number LIKE ? OR l.company_name LIKE ? OR l.contact_person LIKE ?)';
+            $like = '%' . $search . '%';
+            array_push($params, $like, $like, $like, $like);
+        }
+
         // Role-based filtering
         $isSalesRep = !hasRole('Sales Manager');
         if ($isSalesRep) {
@@ -377,6 +390,10 @@ function getCallHistory() {
             $where .= " AND (vc.user_id = ? OR vc.lead_id IN (SELECT lead_id FROM leads WHERE assigned_to = ?))";
             $params[] = $userId;
             $params[] = $userId;
+        } else {
+            // Managers can filter the log down to a single agent.
+            $agentId = intval($_GET['user_id'] ?? 0);
+            if ($agentId) { $where .= ' AND vc.user_id = ?'; $params[] = $agentId; }
         }
 
         $calls = $db->query("
@@ -390,10 +407,36 @@ function getCallHistory() {
         ", $params)->fetchAll(PDO::FETCH_ASSOC);
 
         $total = $db->query("
-            SELECT COUNT(*) FROM voip_calls vc WHERE $where
+            SELECT COUNT(*) FROM voip_calls vc
+            LEFT JOIN leads l ON vc.lead_id = l.lead_id
+            WHERE $where
         ", $params)->fetchColumn();
 
         echo json_encode(['success' => true, 'data' => $calls, 'total' => $total]);
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+}
+
+// ──────────────────────────────────────
+// CALL AGENTS (for the manager call filter)
+// ──────────────────────────────────────
+function getCallAgents() {
+    try {
+        $db = Database::getInstance();
+        if (hasRole('Sales Manager')) {
+            $rows = $db->query(
+                "SELECT DISTINCT u.user_id, u.full_name
+                 FROM voip_calls vc JOIN users u ON u.user_id = vc.user_id
+                 ORDER BY u.full_name"
+            )->fetchAll(PDO::FETCH_ASSOC);
+        } else {
+            $rows = $db->query(
+                "SELECT user_id, full_name FROM users WHERE user_id = ?",
+                [getCurrentUserId()]
+            )->fetchAll(PDO::FETCH_ASSOC);
+        }
+        echo json_encode(['success' => true, 'data' => $rows]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
@@ -416,13 +459,25 @@ function getCallStats() {
             $params = [];
         }
 
+        // Single scan with conditional aggregation (was 6 separate queries, each
+        // re-running the sales-rep sub-select — the main cause of the slow load).
+        $row = $db->query(
+            "SELECT COUNT(*) AS total_calls,
+                    SUM(CASE WHEN DATE(created_at) = CURDATE() THEN 1 ELSE 0 END) AS today_calls,
+                    COALESCE(SUM(duration_seconds), 0) AS total_duration,
+                    COALESCE(AVG(CASE WHEN duration_seconds > 0 THEN duration_seconds END), 0) AS avg_duration,
+                    SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) AS completed,
+                    SUM(CASE WHEN outcome = 'Positive' THEN 1 ELSE 0 END) AS positive
+             FROM voip_calls $filter",
+            $params
+        )->fetch(PDO::FETCH_ASSOC);
         $stats = [
-            'total_calls'    => $db->query("SELECT COUNT(*) FROM voip_calls $filter", $params)->fetchColumn(),
-            'today_calls'    => $db->query("SELECT COUNT(*) FROM voip_calls $filter AND DATE(created_at) = CURDATE()", $params)->fetchColumn(),
-            'total_duration' => $db->query("SELECT COALESCE(SUM(duration_seconds),0) FROM voip_calls $filter", $params)->fetchColumn(),
-            'avg_duration'   => $db->query("SELECT COALESCE(AVG(duration_seconds),0) FROM voip_calls $filter AND duration_seconds > 0", $params)->fetchColumn(),
-            'completed'      => $db->query("SELECT COUNT(*) FROM voip_calls $filter AND status = 'Completed'", $params)->fetchColumn(),
-            'positive'       => $db->query("SELECT COUNT(*) FROM voip_calls $filter AND outcome = 'Positive'", $params)->fetchColumn(),
+            'total_calls'    => (int) ($row['total_calls'] ?? 0),
+            'today_calls'    => (int) ($row['today_calls'] ?? 0),
+            'total_duration' => (int) ($row['total_duration'] ?? 0),
+            'avg_duration'   => (float) ($row['avg_duration'] ?? 0),
+            'completed'      => (int) ($row['completed'] ?? 0),
+            'positive'       => (int) ($row['positive'] ?? 0),
         ];
 
         echo json_encode(['success' => true, 'data' => $stats]);

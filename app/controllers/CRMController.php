@@ -18,15 +18,17 @@ class CRMController {
     public static function dashboard() {
         self::requireCrm();
         $modules = Authz::grantedModules();
-        $stats = ['leads' => null, 'follow_ups' => null, 'overdue' => null, 'won' => null];
-        if (in_array('crm.leads', $modules, true) || in_array('crm.dashboard', $modules, true)) {
+        $hasLeads = in_array('crm.leads', $modules, true) || in_array('crm.dashboard', $modules, true);
+        $hasInter = in_array('crm.interactions', $modules, true) || in_array('crm.dashboard', $modules, true);
+        $stats = ['leads' => null, 'follow_ups' => null, 'overdue' => null, 'won' => null, 'contacted_today' => null];
+        if ($hasLeads) {
             $row = DB::fetch(
                 "SELECT COUNT(*) total, SUM(CASE WHEN lead_status = 'Won' THEN 1 ELSE 0 END) won FROM crm_leads"
             );
             $stats['leads'] = (int)($row['total'] ?? 0);
             $stats['won'] = (int)($row['won'] ?? 0);
         }
-        if (in_array('crm.interactions', $modules, true) || in_array('crm.dashboard', $modules, true)) {
+        if ($hasInter) {
             $row = DB::fetch(
                 "SELECT COUNT(*) total,
                         SUM(CASE WHEN i.next_action_date < CURDATE() THEN 1 ELSE 0 END) overdue
@@ -38,24 +40,77 @@ class CRMController {
             );
             $stats['follow_ups'] = (int)($row['total'] ?? 0);
             $stats['overdue'] = (int)($row['overdue'] ?? 0);
+            $ct = DB::fetch("SELECT COUNT(DISTINCT lead_id) c FROM crm_interactions WHERE DATE(interaction_date) = CURDATE()");
+            $stats['contacted_today'] = (int)($ct['c'] ?? 0);
         }
-        jsonResponse(['stats' => $stats, 'modules' => $modules]);
+
+        // Recent Leads feed (most recently touched)
+        $recentLeads = [];
+        if ($hasLeads) {
+            $rows = DB::fetchAll(
+                "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name,
+                        (SELECT MAX(interaction_date) FROM crm_interactions i WHERE i.lead_id = l.lead_id) AS last_interaction
+                 FROM crm_leads l LEFT JOIN users u ON u.crm_user_id = l.assigned_to
+                 ORDER BY l.updated_at DESC LIMIT 8"
+            );
+            foreach ($rows as $r) {
+                $lead = self::formatLead($r);
+                $lead['last_interaction'] = $r['last_interaction'];
+                $recentLeads[] = $lead;
+            }
+        }
+
+        // Recent Activity feed (latest interactions)
+        $recentActivity = [];
+        if ($hasInter) {
+            $rows = DB::fetchAll(
+                "SELECT i.*, l.company_name, l.contact_person, u.name AS user_name,
+                        NULL AS workflow_task_id, NULL AS workflow_task_status
+                 FROM crm_interactions i
+                 JOIN crm_leads l ON l.lead_id = i.lead_id
+                 LEFT JOIN users u ON u.crm_user_id = i.user_id
+                 ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 12"
+            );
+            $recentActivity = array_map([self::class, 'formatInteraction'], $rows);
+        }
+
+        // Email-marketing KPIs (guarded — tables may not exist on every install)
+        $email = null;
+        if (in_array('crm.email', $modules, true)) {
+            $email = ['campaigns' => 0, 'sent' => 0, 'lists' => 0, 'subscribers' => 0];
+            try { $email['campaigns']   = (int)(DB::fetch("SELECT COUNT(*) c FROM crm_email_campaigns")['c'] ?? 0); } catch (\Throwable $e) {}
+            try { $email['sent']        = (int)(DB::fetch("SELECT COALESCE(SUM(sent_count),0) c FROM crm_email_campaigns")['c'] ?? 0); } catch (\Throwable $e) {}
+            try { $email['lists']       = (int)(DB::fetch("SELECT COUNT(*) c FROM crm_email_lists")['c'] ?? 0); } catch (\Throwable $e) {}
+            try { $email['subscribers'] = (int)(DB::fetch("SELECT COUNT(*) c FROM crm_email_subscribers")['c'] ?? 0); } catch (\Throwable $e) {}
+        }
+
+        jsonResponse([
+            'stats' => $stats,
+            'modules' => $modules,
+            'recent_leads' => $recentLeads,
+            'recent_activity' => $recentActivity,
+            'email' => $email,
+        ]);
     }
 
-    public static function leads() {
-        Authz::requireModuleAccess('crm.leads');
-        $q = trim($_GET['q'] ?? '');
-        $status = trim($_GET['status'] ?? '');
+    // Shared WHERE builder for the leads list + CSV export (same scoping/filters).
+    private static function leadFilters() {
         $where = ['1=1'];
         $params = [];
+        $q = trim($_GET['q'] ?? '');
         if ($q !== '') {
             $where[] = '(l.company_name LIKE ? OR l.contact_person LIKE ? OR l.email LIKE ?)';
             $like = '%' . $q . '%';
             array_push($params, $like, $like, $like);
         }
-        if ($status !== '') {
-            $where[] = 'l.lead_status = ?';
-            $params[] = $status;
+        foreach ([['status', 'lead_status'], ['country', 'country'], ['priority', 'priority'], ['lead_type', 'lead_type'], ['lead_source', 'lead_source']] as $pair) {
+            $v = trim($_GET[$pair[0]] ?? '');
+            if ($v !== '') { $where[] = "l.$pair[1] = ?"; $params[] = $v; }
+        }
+        // Owner filter: client sends a VGold user id → map to its crm_user_id.
+        if (!empty($_GET['owner'])) {
+            $where[] = 'l.assigned_to = (SELECT crm_user_id FROM users WHERE id = ? LIMIT 1)';
+            $params[] = (int)$_GET['owner'];
         }
         if (!self::isCrmManager()) {
             $crmId = Auth::crmUserId();
@@ -67,14 +122,137 @@ class CRMController {
                 $where[] = '1=0'; // no CRM identity → see nothing rather than everything
             }
         }
+        return [$where, $params];
+    }
+
+    public static function leads() {
+        Authz::requireModuleAccess('crm.leads');
+        [$where, $params] = self::leadFilters();
+        $whereSql = implode(' AND ', $where);
+
+        $total = (int)(DB::fetch("SELECT COUNT(*) c FROM crm_leads l WHERE $whereSql", $params)['c'] ?? 0);
+
+        $sortMap = [
+            'updated_at' => 'l.updated_at', 'created_at' => 'l.created_at',
+            'company_name' => 'l.company_name', 'contact_person' => 'l.contact_person',
+            'country' => 'l.country', 'lead_status' => 'l.lead_status',
+            'priority' => "FIELD(l.priority,'Urgent','High','Medium','Low')",
+            'lead_source' => 'l.lead_source', 'lead_type' => 'l.lead_type', 'assigned_name' => 'assigned_name',
+        ];
+        $sortBy = $_GET['sort_by'] ?? '';
+        $orderCol = $sortMap[$sortBy] ?? "FIELD(l.priority,'Urgent','High','Medium','Low'), l.updated_at";
+        $dir = strtoupper($_GET['sort_dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
+
+        $perPage = min(max((int)($_GET['per_page'] ?? 50), 1), 500);
+        $page = max((int)($_GET['page'] ?? 1), 1);
+        $offset = ($page - 1) * $perPage;
+
         $rows = DB::fetchAll(
             "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name
              FROM crm_leads l LEFT JOIN users u ON u.crm_user_id = l.assigned_to
-             WHERE " . implode(' AND ', $where) . "
-             ORDER BY FIELD(l.priority, 'Urgent','High','Medium','Low'), l.updated_at DESC LIMIT 200",
+             WHERE $whereSql
+             ORDER BY $orderCol $dir LIMIT $perPage OFFSET $offset",
             $params
         );
-        jsonResponse(['leads' => array_map([self::class, 'formatLead'], $rows)]);
+        jsonResponse([
+            'leads' => array_map([self::class, 'formatLead'], $rows),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => (int)ceil(($total ?: 0) / $perPage),
+        ]);
+    }
+
+    // Stream a CSV of all leads matching the current filters (not just one page).
+    public static function exportLeads() {
+        Authz::requireModuleAccess('crm.leads');
+        [$where, $params] = self::leadFilters();
+        $rows = DB::fetchAll(
+            "SELECT l.*, u.name AS assigned_name
+             FROM crm_leads l LEFT JOIN users u ON u.crm_user_id = l.assigned_to
+             WHERE " . implode(' AND ', $where) . "
+             ORDER BY l.updated_at DESC LIMIT 5000",
+            $params
+        );
+        header('Content-Type: text/csv; charset=utf-8');
+        header('Content-Disposition: attachment; filename="leads-' . date('Ymd-His') . '.csv"');
+        $cols = ['lead_id','company_name','contact_person','email','phone','country','region','lead_type','lead_status','priority','lead_source','assigned_name','created_at','updated_at'];
+        $out = fopen('php://output', 'w');
+        fwrite($out, "\xEF\xBB\xBF");
+        fputcsv($out, $cols);
+        foreach ($rows as $r) {
+            $line = [];
+            foreach ($cols as $c) $line[] = $r[$c] ?? '';
+            fputcsv($out, $line);
+        }
+        fclose($out);
+        exit;
+    }
+
+    public static function bulkAssign() {
+        Authz::requireModuleAccess('crm.leads');
+        if (!self::isCrmManager()) jsonError('Only managers can bulk-assign leads', 403);
+        $data = input();
+        $ids = array_values(array_filter(array_map('intval', $data['lead_ids'] ?? [])));
+        if (!$ids) jsonError('No leads selected');
+        $assignedVgoldId = !empty($data['assigned_to']) ? (int)$data['assigned_to'] : null;
+        $crmId = $assignedVgoldId ? self::crmUserIdForWorkspaceMember($assignedVgoldId, true) : null;
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        DB::update('crm_leads', ['assigned_to' => $crmId], "lead_id IN ($in)", $ids);
+        jsonResponse(['ok' => true, 'updated' => count($ids)]);
+    }
+
+    public static function bulkDelete() {
+        Authz::requireModuleAccess('crm.leads');
+        if (!self::isCrmManager()) jsonError('Only managers can delete leads', 403);
+        $data = input();
+        $ids = array_values(array_filter(array_map('intval', $data['lead_ids'] ?? [])));
+        if (!$ids) jsonError('No leads selected');
+        $in = implode(',', array_fill(0, count($ids), '?'));
+        DB::query("DELETE FROM crm_interactions WHERE lead_id IN ($in)", $ids);
+        DB::query("DELETE FROM crm_leads WHERE lead_id IN ($in)", $ids);
+        jsonResponse(['ok' => true, 'deleted' => count($ids)]);
+    }
+
+    // Bulk import already-mapped rows from the SPA CSV wizard.
+    public static function importLeads() {
+        Authz::requireModuleAccess('crm.leads');
+        $data = input();
+        $leads = $data['leads'] ?? [];
+        if (!is_array($leads) || !count($leads)) jsonError('No rows to import');
+        $dedupe = !empty($data['dedupe']);
+        $creatorCrmId = self::crmUserIdForWorkspaceMember(Auth::userId(), true);
+        $inserted = 0; $skipped = 0;
+        foreach ($leads as $row) {
+            if (!is_array($row)) { $skipped++; continue; }
+            $company = trim((string)($row['company_name'] ?? ''));
+            $contact = trim((string)($row['contact_person'] ?? ''));
+            if ($company === '' && $contact === '') { $skipped++; continue; }
+            $email = self::nullable($row['email'] ?? null);
+            if ($dedupe) {
+                $dup = null;
+                if ($email) $dup = DB::fetch("SELECT lead_id FROM crm_leads WHERE email = ? LIMIT 1", [$email]);
+                if (!$dup && $company !== '') $dup = DB::fetch("SELECT lead_id FROM crm_leads WHERE company_name = ? AND IFNULL(contact_person,'') = ? LIMIT 1", [$company, $contact]);
+                if ($dup) { $skipped++; continue; }
+            }
+            DB::insert('crm_leads', [
+                'company_name' => $company ?: null,
+                'contact_person' => $contact ?: null,
+                'email' => $email,
+                'phone' => self::nullable($row['phone'] ?? null),
+                'country' => self::nullable($row['country'] ?? null) ?: 'Unknown',
+                'region' => self::choice($row['region'] ?? 'Other', ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other'], 'Other'),
+                'lead_type' => self::choice($row['lead_type'] ?? 'Other', ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'], 'Other'),
+                'lead_status' => self::choice($row['lead_status'] ?? 'New Lead', ['New Lead','Contacted','Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold','Not Interested'], 'New Lead'),
+                'priority' => self::choice($row['priority'] ?? 'Medium', ['Low','Medium','High','Urgent'], 'Medium'),
+                'lead_source' => self::choice($row['lead_source'] ?? 'Import', ['Website','Facebook','Instagram','Google Ads','LinkedIn','Referral','Cold Outreach','Event','Import','Other'], 'Import'),
+                'notes' => self::nullable($row['notes'] ?? null),
+                'assigned_to' => $creatorCrmId,
+                'created_by' => $creatorCrmId,
+            ]);
+            $inserted++;
+        }
+        jsonResponse(['ok' => true, 'inserted' => $inserted, 'skipped' => $skipped]);
     }
 
     public static function leadOptions() {
@@ -122,17 +300,46 @@ class CRMController {
 
     public static function interactions() {
         Authz::requireModuleAccess('crm.interactions');
-        $scopeSql = '';
+        // Scope clause (shared by list, total, and type-counts).
+        $scope = ['1=1'];
         $scopeParams = [];
         if (!self::isCrmManager()) {
             $crmId = Auth::crmUserId();
             if ($crmId) {
-                $scopeSql = ' WHERE (l.assigned_to = ? OR l.created_by = ? OR i.user_id = ?)';
-                $scopeParams = [$crmId, $crmId, $crmId];
+                $scope[] = '(l.assigned_to = ? OR l.created_by = ? OR i.user_id = ?)';
+                array_push($scopeParams, $crmId, $crmId, $crmId);
             } else {
-                $scopeSql = ' WHERE 1=0';
+                $scope[] = '1=0';
             }
         }
+        if (!empty($_GET['lead_id'])) { $scope[] = 'i.lead_id = ?'; $scopeParams[] = (int)$_GET['lead_id']; }
+        $scopeSql = implode(' AND ', $scope);
+
+        // Type counts (respect scope + lead filter, but NOT the active type filter).
+        $typeCounts = [];
+        foreach (DB::fetchAll(
+            "SELECT i.interaction_type t, COUNT(*) c
+             FROM crm_interactions i JOIN crm_leads l ON l.lead_id = i.lead_id
+             WHERE $scopeSql GROUP BY i.interaction_type", $scopeParams) as $r) {
+            $typeCounts[$r['t']] = (int)$r['c'];
+        }
+
+        // Add the type + follow-up filters on top of the scope for the actual list.
+        $where = $scope;
+        $params = $scopeParams;
+        $type = trim($_GET['type'] ?? '');
+        if ($type !== '') { $where[] = 'i.interaction_type = ?'; $params[] = $type; }
+        if (!empty($_GET['follow_up'])) { $where[] = "i.next_action IS NOT NULL AND TRIM(i.next_action) <> ''"; }
+        $whereSql = implode(' AND ', $where);
+
+        $total = (int)(DB::fetch(
+            "SELECT COUNT(*) c FROM crm_interactions i JOIN crm_leads l ON l.lead_id = i.lead_id WHERE $whereSql",
+            $params
+        )['c'] ?? 0);
+        $perPage = min(max((int)($_GET['per_page'] ?? 30), 1), 200);
+        $page = max((int)($_GET['page'] ?? 1), 1);
+        $offset = ($page - 1) * $perPage;
+
         $rows = DB::fetchAll(
             "SELECT i.*, l.company_name, l.contact_person, u.name AS user_name,
                     ctl.task_id AS workflow_task_id, t.status AS workflow_task_status
@@ -140,11 +347,30 @@ class CRMController {
              JOIN crm_leads l ON l.lead_id = i.lead_id
              LEFT JOIN users u ON u.crm_user_id = i.user_id
              LEFT JOIN crm_task_links ctl ON ctl.crm_interaction_id = i.interaction_id
-             LEFT JOIN tasks t ON t.id = ctl.task_id" . $scopeSql . "
-             ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 200",
-            $scopeParams
+             LEFT JOIN tasks t ON t.id = ctl.task_id
+             WHERE $whereSql
+             ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT $perPage OFFSET $offset",
+            $params
         );
-        jsonResponse(['interactions' => array_map([self::class, 'formatInteraction'], $rows)]);
+        jsonResponse([
+            'interactions' => array_map([self::class, 'formatInteraction'], $rows),
+            'total' => $total,
+            'page' => $page,
+            'per_page' => $perPage,
+            'pages' => (int)ceil(($total ?: 0) / $perPage),
+            'type_counts' => $typeCounts,
+        ]);
+    }
+
+    public static function deleteInteraction($id) {
+        Authz::requireModuleAccess('crm.interactions');
+        if (!self::isCrmManager()) jsonError('Only managers can delete interactions', 403);
+        $id = (int)$id;
+        $row = DB::fetch("SELECT interaction_id FROM crm_interactions WHERE interaction_id = ?", [$id]);
+        if (!$row) jsonError('Interaction not found', 404);
+        DB::query("DELETE FROM crm_task_links WHERE crm_interaction_id = ?", [$id]);
+        DB::query("DELETE FROM crm_interactions WHERE interaction_id = ?", [$id]);
+        jsonResponse(['ok' => true]);
     }
 
     // Native lead detail: the single lead plus its full interaction/follow-up
@@ -346,14 +572,17 @@ class CRMController {
             'display_name' => $row['contact_person'] ?: $row['company_name'] ?: ('Lead #' . $row['lead_id']),
             'email' => $row['email'],
             'phone' => $row['phone'],
+            'city' => $row['city'] ?? null,
             'country' => $row['country'],
             'region' => $row['region'],
             'lead_type' => $row['lead_type'],
             'status' => $row['lead_status'],
             'priority' => $row['priority'],
+            'lead_source' => $row['lead_source'] ?? null,
             'notes' => $row['notes'],
             'assigned_to' => $row['assigned_vgold_id'] ? (int)$row['assigned_vgold_id'] : null,
             'assigned_name' => $row['assigned_name'],
+            'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'],
         ];
     }

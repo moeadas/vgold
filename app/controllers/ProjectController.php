@@ -462,10 +462,10 @@ class ProjectController {
         $parentId = $data['parent_id'] ?? null;
         $isCategory = $parentId === null;
         
-        // Category creation: admin only
-        if ($isCategory) {
-            Auth::requireAdmin();
-        } else {
+        // Category creation: any authenticated workspace member may create a
+        // category. Auth::requireAuth() already ran in the router, and the insert
+        // below scopes the row to Auth::workspaceId(), so no admin gate is needed.
+        if (!$isCategory) {
             // Project / sub-project creation. The parent may be a category
             // (parent_id IS NULL) OR another project (C3 — nested sub-projects).
             // requireProjectOrCategoryAccess verifies the parent exists in this

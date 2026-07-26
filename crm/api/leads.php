@@ -51,38 +51,29 @@ function handleGetRequest($db, $action, $currentUser) {
         case 'list':   getLeadsList($db, $currentUser); break;
         case 'detail': getLeadDetail($db, $currentUser); break;
         case 'stats':  getLeadStats($db, $currentUser); break;
-        case 'search': searchLeads($db, $currentUser); break;
+        case 'search': searchLeads($db); break;
         default:       getLeadsList($db, $currentUser);
     }
 }
 
 /**
- * Quick search leads by name, company, phone — used by link-to-lead in WhatsApp unmatched.
- * Role-scoped: non-managers only search leads assigned to / created by them.
+ * Quick search leads by name, company, phone — used by link-to-lead in WhatsApp unmatched
  */
-function searchLeads($db, $currentUser) {
+function searchLeads($db) {
     $q = trim($_GET['q'] ?? '');
     if (strlen($q) < 2) {
         echo json_encode(['success' => true, 'data' => []]);
         return;
     }
     $like = '%' . $q . '%';
-    $params = [$like, $like, $like, $like, $like];
-    $scope  = '';
-    if (!hasRole('Sales Manager')) {
-        $scope    = ' AND (assigned_to = ? OR created_by = ?)';
-        $params[] = $currentUser['user_id'];
-        $params[] = $currentUser['user_id'];
-    }
     $stmt = $db->prepare("
-        SELECT lead_id, contact_person, company_name, phone, mobile, email, lead_status AS status
+        SELECT lead_id, contact_person, company_name, phone, mobile, email, status
         FROM leads
-        WHERE (contact_person LIKE ? OR company_name LIKE ? OR phone LIKE ? OR mobile LIKE ? OR email LIKE ?)
-        $scope
+        WHERE contact_person LIKE ? OR company_name LIKE ? OR phone LIKE ? OR mobile LIKE ? OR email LIKE ?
         ORDER BY contact_person ASC
         LIMIT 15
     ");
-    $stmt->execute($params);
+    $stmt->execute([$like, $like, $like, $like, $like]);
     $results = $stmt->fetchAll(PDO::FETCH_ASSOC);
     echo json_encode(['success' => true, 'data' => $results]);
 }
@@ -95,11 +86,6 @@ function handlePostRequest($db, $action, $currentUser) {
     $token = $data['csrf_token'] ?? null;
     if (!verifyCSRFToken($token)) {
         jsonError('Your session has expired. Please refresh the page and try again.', 403);
-    }
-
-    // Viewers are read-only — writes require at least Sales Rep
-    if (!hasRole('Sales Rep')) {
-        jsonError('Your account is view-only. Ask an administrator for Sales Rep access.', 403);
     }
 
     switch ($action) {
@@ -116,11 +102,6 @@ function handlePutRequest($db, $action, $currentUser) {
     $token = $data['csrf_token'] ?? null;
     if (!verifyCSRFToken($token)) {
         jsonError('Your session has expired. Please refresh the page and try again.', 403);
-    }
-
-    // Viewers are read-only — writes require at least Sales Rep
-    if (!hasRole('Sales Rep')) {
-        jsonError('Your account is view-only. Ask an administrator for Sales Rep access.', 403);
     }
 
     switch ($action) {
@@ -148,7 +129,7 @@ function handleDeleteRequest($db, $action, $currentUser) {
     deleteLead($db, $leadId, $currentUser);
 }
 
-// ─── Access helpers ─────────────────────────────────────────
+// ─── Access helpers ─────────────────────────────────────
 
 /**
  * Verify the current user can access / edit a specific lead.
@@ -175,7 +156,7 @@ function requireLeadAccess($db, $leadId, $currentUser) {
     jsonError('Access denied — this lead is not assigned to you.', 403);
 }
 
-// ─── GET Handlers ───────────────────────────────────────────
+// ─── GET Handlers ───────────────────────────────────────
 
 function getLeadsList($db, $currentUser) {
     $page   = max(1, intval($_GET['page'] ?? 1));
@@ -225,7 +206,7 @@ function getLeadsList($db, $currentUser) {
     $countStmt->execute($params);
     $total = $countStmt->fetch()['total'];
 
-    // ── Sorting ────────────────────────────────────────────────────────
+    // ── Sorting ──────────────────────────────────────────────
     $allowedSortColumns = [
         'updated_at'     => 'l.updated_at',
         'created_at'     => 'l.created_at',
@@ -323,36 +304,15 @@ function getLeadDetail($db, $currentUser) {
 }
 
 function getLeadStats($db, $currentUser) {
-    // Role-scoped: non-managers only see stats for their own leads
-    $scope  = '';
-    $params = [];
-    if (!hasRole('Sales Manager')) {
-        $scope  = ' AND (assigned_to = ? OR created_by = ?)';
-        $params = [$currentUser['user_id'], $currentUser['user_id']];
-    }
-
     $stats = [];
-
-    $stmt = $db->prepare("SELECT COUNT(*) as c FROM leads WHERE 1=1 $scope");
-    $stmt->execute($params);
-    $stats['total'] = $stmt->fetch()['c'];
-
-    $stmt = $db->prepare("SELECT lead_status, COUNT(*) as count FROM leads WHERE 1=1 $scope GROUP BY lead_status");
-    $stmt->execute($params);
-    $stats['by_status'] = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    $stmt = $db->prepare("SELECT country, COUNT(*) as count FROM leads WHERE country IS NOT NULL AND country != '' $scope GROUP BY country ORDER BY count DESC");
-    $stmt->execute($params);
-    $stats['by_country'] = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    $stmt = $db->prepare("SELECT COUNT(*) as c FROM leads WHERE MONTH(created_at) = MONTH(NOW()) AND YEAR(created_at) = YEAR(NOW()) $scope");
-    $stmt->execute($params);
-    $stats['this_month'] = $stmt->fetch()['c'];
-
+    $stats['total']      = $db->query("SELECT COUNT(*) as c FROM leads")->fetch()['c'];
+    $stats['by_status']  = $db->query("SELECT lead_status, COUNT(*) as count FROM leads GROUP BY lead_status")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $stats['by_country'] = $db->query("SELECT country, COUNT(*) as count FROM leads WHERE country IS NOT NULL AND country != '' GROUP BY country ORDER BY count DESC")->fetchAll(PDO::FETCH_KEY_PAIR);
+    $stats['this_month'] = $db->query("SELECT COUNT(*) as c FROM leads WHERE MONTH(created_at) = MONTH(NOW()) AND YEAR(created_at) = YEAR(NOW())")->fetch()['c'];
     jsonSuccess('Stats retrieved', $stats);
 }
 
-// ─── POST / PUT Handlers ──────────────────────────────────────
+// ─── POST / PUT Handlers ────────────────────────────────
 
 function emptyToNull($value) {
     return (isset($value) && $value !== '') ? $value : null;
@@ -420,37 +380,28 @@ function createLead($db, $data, $currentUser) {
         }
     }
 
-    // ── Automation triggers ──────────────────────────────────────
-    // NOTE: these must run BEFORE jsonSuccess() — it exit()s, so anything
-    // after it never executes. Wrapped so an automation failure can never
-    // break the lead-save response.
-    try {
-        $leadStmt = $db->prepare("SELECT * FROM leads WHERE lead_id = ?");
-        $leadStmt->execute([$leadId]);
-        $freshLead = $leadStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    jsonSuccess('Lead created successfully', ['lead_id' => $leadId]);
 
-        $autoCtx = [
-            'lead_id'      => intval($leadId),
-            'lead'         => $freshLead,
-            'current_user' => $currentUser,
-        ];
-        fireAutomationTrigger('lead_created', $autoCtx);
+    // ── Automation triggers ──────────────────────────────
+    // Fire after response so they don't block the user
+    $autoCtx = [
+        'lead_id'      => $leadId,
+        'lead'         => null, // will be re-fetched by engine
+        'current_user' => $currentUser,
+    ];
+    fireAutomationTrigger('lead_created', $autoCtx);
 
-        // Source-match trigger
-        if (!empty($freshLead['lead_source'])) {
-            fireAutomationTrigger('lead_source_match', $autoCtx);
-        }
-
-        // Assignment trigger (first-time assign)
-        if ($assignedTo) {
-            $autoCtx['new_assigned'] = $assignedTo;
-            fireAutomationTrigger('lead_assigned', $autoCtx);
-        }
-    } catch (\Throwable $ae) {
-        error_log("Lead-create automation error: " . $ae->getMessage());
+    // Source-match trigger
+    $autoCtx['lead'] = $db->query("SELECT * FROM leads WHERE lead_id = ?", [$leadId])->fetch(PDO::FETCH_ASSOC);
+    if (!empty($autoCtx['lead']['lead_source'])) {
+        fireAutomationTrigger('lead_source_match', $autoCtx);
     }
 
-    jsonSuccess('Lead created successfully', ['lead_id' => $leadId]);
+    // Assignment trigger (first-time assign)
+    if ($assignedTo) {
+        $autoCtx['new_assigned'] = $assignedTo;
+        fireAutomationTrigger('lead_assigned', $autoCtx);
+    }
 }
 
 function updateLead($db, $data, $currentUser) {
@@ -532,43 +483,35 @@ function updateLead($db, $data, $currentUser) {
         }
     }
 
-    // ── Automation triggers ──────────────────────────────────────
-    // Must run BEFORE jsonSuccess() (it exit()s). Failures never break the save.
-    try {
-        $updStmt = $db->prepare("SELECT * FROM leads WHERE lead_id = ?");
-        $updStmt->execute([$data['lead_id']]);
-        $updatedLead = $updStmt->fetch(PDO::FETCH_ASSOC) ?: null;
+    jsonSuccess('Lead updated successfully');
 
-        $autoCtx = [
-            'lead_id'      => intval($data['lead_id']),
-            'lead'         => $updatedLead,
-            'current_user' => $currentUser,
-        ];
+    // ── Automation triggers ──────────────────────────────
+    $updatedLead = $db->query("SELECT * FROM leads WHERE lead_id = ?", [$data['lead_id']])->fetch(PDO::FETCH_ASSOC);
+    $autoCtx = [
+        'lead_id'      => intval($data['lead_id']),
+        'lead'         => $updatedLead,
+        'current_user' => $currentUser,
+    ];
 
-        // Status changed?
-        $oldStatus = $data['_old_lead_status'] ?? null;
-        $newStatus = $data['lead_status'] ?? ($updatedLead['lead_status'] ?? null);
-        if ($oldStatus && $newStatus && $oldStatus !== $newStatus) {
-            $autoCtx['old_status'] = $oldStatus;
-            $autoCtx['new_status'] = $newStatus;
-            fireAutomationTrigger('lead_status_changed', $autoCtx);
-        }
-
-        // Assignment changed?
-        if ($newAssignedTo && $newAssignedTo != $previousAssignedTo) {
-            $autoCtx['old_assigned'] = $previousAssignedTo;
-            $autoCtx['new_assigned'] = $newAssignedTo;
-            if ($previousAssignedTo) {
-                fireAutomationTrigger('lead_reassigned', $autoCtx);
-            } else {
-                fireAutomationTrigger('lead_assigned', $autoCtx);
-            }
-        }
-    } catch (\Throwable $ae) {
-        error_log("Lead-update automation error: " . $ae->getMessage());
+    // Status changed?
+    $oldStatus = $data['_old_lead_status'] ?? null;
+    $newStatus = $data['lead_status'] ?? $updatedLead['lead_status'] ?? null;
+    if ($oldStatus && $newStatus && $oldStatus !== $newStatus) {
+        $autoCtx['old_status'] = $oldStatus;
+        $autoCtx['new_status'] = $newStatus;
+        fireAutomationTrigger('lead_status_changed', $autoCtx);
     }
 
-    jsonSuccess('Lead updated successfully');
+    // Assignment changed?
+    if ($newAssignedTo && $newAssignedTo != $previousAssignedTo) {
+        $autoCtx['old_assigned'] = $previousAssignedTo;
+        $autoCtx['new_assigned'] = $newAssignedTo;
+        if ($previousAssignedTo) {
+            fireAutomationTrigger('lead_reassigned', $autoCtx);
+        } else {
+            fireAutomationTrigger('lead_assigned', $autoCtx);
+        }
+    }
 }
 
 function updateLeadStatusAPI($db, $data, $currentUser) {
@@ -588,26 +531,19 @@ function updateLeadStatusAPI($db, $data, $currentUser) {
     $stmt = $db->prepare("UPDATE leads SET lead_status = ? WHERE lead_id = ?");
     $stmt->execute([$status, $leadId]);
     logActivity($currentUser['user_id'], 'Status Change', 'Lead', $leadId, 'Changed status to: ' . $status);
-
-    // Automation: status changed — must run BEFORE jsonSuccess() (it exit()s).
-    if ($oldStatus && $oldStatus !== $status) {
-        try {
-            $lStmt = $db->prepare("SELECT * FROM leads WHERE lead_id = ?");
-            $lStmt->execute([$leadId]);
-            $lead = $lStmt->fetch(PDO::FETCH_ASSOC) ?: null;
-            fireAutomationTrigger('lead_status_changed', [
-                'lead_id'      => intval($leadId),
-                'lead'         => $lead,
-                'old_status'   => $oldStatus,
-                'new_status'   => $status,
-                'current_user' => $currentUser,
-            ]);
-        } catch (\Throwable $ae) {
-            error_log("Lead-status automation error: " . $ae->getMessage());
-        }
-    }
-
     jsonSuccess('Status updated successfully');
+
+    // Automation: status changed
+    if ($oldStatus && $oldStatus !== $status) {
+        $lead = $db->query("SELECT * FROM leads WHERE lead_id = ?", [$leadId])->fetch(PDO::FETCH_ASSOC);
+        fireAutomationTrigger('lead_status_changed', [
+            'lead_id'      => intval($leadId),
+            'lead'         => $lead,
+            'old_status'   => $oldStatus,
+            'new_status'   => $status,
+            'current_user' => $currentUser,
+        ]);
+    }
 }
 
 function deleteLead($db, $leadId, $currentUser) {
@@ -623,7 +559,7 @@ function deleteLead($db, $leadId, $currentUser) {
     jsonSuccess('Lead deleted successfully');
 }
 
-// ─── Bulk Operations (Parameterized) ──────────────────────────────────
+// ─── Bulk Operations (Parameterized) ────────────────────
 
 function bulkAssignLeads($db, $data, $currentUser) {
     if (!hasRole('Sales Manager')) jsonError('Permission denied', 403);

@@ -6,7 +6,6 @@
  * RUN ONCE, THEN DELETE THIS FILE.
  */
 require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 header('Content-Type: application/json');
 

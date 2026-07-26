@@ -104,7 +104,11 @@ function nav(screen) {
   State.screen = screen;
   State.activeProjectId = null;
   State.activeProject = null;
-  if (screen === 'projects') State.unreadCounts = null;
+  // Perf: don't discard cached per-project unread chat counts on every Projects
+  // navigation — that forced an awaited API.unreadChatCounts() round-trip before
+  // the page could paint. The cache is kept fresh by applyRealtimeRefresh()
+  // (nulls it on any server state change) and by the project view zeroing a
+  // project's count when its chat is opened, so cached counts render instantly.
   State.activeCategoryId = null;
   updateHash();
   render();
@@ -150,7 +154,20 @@ function goProject(id) {
   setTimeout(() => updateHash(), 200); // Update hash after project loads so we have the name
 }
 
+// Monotonic render token. render() is async and awaits the active view's data
+// before touching the DOM, so several invocations (a nav click, the background
+// projects-load callback, a realtime poll, a hashchange) can be in flight at
+// once. We stamp each call and, right before writing to the DOM, bail out if a
+// newer render has started — this prevents a slow earlier render from
+// overwriting fresher content and avoids redundant full-DOM rebuilds + rewiring.
+let _renderSeq = 0;
+// Tracks the modal open-state of the last FULL shell render. When it changes we
+// must do a full rebuild (modal markup lives outside #main-content); otherwise a
+// navigation only swaps the content area (see render()).
+let _lastModalSig = null;
+
 async function render() {
+  const _myRender = ++_renderSeq;
   const app = document.getElementById('app');
   if (!State.user) {
     try {
@@ -189,6 +206,21 @@ async function render() {
       case 'crm-automation':
       case 'crm-reports':
       case 'crm-knowledge': mainContent = await renderCrmModule(State.screen.replace('-', '.')); break;
+      // ===== Accounting & Finance (native, explicit-grant access) =====
+      case 'acc-dashboard': mainContent = await renderAccDashboard(); break;
+      case 'acc-invoices': mainContent = await renderAccDocuments('invoice'); break;
+      case 'acc-bills': mainContent = await renderAccDocuments('bill'); break;
+      case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;
+      case 'acc-contacts': mainContent = await renderAccContacts(); break;
+      case 'acc-contact': mainContent = await renderAccContact(State.accContactId); break;
+      case 'acc-banking': mainContent = await renderAccBanking(); break;
+      case 'acc-account': mainContent = await renderAccAccount(State.accAccountId); break;
+      case 'acc-reconciliation': mainContent = await renderAccReconciliation(State.accReconciliationId); break;
+      case 'acc-ledger': mainContent = await renderAccLedger(); break;
+      case 'acc-catalog': mainContent = await renderAccCatalog(); break;
+      case 'acc-recurring': mainContent = await renderAccRecurring(); break;
+      case 'acc-reports': mainContent = await renderAccReports(); break;
+      case 'acc-settings': mainContent = await renderAccSettings(); break;
       default: mainContent = await renderMyTasks();
     }
   } catch(e) {
@@ -200,6 +232,35 @@ async function render() {
       <button class="btn-primary" onclick="render()">Retry</button>
     </div></div>`;
   }
+
+  // A newer render superseded this one while we awaited data — skip the DOM
+  // write and post-render wiring; the newer render will paint the fresh state.
+  if (_myRender !== _renderSeq) return;
+
+  // Perf: once the shell exists, a tab switch only needs to replace #main-content
+  // and refresh the sidebar / mobile-nav active state. Rebuilding the whole
+  // document (topbar, search, notifications, modals, sidebar) on every navigation
+  // is the main cause of tab-switch lag. Fall back to a full rebuild on first
+  // paint and whenever a modal's open state changes (modal markup lives outside
+  // #main-content).
+  const _shell = document.querySelector('.app');
+  const _modalSig = (State.askOpen ? 'A' : '') + (State.filesOpen ? 'F' : '');
+  if (_shell && _modalSig === _lastModalSig && document.getElementById('main-content')) {
+    document.getElementById('main-content').innerHTML = mainContent;
+    const _sb = document.querySelector('.sidebar');
+    if (_sb) _sb.outerHTML = renderSidebar();
+    document.querySelectorAll('.mobile-nav-btn').forEach(b => {
+      const n = b.dataset.nav;
+      const on = (n === 'mytasks' && State.screen === 'mytasks') ||
+        (n === 'projects' && (State.screen === 'projects' || State.screen === 'category' || State.screen === 'project')) ||
+        (n === 'messages' && State.screen === 'messages') ||
+        (n === 'settings' && State.screen === 'settings');
+      b.classList.toggle('active', on);
+    });
+    runPostRenderWiring();
+    return;
+  }
+  _lastModalSig = _modalSig;
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
   app.innerHTML = `
@@ -259,11 +320,16 @@ async function render() {
     ${renderFilesModal()}
   `;
   
+  runPostRenderWiring();
+}
+
+// Post-render wiring shared by both the full-shell rebuild and the fast
+// content-only swap in render().
+function runPostRenderWiring() {
   // Wire up day plan links after render
   if (State.screen === 'mytasks') wireDayPlanLinks();
   // Wire up task page assignee picker after render
   if (State.screen === 'task') renderTaskPageAssigneePicker();
-  // Wire up agenda form assignee dropdown after render
   // B6: enable per-user drag-to-arrange on the project/category card grids.
   if (State.screen === 'projects' && typeof initCardDragging === 'function') {
     initCardDragging('.project-grid', 0);
@@ -271,7 +337,6 @@ async function render() {
   if (State.screen === 'category' && typeof initCardDragging === 'function' && State.activeCategoryId) {
     initCardDragging('.project-grid', State.activeCategoryId);
   }
-
 }
 
 // Keyboard shortcuts
@@ -321,7 +386,19 @@ function routeFromHash() {
   else if (hash === 'taskoverview' || hash === 'alltasks') { State.screen = 'taskoverview'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
-  else if (hash === 'settings') { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
+  else if (hash === 'settings' || hash.startsWith('settings-')) { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
+  else if (parts[0] === 'acc' && parts[1]) {
+    // #acc/<screen> and #acc/<detail>/<id>
+    const detail = { doc: 'accDocId', contact: 'accContactId', account: 'accAccountId', reconciliation: 'accReconciliationId' };
+    State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
+    if (detail[parts[1]] && parts[2]) {
+      State.screen = 'acc-' + parts[1];
+      State[detail[parts[1]]] = parseInt(parts[2]) || null;
+    } else {
+      const knownAcc = ['dashboard','invoices','bills','contacts','banking','ledger','catalog','recurring','reports','settings'];
+      State.screen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
+    }
+  }
   else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2]) {
     State.screen = 'crm-lead';
     State.activeCrmLeadId = parseInt(parts[2]) || null;
@@ -360,6 +437,14 @@ function updateHash() {
   if (State.screen.startsWith('crm-')) {
     hash = 'crm/' + State.screen.slice(4);
   }
+  if (State.screen.startsWith('acc-')) {
+    hash = 'acc/' + State.screen.slice(4);
+    const accDetailIds = {
+      'acc-doc': State.accDocId, 'acc-contact': State.accContactId,
+      'acc-account': State.accAccountId, 'acc-reconciliation': State.accReconciliationId,
+    };
+    if (accDetailIds[State.screen]) hash += '/' + accDetailIds[State.screen];
+  }
   if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
     hash = 'crm/lead/' + State.activeCrmLeadId;
   } else if (State.screen === 'task' && State.activeTaskId) {
@@ -378,8 +463,24 @@ function updateHash() {
   if (location.hash !== '#' + hash) history.pushState(null, '', '#' + hash);
 }
 
-window.addEventListener('popstate', () => { routeFromHash(); render(); });
-window.addEventListener('hashchange', () => { routeFromHash(); render(); });
+// In-page anchor links (the Settings section index #settings-team etc., and the
+// skip link #main-content) must only scroll — they must NOT be treated as a
+// route, otherwise routeFromHash()'s catch-all sends the user back to Home.
+function isInPageAnchor(h) {
+  return h.startsWith('settings-') || h === 'main-content';
+}
+function handleHashNav() {
+  const h = location.hash.replace('#', '');
+  if (isInPageAnchor(h)) {
+    const el = document.getElementById(h);
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return; // keep the current screen
+  }
+  routeFromHash();
+  render();
+}
+window.addEventListener('popstate', handleHashNav);
+window.addEventListener('hashchange', handleHashNav);
 
 // Mobile nav event delegation (survives re-renders)
 document.addEventListener('click', (e) => {

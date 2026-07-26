@@ -76,7 +76,7 @@ if (!$isPublicEndpoint) {
     elseif (strpos($path, 'automation') !== false) $module = 'crm.automation';
     elseif (strpos($path, 'report') !== false || strpos($path, 'export') !== false || strpos($path, 'sheets') !== false) $module = 'crm.reports';
     elseif (strpos($path, 'knowledge') !== false || strpos($path, 'quick-guides') !== false) $module = 'crm.knowledge';
-    elseif (preg_match('#(?:^|/)(?:users|user-form|settings)\.php$#', $path) || $path === 'api/switch-user.php') {
+    elseif (preg_match('#(?:^|/)(?:users|user-form|settings)\.php$#', $path) || $path === 'api/switch-user.php' || $path === 'api/crm-settings.php') {
         // User management, settings, and admin impersonation require VGold admin.
         Auth::requireAdmin();
         $module = null;

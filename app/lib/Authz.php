@@ -14,12 +14,55 @@ class Authz {
         'crm.knowledge' => 'Knowledge hub',
     ];
 
+    /**
+     * Accounting & Finance modules.
+     *
+     * IMPORTANT — these do NOT follow the CRM rule where every workspace admin
+     * is implicitly granted everything. Accounting is explicit-grant only: a
+     * user sees it if, and only if, a row exists in user_module_access (or they
+     * are the bootstrap owner below). That keeps finance data invisible to
+     * other admins until it is deliberately shared from Settings → Team.
+     */
+    public const ACC_MODULES = [
+        'acc.dashboard'  => 'Finance overview',
+        'acc.invoices'   => 'Invoices',
+        'acc.bills'      => 'Bills & expenses',
+        'acc.contacts'   => 'Customers & vendors',
+        'acc.banking'    => 'Banking & transactions',
+        'acc.accounting' => 'Journal & chart of accounts',
+        'acc.catalog'    => 'Items, categories & taxes',
+        'acc.recurring'  => 'Recurring schedules',
+        'acc.reports'    => 'Financial reports',
+        'acc.settings'   => 'Accounting settings',
+    ];
+
+    /**
+     * Bootstrap owner: always holds every accounting module so the app can
+     * never lock itself out. Additional people are granted from Settings.
+     */
+    public const ACC_OWNER_EMAIL = 'm.abuadas@victorygenomics.com';
+
+    public static function allModules() {
+        return self::CRM_MODULES + self::ACC_MODULES;
+    }
+
     public static function moduleDefinitions() {
-        return array_map(
-            fn($key, $label) => ['key' => $key, 'label' => $label],
-            array_keys(self::CRM_MODULES),
-            array_values(self::CRM_MODULES)
-        );
+        $out = [];
+        foreach (self::CRM_MODULES as $key => $label) {
+            $out[] = ['key' => $key, 'label' => $label, 'group' => 'crm', 'group_label' => 'CRM', 'admin_implicit' => true];
+        }
+        foreach (self::ACC_MODULES as $key => $label) {
+            $out[] = ['key' => $key, 'label' => $label, 'group' => 'acc', 'group_label' => 'Accounting & Finance', 'admin_implicit' => false];
+        }
+        return $out;
+    }
+
+    /** Is this user the hard-wired accounting owner? */
+    public static function isAccOwner($userId = null) {
+        $userId = $userId ?? Auth::userId();
+        if (!$userId) return false;
+        $row = DB::fetch("SELECT email FROM users WHERE id = ?", [$userId]);
+        return $row && strcasecmp(trim($row['email']), self::ACC_OWNER_EMAIL) === 0;
     }
 
     public static function grantedModules($userId = null, $workspaceId = null) {
@@ -29,29 +72,61 @@ class Authz {
             "SELECT wm.role FROM workspace_members wm WHERE wm.user_id = ? AND wm.workspace_id = ?",
             [$userId, $workspaceId]
         );
-        if ($user && $user['role'] === 'admin') return array_keys(self::CRM_MODULES);
 
         $rows = DB::fetchAll(
             "SELECT module_key FROM user_module_access WHERE workspace_id = ? AND user_id = ? AND can_access = 1",
             [$workspaceId, $userId]
         );
-        return array_values(array_filter(
-            array_map(fn($row) => $row['module_key'], $rows),
-            fn($key) => isset(self::CRM_MODULES[$key])
-        ));
+        $stored = array_map(fn($row) => $row['module_key'], $rows);
+
+        // CRM: workspace admins implicitly hold every module (unchanged behaviour).
+        $crm = ($user && $user['role'] === 'admin')
+            ? array_keys(self::CRM_MODULES)
+            : array_values(array_filter($stored, fn($key) => isset(self::CRM_MODULES[$key])));
+
+        // Accounting: explicit grants only, plus the bootstrap owner.
+        $acc = self::isAccOwner($userId)
+            ? array_keys(self::ACC_MODULES)
+            : array_values(array_filter($stored, fn($key) => isset(self::ACC_MODULES[$key])));
+
+        return array_values(array_merge($crm, $acc));
     }
 
     public static function hasModuleAccess($moduleKey) {
-        if (!isset(self::CRM_MODULES[$moduleKey])) return false;
+        $all = self::allModules();
+        if (!isset($all[$moduleKey])) return false;
         return in_array($moduleKey, self::grantedModules(), true);
     }
 
     public static function hasAnyCrmAccess() {
-        return count(self::grantedModules()) > 0;
+        return count(array_filter(self::grantedModules(), fn($k) => isset(self::CRM_MODULES[$k]))) > 0;
+    }
+
+    public static function hasAnyAccAccess() {
+        return count(array_filter(self::grantedModules(), fn($k) => isset(self::ACC_MODULES[$k]))) > 0;
     }
 
     public static function requireModuleAccess($moduleKey) {
         if (!self::hasModuleAccess($moduleKey)) jsonError('You do not have access to this CRM module', 403);
+    }
+
+    /** Guard for every /api/acc/* endpoint. */
+    public static function requireAccModule($moduleKey) {
+        if (!self::hasModuleAccess($moduleKey)) {
+            jsonError('You do not have access to the Accounting & Finance app', 403);
+        }
+    }
+
+    /**
+     * Destructive / configuration operations: workspace admin AND an explicit
+     * acc.settings grant (the owner satisfies the second half automatically).
+     */
+    public static function requireAccAdmin() {
+        $user = Auth::user();
+        if (!$user || $user['role'] !== 'admin') jsonError('Administrator access required', 403);
+        if (!self::hasModuleAccess('acc.settings')) {
+            jsonError('You do not have access to the Accounting & Finance app', 403);
+        }
     }
     
     public static function requireTaskAccess($taskId) {

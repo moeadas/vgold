@@ -33,6 +33,11 @@ async function renderSettings() {
   if (user.role === 'admin' && crmRoleMap === undefined) {
     try { const res = await API.crmRoleMap(); crmRoleMap = res.mappings; State.crmRoleMap = crmRoleMap; } catch(e) { crmRoleMap = []; }
   }
+  let crmIntegrations = State.crmIntegrations;
+  if (user.role === 'admin' && crmIntegrations === undefined) {
+    try { const res = await crmApiGet('crm-settings.php'); crmIntegrations = res.data || null; State.crmIntegrations = crmIntegrations; }
+    catch(e) { crmIntegrations = null; State.crmIntegrations = null; }
+  }
 
   const notifPref = settings.email_notify_pref || 'all';
   const notifRadio = `
@@ -66,8 +71,8 @@ async function renderSettings() {
     const roleToggle = user.role === 'admin' && m.id !== user.id
       ? `<select onchange="changeUserRole(${m.id},this.value)" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface)"><option value="member" ${m.role !== 'admin' ? 'selected' : ''}>Member</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option></select>`
       : rolePill;
-    const actions = user.role === 'admin' && m.id !== user.id
-      ? `<button class="btn-icon-danger" onclick="deleteUser(${m.id},'${esc(m.name)}')" title="Remove user">${I.trash || '🗑'}</button>`
+    const actions = user.role === 'admin'
+      ? `<button class="btn-secondary" style="padding:5px 11px;font-size:12px" onclick="openEditUser(${m.id})">Edit</button>${m.id !== user.id ? `<button class="btn-icon-danger" onclick="deleteUser(${m.id},'${esc(m.name)}')" title="Remove user">${I.trash || '🗑'}</button>` : ''}`
       : '';
     return `
     <div class="member-row">
@@ -139,14 +144,14 @@ async function renderSettings() {
 
   const moduleAccessSection = user.role === 'admin' && moduleAccess ? `
     <div class="settings-card settings-card-wide" id="settings-access">
-      <div class="settings-section-head"><div><span class="settings-section-kicker">Access control</span><h3>Team module access</h3><div class="desc">Workflow is available to everyone. Choose which CRM areas each person can open. This applies to <strong>every</strong> user — internal or external — the account type does not matter.</div></div><span class="workflow-always-pill">Workflow · Always on</span></div>
-      <div class="desc" style="margin:-4px 0 12px;padding:10px 12px;background:var(--sand-light,#faf8f4);border:1px solid var(--border);border-radius:10px;font-size:12.5px">💡 <strong>Admins automatically get every module</strong>, so their toggles are locked green. To give an external (or any) user a specific set of modules, set their role to <strong>Member</strong>, then tick the modules on their row below.</div>
+      <div class="settings-section-head"><div><span class="settings-section-kicker">Access control</span><h3>Team module access</h3><div class="desc">Workflow is available to everyone. Choose which CRM and Accounting areas each person can open. This applies to <strong>every</strong> user — internal or external — the account type does not matter.</div></div><span class="workflow-always-pill">Workflow · Always on</span></div>
+      <div class="desc" style="margin:-4px 0 12px;padding:10px 12px;background:var(--sand-light,#faf8f4);border:1px solid var(--border);border-radius:10px;font-size:12.5px">💡 <strong>Admins automatically get every CRM module</strong>, so those toggles are locked. <strong>Accounting &amp; Finance works differently</strong> — it is granted person by person, admins included, so finance data stays private until you deliberately share it.</div>
       <div class="module-access-table">
         ${(moduleAccess.members || []).map(member => `
           <div class="module-access-row">
             <div class="module-access-person"><strong>${esc(member.name)}</strong><small>${esc(member.email)}</small></div>
             <div class="module-access-options">
-              ${(moduleAccess.modules || []).map(mod => {
+              ${typeof accModuleChips === 'function' ? accModuleChips(moduleAccess.modules || [], member) : (moduleAccess.modules || []).map(mod => {
                 const checked = member.role === 'admin' || (member.access || []).includes(mod.key);
                 return `<label class="module-access-chip ${checked ? 'checked' : ''} ${member.role === 'admin' ? 'locked' : ''}">
                   <input type="checkbox" data-user="${member.id}" data-module="${esc(mod.key)}" ${checked ? 'checked' : ''} ${member.role === 'admin' ? 'disabled' : ''} onchange="saveModuleAccess(${member.id})"><span>${esc(mod.label)}</span>
@@ -189,11 +194,11 @@ async function renderSettings() {
         <label class="settings-check-row"><input type="checkbox" id="crm-rolemap-apply"><span><strong>Apply role changes to linked users now</strong><small>The last administrator is always protected.</small></span></label>
         <button class="btn-secondary" style="margin-top:12px" onclick="saveCrmRoleMap()">Save role mapping</button>
       </div>
-      <details class="settings-subsection crm-advanced-settings">
-        <summary>Advanced CRM integrations and proposal settings</summary>
-        <p class="desc">Email delivery, Twilio/VoIP, WhatsApp, lead notifications, and proposal defaults from the original CRM are managed here.</p>
-        <iframe src="/crm/pages/settings.php?embedded=1" title="Advanced CRM settings"></iframe>
-      </details>
+      <div class="settings-subsection" id="settings-integrations-native">
+        <h4>Calls, WhatsApp &amp; Email delivery</h4>
+        <div class="desc">Configure Twilio/VoIP, WhatsApp, and SMTP so the softphone, WhatsApp inbox, and email campaigns can send. These are the credentials the CRM uses at runtime.</div>
+        ${renderIntegrationSettings(crmIntegrations)}
+      </div>
     </div>` : '';
 
   setTimeout(renderPushNotifState, 50);
@@ -202,7 +207,7 @@ async function renderSettings() {
       <div class="section-label">VGold settings</div>
       <h1 class="page-title-sm">Account & administration</h1>
       <p class="page-desc" style="margin-bottom:20px">Manage Workflow, CRM, integrations, and team access from one place.</p>
-      <nav class="settings-index" aria-label="Settings sections"><a href="#settings-account">Account</a>${user.role === 'admin' ? '<a href="#settings-access">Module access</a><a href="#settings-crm">CRM</a><a href="#settings-integrations">Integrations</a>' : ''}<a href="#settings-team">Team</a></nav>
+      <nav class="settings-index" aria-label="Settings sections"><a href="#settings-account">Account</a>${user.role === 'admin' ? '<a href="#settings-crm">CRM</a><a href="#settings-data">Data</a><a href="#settings-integrations">Integrations</a>' : ''}<a href="#settings-team">Team</a></nav>
       
       <div class="settings-card" id="settings-account">
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px">
@@ -266,9 +271,14 @@ async function renderSettings() {
         <button class="btn install-app-btn" onclick="promptInstall()" style="margin-top:12px;display:${typeof window!=='undefined' && window.__canInstall ? 'inline-flex' : 'none'}">📲 Install app</button>
       </div>
 
-      ${moduleAccessSection}
-
       ${crmSettingsSection}
+
+      ${user.role === 'admin' ? `
+      <div class="settings-card settings-card-wide" id="settings-data">
+        <h3>Data export</h3>
+        <div class="desc">Download CRM data for reporting or backup. Exports respect your access level.</div>
+        <div class="crm-native" style="margin-top:4px">${typeof crmExportCenterHtml === 'function' ? crmExportCenterHtml() : '<div class="text-muted">Export tools are unavailable — reload the app.</div>'}</div>
+      </div>` : ''}
 
       <div id="settings-integrations">${user.role === 'admin' ? smtpSection : ''}</div>
 
@@ -283,7 +293,7 @@ async function renderSettings() {
           <span style="font-size:15px;font-weight:700">Team members</span>
           ${user.role === 'admin' ? '<span style="font-size:11px;font-weight:700;color:var(--primary-dark);background:var(--primary-bg);border-radius:999px;padding:3px 9px">Admin</span>' : ''}
         </div>
-        <div class="desc">Manage who has access to your workspace.</div>
+        <div class="desc">Manage who has access to your workspace. Click <strong>Edit</strong> on any member to set their role and exactly which CRM modules they can open. (Workflow is always available; admins automatically get every module.)</div>
         ${user.role === 'admin' ? `
         <div style="margin:14px 0;padding:16px;border:1px solid var(--border);border-radius:12px;background:var(--sand-light,var(--surface-2,#faf8f4))">
           <div style="font-size:13px;font-weight:700;margin-bottom:10px">Add new user</div>
@@ -304,7 +314,7 @@ async function renderSettings() {
             <button class="btn-primary" style="flex:none;padding:9px 16px;font-size:13.5px" onclick="createUser()">Add user</button>
           </div>
           <div id="new-user-modules" style="margin-top:12px">
-            <div style="font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">CRM modules for this member <span style="font-weight:400;text-transform:none">(Members only — admins get all)</span></div>
+            <div style="font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);margin-bottom:6px">Modules for this member <span style="font-weight:400;text-transform:none">(CRM: admins get all · Accounting: always explicit)</span></div>
             <div style="display:flex;flex-wrap:wrap;gap:6px">
               ${(moduleAccess?.modules || []).map(mod => `<label class="module-access-chip"><input type="checkbox" class="new-user-module" value="${esc(mod.key)}"><span>${esc(mod.label)}</span></label>`).join('')}
             </div>
@@ -357,6 +367,7 @@ async function renderSettings() {
           <p>This will permanently delete all projects, tasks, messages, files, team members, and AI keys. Only your admin account will remain. This cannot be undone.</p>
           <button class="btn-danger" onclick="masterReset()">Reset all data</button>
         </div>
+        ${typeof accDangerZoneCard === 'function' ? accDangerZoneCard(user) : ''}
       </div>
       ` : ''}
     </div>
@@ -793,4 +804,161 @@ async function masterReset() {
     toast('All data has been reset', 'success');
     nav('today');
   } catch(e) { toast(e.message, 'error'); }
+}
+
+// ===== Native CRM integration settings (Twilio/VoIP, WhatsApp, SMTP) =====
+function renderIntegrationSettings(integ) {
+  if (!integ) return `<div class="desc" style="padding:12px 0;color:var(--muted)">Integration settings are unavailable right now. Reload the page to try again.</div>`;
+  const s = integ.settings || {};
+  const sec = integ.secrets_set || {};
+  const val = k => esc(s[k] || '');
+  const chk = k => String(s[k]) === '1' ? 'checked' : '';
+  const secretPh = k => sec[k] ? '•••••••• (leave blank to keep)' : '';
+  return `
+  <div class="settings-subsection" style="margin-top:14px">
+    <h4>Twilio / VoIP</h4>
+    <div class="desc">Credentials for browser calling and call recording.</div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">Application URL (webhooks)</label><input class="form-input" id="set-app_url" value="${val('app_url')}" placeholder="https://vgold.victorygenomics.com"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">VoIP number (Caller ID)</label><input class="form-input" id="set-twilio_phone_number" value="${val('twilio_phone_number')}" placeholder="+1..."></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">Twilio Account SID</label><input class="form-input" id="set-twilio_account_sid" value="${val('twilio_account_sid')}" placeholder="AC..."></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Twilio Auth Token</label><input class="form-input" type="password" id="set-twilio_auth_token" placeholder="${secretPh('twilio_auth_token') || 'Auth token'}"></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">Twilio API Key (voice tokens)</label><input class="form-input" id="set-twilio_api_key" value="${val('twilio_api_key')}" placeholder="SK..."></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Twilio API Secret</label><input class="form-input" type="password" id="set-twilio_api_secret" placeholder="${secretPh('twilio_api_secret') || 'API secret'}"></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">TwiML App SID (optional)</label><input class="form-input" id="set-twilio_twiml_app_sid" value="${val('twilio_twiml_app_sid')}" placeholder="AP..."></div>
+      <div class="form-field" style="flex:1"></div>
+    </div>
+    <label class="settings-check-row" style="margin-top:10px"><input type="checkbox" id="set-voip_enabled" ${chk('voip_enabled')}><span><strong>VoIP enabled</strong></span></label>
+    <label class="settings-check-row"><input type="checkbox" id="set-voip_recording_enabled" ${chk('voip_recording_enabled')}><span><strong>Call recording</strong></span></label>
+  </div>
+  <div class="settings-subsection" style="margin-top:14px">
+    <h4>WhatsApp</h4>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">WhatsApp sender number</label><input class="form-input" id="set-whatsapp_from_number" value="${val('whatsapp_from_number')}" placeholder="+1... (falls back to VoIP number)"></div>
+      <div class="form-field" style="flex:1"></div>
+    </div>
+    <label class="settings-check-row" style="margin-top:10px"><input type="checkbox" id="set-whatsapp_enabled" ${chk('whatsapp_enabled')}><span><strong>WhatsApp enabled</strong></span></label>
+    <label class="settings-check-row"><input type="checkbox" id="set-whatsapp_sandbox_mode" ${chk('whatsapp_sandbox_mode')}><span><strong>Sandbox mode</strong></span></label>
+    <label class="settings-check-row"><input type="checkbox" id="set-wa_lead_assignment_notify" ${chk('wa_lead_assignment_notify')}><span><strong>Lead-assignment WhatsApp notifications</strong></span></label>
+  </div>
+  <div class="settings-subsection" style="margin-top:14px">
+    <h4>Email delivery (SMTP)</h4>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:2"><label class="form-label">SMTP host</label><input class="form-input" id="set-smtp_host" value="${val('smtp_host')}" placeholder="mail.example.com"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Port</label><input class="form-input" type="number" id="set-smtp_port" value="${esc(s.smtp_port || '465')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Encryption</label><select class="form-input" id="set-smtp_encryption"><option value="ssl" ${s.smtp_encryption === 'ssl' ? 'selected' : ''}>SSL</option><option value="tls" ${s.smtp_encryption === 'tls' ? 'selected' : ''}>TLS</option><option value="" ${!s.smtp_encryption ? 'selected' : ''}>None</option></select></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">Username</label><input class="form-input" id="set-smtp_username" value="${val('smtp_username')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Password</label><input class="form-input" type="password" id="set-smtp_password" placeholder="${secretPh('smtp_password') || 'Password'}"></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:1"><label class="form-label">From name</label><input class="form-input" id="set-email_from_name" value="${val('email_from_name')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">From email</label><input class="form-input" type="email" id="set-email_from_address" value="${val('email_from_address')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Reply-to</label><input class="form-input" type="email" id="set-email_reply_to" value="${val('email_reply_to')}"></div>
+    </div>
+    <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-field" style="flex:2"><label class="form-label">Company address (email footer)</label><input class="form-input" id="set-company_address" value="${val('company_address')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Batch size</label><input class="form-input" type="number" id="set-email_batch_size" value="${esc(s.email_batch_size || '50')}"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Batch delay (s)</label><input class="form-input" type="number" id="set-email_batch_delay" value="${esc(s.email_batch_delay || '2')}"></div>
+    </div>
+  </div>
+  <button class="btn-primary" style="margin-top:14px" onclick="saveIntegrationSettings()">Save integration settings</button>
+  <div id="integ-error" class="pw-error" style="display:none;margin-top:8px"></div>
+  `;
+}
+
+async function saveIntegrationSettings() {
+  const textKeys = ['app_url','twilio_phone_number','twilio_account_sid','twilio_auth_token','twilio_api_key','twilio_api_secret','twilio_twiml_app_sid','whatsapp_from_number','smtp_host','smtp_port','smtp_encryption','smtp_username','smtp_password','email_from_name','email_from_address','email_reply_to','company_address','email_batch_size','email_batch_delay'];
+  const checkKeys = ['voip_enabled','voip_recording_enabled','whatsapp_enabled','whatsapp_sandbox_mode','wa_lead_assignment_notify'];
+  const payload = {};
+  textKeys.forEach(k => { const el = document.getElementById('set-' + k); if (el) payload[k] = el.value; });
+  checkKeys.forEach(k => { const el = document.getElementById('set-' + k); payload[k] = (el && el.checked) ? '1' : '0'; });
+  const errEl = document.getElementById('integ-error');
+  if (errEl) errEl.style.display = 'none';
+  try {
+    await crmApiPost('crm-settings.php', payload);
+    State.crmIntegrations = undefined;
+    toast('Integration settings saved', 'success');
+    render();
+  } catch(e) { if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; } else toast(e.message, 'error'); }
+}
+
+// ===== Edit a team member (role + CRM module access in one place) =====
+let _editUserRole = 'member';
+function openEditUser(userId) {
+  const member = (State.teamData?.members || []).find(m => m.id === userId);
+  if (!member) { toast('User not found', 'error'); return; }
+  _editUserRole = member.role === 'admin' ? 'admin' : 'member';
+  const modInfo = State.moduleAccess || { modules: [], members: [] };
+  const macc = (modInfo.members || []).find(m => m.id === userId);
+  const isAdmin = member.role === 'admin';
+  const current = new Set(isAdmin ? (modInfo.modules || []).map(m => m.key) : (macc?.access || []));
+  const isSelf = userId === (State.user?.id);
+  const modChips = (modInfo.modules || []).map(mod => `
+    <label class="module-access-chip ${current.has(mod.key) ? 'checked' : ''}">
+      <input type="checkbox" class="edit-user-module" value="${esc(mod.key)}" ${current.has(mod.key) ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}
+        onchange="this.closest('.module-access-chip').classList.toggle('checked', this.checked)"><span>${esc(mod.label)}</span>
+    </label>`).join('') || '<div class="desc">No CRM modules are defined.</div>';
+  Modal.open({
+    title: 'Edit ' + member.name,
+    body: `<div class="crm-native">
+      <div class="form-field">
+        <label class="form-label">Role</label>
+        <div class="role-toggle">
+          <button type="button" class="${!isAdmin ? 'active' : ''}" id="edit-role-member" onclick="setEditUserRole('member')" ${isSelf ? 'disabled' : ''}>Member</button>
+          <button type="button" class="${isAdmin ? 'active' : ''}" id="edit-role-admin" onclick="setEditUserRole('admin')" ${isSelf ? 'disabled' : ''}>Admin</button>
+        </div>
+        ${isSelf ? '<p style="font-size:12px;color:var(--muted);margin-top:6px">You cannot change your own role.</p>' : '<p style="font-size:12px;color:var(--muted);margin-top:6px">Admins automatically get every CRM module.</p>'}
+      </div>
+      <div class="form-field" style="margin-top:14px">
+        <label class="form-label">CRM module access</label>
+        <div id="edit-user-modules" style="display:flex;flex-wrap:wrap;gap:6px;${isAdmin ? 'opacity:.55;pointer-events:none' : ''}">${modChips}</div>
+      </div>
+      <div id="edit-user-error" class="pw-error" style="display:none;margin-top:10px"></div>
+    </div>`,
+    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+      <button class="btn-primary" onclick="saveEditUser(${userId})">Save changes</button>`,
+  });
+}
+function setEditUserRole(r) {
+  _editUserRole = r;
+  document.getElementById('edit-role-member')?.classList.toggle('active', r === 'member');
+  document.getElementById('edit-role-admin')?.classList.toggle('active', r === 'admin');
+  const mods = document.getElementById('edit-user-modules');
+  if (!mods) return;
+  const admin = r === 'admin';
+  mods.style.opacity = admin ? '.55' : '';
+  mods.style.pointerEvents = admin ? 'none' : '';
+  mods.querySelectorAll('.edit-user-module').forEach(c => {
+    c.disabled = admin;
+    if (admin) c.checked = true;
+    c.closest('.module-access-chip')?.classList.toggle('checked', c.checked);
+  });
+}
+async function saveEditUser(userId) {
+  const role = _editUserRole;
+  const modules = Array.from(document.querySelectorAll('.edit-user-module:checked')).map(c => c.value);
+  const errEl = document.getElementById('edit-user-error');
+  if (errEl) errEl.style.display = 'none';
+  try {
+    const member = (State.teamData?.members || []).find(m => m.id === userId);
+    if (member && member.role !== role && userId !== (State.user?.id)) {
+      await API.changeRole(userId, role);
+    }
+    if (role !== 'admin') {
+      await API.updateModuleAccess(userId, modules);
+    }
+    State.teamData = null;
+    State.moduleAccess = undefined;
+    Modal.close();
+    toast('User updated', 'success');
+    render();
+  } catch(e) { if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; } else toast(e.message, 'error'); }
 }

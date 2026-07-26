@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS task_files (
   file_path VARCHAR(500) NOT NULL,
   file_size BIGINT DEFAULT 0,
   file_type VARCHAR(100) DEFAULT '',
+  external_url TEXT NULL,
   uploaded_by INT NOT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_task_id (task_id),

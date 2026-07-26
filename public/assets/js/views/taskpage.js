@@ -43,6 +43,22 @@ async function renderTaskPage(taskId) {
 
   // Files
   const taskFiles = (t.files || []).map(f => {
+    // Link-type attachment (URL pasted via "Add link"): render as a clickable
+    // external link. No preview/download/edit — just open in a new tab.
+    if (f.is_link && f.external_url) {
+      const url = f.external_url;
+      return `<div class="file-row" style="cursor:pointer" onclick="window.open('${esc(url)}','_blank','noopener')">
+        <div class="file-icon" style="background:#4A7C9B"><span>LINK</span></div>
+        <div style="flex:1;min-width:0">
+          <div class="file-name">${esc(f.name)} <span style="font-size:11px;color:var(--muted);font-weight:400">↗ external</span></div>
+          <div class="file-meta">Link · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
+        </div>
+        <div class="file-actions" onclick="event.stopPropagation()">
+          <button class="file-action-btn" onclick="window.open('${esc(url)}','_blank','noopener')" title="Open link">${I.eye}</button>
+          ${State.user?.role === 'admin' || f.uploaded_by === State.user?.id ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${t.id},${f.id})" title="Remove link">${I.trash}</button>` : ''}
+        </div>
+      </div>`;
+    }
     const colorMap = { PDF: '#B0432B', DOC: '#4A7C9B', DOCX: '#4A7C9B', XLS: '#5B8C5A', XLSX: '#5B8C5A', PNG: '#C99520', JPG: '#C99520', JPEG: '#C99520', ZIP: '#8A6D4F', CSV: '#4A7C9B' };
     const fc = colorMap[(f.ext || '').toUpperCase()] || '#6B5A4A';
     return `<div class="file-row" style="cursor:pointer" onclick="viewTaskFile(${f.id})">
@@ -62,8 +78,15 @@ async function renderTaskPage(taskId) {
   return `
     <div class="fade-in">
       ${backHTML}
-      <div style="display:flex;align-items:center;gap:12px;margin:14px 0 18px">
+      <div style="display:flex;align-items:center;gap:12px;margin:14px 0 18px;flex-wrap:wrap">
         ${statusHTML}
+        <button class="btn ${isCompleted ? '' : 'btn-primary'}" id="task-complete-btn" onclick="toggleTaskPageStatus(${t.id})" style="display:inline-flex;align-items:center;gap:6px">${isCompleted ? '↩ Reopen task' : '✓ Mark as complete'}</button>
+        <div style="position:relative;display:inline-flex">
+          <button onclick="event.stopPropagation();toggleAgendaAddMenu('task-${t.id}', this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots" style="display:inline-flex;align-items:center;justify-content:center">${I.plus}</button>
+          <div class="task-quick-menu" id="agenda-add-menu-task-${t.id}" style="top:100%;left:0;right:auto">
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
+          </div>
+        </div>
         <span style="font-size:13px;color:var(--muted)">·</span>
         <div style="display:flex;align-items:center;gap:6px">
           <span style="width:8px;height:8px;border-radius:99px;background:${projectColor}"></span>
@@ -71,13 +94,7 @@ async function renderTaskPage(taskId) {
         </div>
       </div>
       <h1 id="task-page-title" data-value="${esc(t.title)}" onclick="editTaskPageTitle(${t.id},this)" title="Click to edit" style="font-family:var(--serif);font-weight:500;font-size:28px;line-height:1.2;margin-bottom:20px;cursor:text;border-radius:8px;padding:2px 6px;margin-left:-6px">${esc(t.title)}</h1>
-      <div style="position:relative;display:inline-block;margin-bottom:20px">
-        <button onclick="event.stopPropagation();toggleAgendaAddMenu('task-${t.id}', this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
-        <div class="task-quick-menu" id="agenda-add-menu-task-${t.id}" style="top:100%;left:0;right:auto">
-          <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
-        </div>
-      </div>
-      
+
       <div class="grid-2-proj">
         <div>
           <!-- Assignees -->
@@ -93,7 +110,7 @@ async function renderTaskPage(taskId) {
               <div style="font-size:12px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)">Description</div>
               <span class="edit-hint">${I.pencil || ''}<span>Click to edit</span></span>
             </div>
-            <div id="task-page-desc" class="editable-field${t.description ? '' : ' is-empty'}" data-value="${esc(t.description || '')}" onclick="editTaskPageDesc(${t.id},this)" title="Click to edit description" style="font-family:var(--serif);font-size:17px;line-height:1.6">${esc(t.description || 'No description yet. Click to add one.')}</div>
+            <div id="task-page-desc" class="editable-field${t.description ? '' : ' is-empty'}" data-value="${esc(t.description || '')}" onclick="editTaskPageDesc(${t.id},this)" title="Click to edit description" style="font-family:var(--serif);font-size:17px;line-height:1.6">${t.description ? linkifyText(t.description) : esc('No description yet. Click to add one.')}</div>
             ${t.source_module === 'crm.follow_up' && t.crm_lead_id ? `<button onclick="goCrmLead(${t.crm_lead_id})" class="crm-lead-link" style="display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:8px 14px;border-radius:99px;background:#F4ECDD;color:#8E6B3A;font-size:13px;font-weight:600;text-decoration:none;border:none;cursor:pointer">View lead in CRM →</button>` : ''}
           </div>
 
@@ -107,7 +124,8 @@ async function renderTaskPage(taskId) {
               </span>
             </button>
             <div class="cat-toggle-body" id="task-files-body" style="display:none">
-              <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+              <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px">
+                <button class="btn" onclick="openAddTaskLinkModal(${t.id})">${I.link || '🔗'}Add link</button>
                 <label class="btn" style="cursor:pointer">${I.upload}Upload<input type="file" multiple style="display:none" onchange="uploadTaskFiles(${t.id},this.files)"></label>
               </div>
               <div class="task-upload-zone" id="task-upload-zone" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');uploadTaskFiles(${t.id},event.dataTransfer.files)" onclick="this.querySelector('input').click()">
@@ -239,17 +257,17 @@ function editTaskPageDesc(taskId, el) {
     const newVal = area.value.trim();
     if (newVal !== oldVal) {
       el.dataset.value = newVal;
-      el.innerHTML = esc(newVal || 'No description yet. Click to add one.');
+      el.innerHTML = newVal ? linkifyText(newVal) : esc('No description yet. Click to add one.');
       el.classList.toggle('is-empty', !newVal);
       await saveTaskField(taskId, 'description', newVal);
       _taskPageData.description = newVal;
     } else {
-      el.innerHTML = esc(oldVal || 'No description yet. Click to add one.');
+      el.innerHTML = oldVal ? linkifyText(oldVal) : esc('No description yet. Click to add one.');
       el.classList.toggle('is-empty', !oldVal);
     }
   });
   area.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { el.innerHTML = esc(oldVal || 'No description yet. Click to add one.'); el.dataset.value = oldVal; el.classList.toggle('is-empty', !oldVal); }
+    if (e.key === 'Escape') { el.innerHTML = oldVal ? linkifyText(oldVal) : esc('No description yet. Click to add one.'); el.dataset.value = oldVal; el.classList.toggle('is-empty', !oldVal); }
   });
 }
 
@@ -264,6 +282,46 @@ async function uploadTaskFiles(taskId, files) {
   render();
   // Re-render assignee picker after render
   setTimeout(() => renderTaskPageAssigneePicker(), 50);
+}
+
+// Attach a file by URL/link (restores the original "add by link" affordance).
+function openAddTaskLinkModal(taskId) {
+  Modal.open({
+    title: 'Add file link',
+    body: `
+      <p style="font-size:13.5px;color:var(--muted);margin-bottom:14px">Paste a link to a file hosted elsewhere (e.g. SharePoint, Google Drive). It will appear alongside uploaded files.</p>
+      <div class="form-field">
+        <label class="form-label">Link URL</label>
+        <input class="form-input" id="add-task-link-url" placeholder="https://…" onkeydown="if(event.key==='Enter')document.getElementById('add-task-link-name').focus()">
+      </div>
+      <div class="form-field">
+        <label class="form-label">Display name (optional)</label>
+        <input class="form-input" id="add-task-link-name" placeholder="e.g. Q3 Budget.xlsx" onkeydown="if(event.key==='Enter')submitAddTaskLink(${taskId})">
+      </div>`,
+    footer: `
+      <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+      <button class="btn-primary" onclick="submitAddTaskLink(${taskId})">Add link</button>`,
+    onMount: () => setTimeout(() => document.getElementById('add-task-link-url')?.focus(), 100),
+  });
+}
+
+async function submitAddTaskLink(taskId) {
+  const url = document.getElementById('add-task-link-url')?.value.trim();
+  let name = document.getElementById('add-task-link-name')?.value.trim();
+  if (!url) { toast('Please enter a link URL', 'error'); return; }
+  if (!/^https?:\/\//i.test(url)) { toast('Link must start with http:// or https://', 'error'); return; }
+  if (!name) {
+    try { const u = new URL(url); name = decodeURIComponent(u.pathname.split('/').filter(Boolean).pop() || u.hostname); }
+    catch (e) { name = url; }
+  }
+  try {
+    await API.addTaskFileLink(taskId, url, name);
+    Modal.close();
+    _taskPageData = null;
+    toast('Link added', 'success');
+    render();
+    setTimeout(() => renderTaskPageAssigneePicker(), 50);
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // View / download / delete task files
@@ -282,7 +340,7 @@ async function downloadTaskFile(fileId) {
 async function deleteTaskFile(taskId, fileId) {
   appConfirm('Delete this file?', async () => {
     try {
-      await API.deleteFile(fileId);
+      await API.deleteTaskFile(taskId, fileId);
       _taskPageData = null;
       toast('File deleted', 'success');
       render();

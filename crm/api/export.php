@@ -42,9 +42,9 @@ try {
     echo json_encode(['success' => false, 'message' => 'Export error: ' . $e->getMessage()]);
 }
 
-// ───────────────────────────────────
+// ─────────────────────────────────────
 // JSON EXPORT
-// ───────────────────────────────────
+// ─────────────────────────────────────
 function exportJSON($db, $scope) {
     $data = [];
 
@@ -95,9 +95,9 @@ function exportJSON($db, $scope) {
     echo json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
 }
 
-// ───────────────────────────────────
+// ─────────────────────────────────────
 // CSV EXPORT (multi-sheet via ZIP)
-// ───────────────────────────────────
+// ─────────────────────────────────────
 function exportCSV($db, $scope) {
     // If exporting all, create a ZIP with multiple CSV files
     if ($scope === 'all') {

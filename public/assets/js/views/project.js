@@ -1,4 +1,15 @@
 // VGo — Project Detail view with new status system
+
+// Render a plain-text description/notes body with clickable URLs.
+// XSS-safe: html-escape FIRST (reuse the global esc()), THEN linkify the escaped
+// string so no raw user HTML is ever injected. Shared across the view files.
+function linkifyText(str) {
+  return esc(str).replace(
+    /(https?:\/\/[^\s<]+)/g,
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>'
+  );
+}
+
 async function renderProject() {
   let p = State.activeProject;
   if (!p || p.id != State.activeProjectId) {
@@ -126,15 +137,15 @@ async function renderProject() {
               </div>
               <span class="edit-hint">${I.pencil || ''}<span>Click to edit</span></span>
             </div>
-            <div class="editable-field${p.description ? '' : ' is-empty'}" id="proj-desc" data-value="${esc(p.description || '')}" onclick="editProjectDesc(${p.id},this)" title="Click to edit summary" style="font-family:var(--sans);font-size:18px;line-height:1.5;font-weight:700">${esc(p.description || 'No description yet. Click to add one.')}</div>
+            <div class="editable-field${p.description ? '' : ' is-empty'}" id="proj-desc" data-value="${esc(p.description || '')}" onclick="editProjectDesc(${p.id},this)" title="Click to edit summary" style="font-family:var(--sans);font-size:18px;line-height:1.5;font-weight:700">${p.description ? linkifyText(p.description) : esc('No description yet. Click to add one.')}</div>
           </div>
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+          ${subprojectsSection}
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:30px 0 14px">
             <h3 style="font-size:24px;font-weight:700;color:var(--gold)">Tasks</h3>
             <button class="btn" onclick="toggleAddTask()">${I.plus}Add task</button>
           </div>
           <div id="add-task-area"></div>
           ${groups}
-          ${subprojectsSection}
           <div style="margin-top:30px">${filesSection}</div>
         </div>
         <div class="chat-panel">
@@ -165,15 +176,17 @@ function taskRow(t, projectId) {
     <div class="task-checkbox ${t.done ? 'done' : ''}" onclick="event.stopPropagation();toggleTask(${t.id},this)">${I.check}</div>
     <span class="task-name ${t.done ? 'done' : ''}">${esc(t.title)}</span>
     ${t.priority === 'urgent' ? '<span style="font-size:11px;font-weight:700;color:#FFF;background:#B0432B;border-radius:99px;padding:2px 8px">URGENT</span>' : ''}
-    ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'}">${esc(t.deadline_label)}</span>` : ''}
     ${t.comment_count ? `<span class="comment-indicator">${I.comment}${t.comment_count}</span>` : ''}
-    <div style="position:relative;flex:none">
-      <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
-      <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
-        <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
+    <div class="task-row-right" style="display:flex;align-items:center;gap:8px;margin-left:auto;flex:none">
+      ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'}">${esc(t.deadline_label)}</span>` : ''}
+      <div class="task-row-agenda" style="position:relative;flex:none">
+        <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
+        <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
+          <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
+        </div>
       </div>
+      <div class="task-avatars-wrap" style="display:flex;align-items:center">${assigneeHTML}</div>
     </div>
-    <div style="display:flex;align-items:center;margin-left:auto">${assigneeHTML}</div>
   </div>`;
 }
 
@@ -360,18 +373,18 @@ function editProjectDesc(id, el) {
     const newVal = area.value.trim();
     if (newVal !== oldVal) {
       el.dataset.value = newVal;
-      el.innerHTML = esc(newVal || 'No description yet. Click to add one.');
+      el.innerHTML = newVal ? linkifyText(newVal) : esc('No description yet. Click to add one.');
       el.classList.toggle('is-empty', !newVal);
       await saveProjectField(id, 'description', newVal);
       State.activeProject = null;
       render();
     } else {
-      el.innerHTML = esc(oldVal || 'No description yet. Click to add one.');
+      el.innerHTML = oldVal ? linkifyText(oldVal) : esc('No description yet. Click to add one.');
       el.classList.toggle('is-empty', !oldVal);
     }
   });
   area.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { el.innerHTML = esc(oldVal || 'No description yet. Click to add one.'); el.dataset.value = oldVal; el.classList.toggle('is-empty', !oldVal); }
+    if (e.key === 'Escape') { el.innerHTML = oldVal ? linkifyText(oldVal) : esc('No description yet. Click to add one.'); el.dataset.value = oldVal; el.classList.toggle('is-empty', !oldVal); }
   });
 }
 

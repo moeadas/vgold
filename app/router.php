@@ -17,6 +17,10 @@ require_once __DIR__ . '/controllers/AdminController.php';
 require_once __DIR__ . '/controllers/NotificationController.php';
 require_once __DIR__ . '/controllers/CRMController.php';
 require_once __DIR__ . '/controllers/CrmSyncController.php';
+require_once __DIR__ . '/lib/AccSchema.php';
+require_once __DIR__ . '/lib/Acc.php';
+require_once __DIR__ . '/lib/AccSeed.php';
+require_once __DIR__ . '/controllers/AccountingController.php';
 require_once __DIR__ . '/lib/CRMTaskBridge.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -93,6 +97,8 @@ $routes = [
     'PUT tasks/{id}' => ['TaskController::update', true],
     'POST tasks/{id}/toggle' => ['TaskController::toggle', true],
     'POST tasks/{id}/upload' => ['TaskController::uploadFile', true],
+    'POST tasks/{id}/file-link' => ['TaskController::addFileLink', true],
+    'DELETE tasks/{id}/files/{fileId}' => ['TaskController::deleteFile', true],
     'DELETE tasks/{id}' => ['TaskController::delete', true],
     'POST tasks/{id}/comments' => ['TaskController::addComment', true],
     
@@ -137,6 +143,10 @@ $routes = [
 
     // CRM — native modules inside the VGold SPA and shared session
     'GET crm/dashboard' => ['CRMController::dashboard', true],
+    'GET crm/leads/export' => ['CRMController::exportLeads', true],
+    'POST crm/leads/import' => ['CRMController::importLeads', true],
+    'POST crm/leads/bulk-assign' => ['CRMController::bulkAssign', true],
+    'POST crm/leads/bulk-delete' => ['CRMController::bulkDelete', true],
     'GET crm/leads' => ['CRMController::leads', true],
     'POST crm/leads' => ['CRMController::createLead', true],
     'GET crm/lead-options' => ['CRMController::leadOptions', true],
@@ -144,6 +154,7 @@ $routes = [
     'PUT crm/leads/{id}' => ['CRMController::updateLead', true],
     'GET crm/interactions' => ['CRMController::interactions', true],
     'POST crm/interactions' => ['CRMController::createInteraction', true],
+    'DELETE crm/interactions/{id}' => ['CRMController::deleteInteraction', true],
     'POST crm/sync-followups' => ['CrmSyncController::syncFollowUps', true],
     'GET tasks/{id}/crm-context' => ['CrmSyncController::taskCrmContext', true],
     
@@ -154,6 +165,79 @@ $routes = [
     'POST ai/delete-plan' => ['AIController::deletePlan', true],
     'GET ai/day-plan' => ['AIController::getDayPlan', true],
     
+    // ===== Accounting & Finance — native app =====
+    // Access is explicit-grant only (Authz::ACC_MODULES); every handler checks
+    // the module grant for the area it touches. Literal paths are declared
+    // before their {id} siblings so they are matched first.
+    'GET acc/bootstrap' => ['AccountingController::bootstrap', true],
+    'GET acc/dashboard' => ['AccountingController::dashboard', true],
+    'GET acc/reports' => ['AccountingController::reports', true],
+
+    'GET acc/documents' => ['AccountingController::documents', true],
+    'POST acc/documents' => ['AccountingController::createDocument', true],
+    'GET acc/documents/{id}' => ['AccountingController::document', true],
+    'PUT acc/documents/{id}' => ['AccountingController::updateDocument', true],
+    'DELETE acc/documents/{id}' => ['AccountingController::deleteDocument', true],
+    'POST acc/documents/{id}/status' => ['AccountingController::documentStatus', true],
+    'POST acc/documents/{id}/payment' => ['AccountingController::documentPayment', true],
+
+    'GET acc/contacts/crm-search' => ['AccountingController::crmLeadSearch', true],
+    'POST acc/contacts/import-crm' => ['AccountingController::importCrmLead', true],
+    'GET acc/contacts' => ['AccountingController::contacts', true],
+    'POST acc/contacts' => ['AccountingController::createContact', true],
+    'GET acc/contacts/{id}' => ['AccountingController::contact', true],
+    'PUT acc/contacts/{id}' => ['AccountingController::updateContact', true],
+    'DELETE acc/contacts/{id}' => ['AccountingController::deleteContact', true],
+
+    'GET acc/banking' => ['AccountingController::banking', true],
+    'GET acc/transactions' => ['AccountingController::transactions', true],
+    'POST acc/transactions' => ['AccountingController::createTransaction', true],
+    'PUT acc/transactions/{id}' => ['AccountingController::updateTransaction', true],
+    'DELETE acc/transactions/{id}' => ['AccountingController::deleteTransaction', true],
+    'POST acc/accounts' => ['AccountingController::createAccount', true],
+    'GET acc/accounts/{id}' => ['AccountingController::accountDetail', true],
+    'PUT acc/accounts/{id}' => ['AccountingController::updateAccount', true],
+    'DELETE acc/accounts/{id}' => ['AccountingController::deleteAccount', true],
+    'POST acc/transfers' => ['AccountingController::createTransfer', true],
+    'DELETE acc/transfers/{id}' => ['AccountingController::deleteTransfer', true],
+    'POST acc/reconciliations' => ['AccountingController::createReconciliation', true],
+    'GET acc/reconciliations/{id}' => ['AccountingController::reconciliation', true],
+    'POST acc/reconciliations/{id}/mark' => ['AccountingController::reconciliationMark', true],
+    'POST acc/reconciliations/{id}/close' => ['AccountingController::reconciliationClose', true],
+
+    'GET acc/journal' => ['AccountingController::journal', true],
+    'POST acc/journal' => ['AccountingController::createJournalEntry', true],
+    'POST acc/journal/{id}/reverse' => ['AccountingController::reverseJournalEntry', true],
+    'DELETE acc/journal/{id}' => ['AccountingController::deleteJournalEntry', true],
+    'GET acc/coa' => ['AccountingController::chartOfAccounts', true],
+    'POST acc/coa' => ['AccountingController::createCoa', true],
+    'PUT acc/coa/{id}' => ['AccountingController::updateCoa', true],
+    'DELETE acc/coa/{id}' => ['AccountingController::deleteCoa', true],
+
+    'GET acc/catalog' => ['AccountingController::catalog', true],
+    'POST acc/items' => ['AccountingController::saveItem', true],
+    'PUT acc/items/{id}' => ['AccountingController::updateItem', true],
+    'DELETE acc/items/{id}' => ['AccountingController::deleteItem', true],
+    'POST acc/categories' => ['AccountingController::saveCategory', true],
+    'PUT acc/categories/{id}' => ['AccountingController::updateCategory', true],
+    'DELETE acc/categories/{id}' => ['AccountingController::deleteCategory', true],
+    'POST acc/taxes' => ['AccountingController::saveTax', true],
+    'PUT acc/taxes/{id}' => ['AccountingController::updateTax', true],
+    'DELETE acc/taxes/{id}' => ['AccountingController::deleteTax', true],
+
+    'GET acc/recurring' => ['AccountingController::recurring', true],
+    'POST acc/recurring/run' => ['AccountingController::runRecurring', true],
+    'POST acc/recurring' => ['AccountingController::saveRecurring', true],
+    'PUT acc/recurring/{id}' => ['AccountingController::updateRecurring', true],
+    'DELETE acc/recurring/{id}' => ['AccountingController::deleteRecurring', true],
+
+    'GET acc/settings' => ['AccountingController::settings', true],
+    'PUT acc/settings' => ['AccountingController::updateSettings', true],
+    'POST acc/settings/recalc' => ['AccountingController::recalcBalances', true],
+    'POST acc/settings/seed' => ['AccountingController::seed', true],
+    'GET acc/data-summary' => ['AccountingController::dataSummary', true],
+    'POST acc/reset' => ['AccountingController::resetData', true],
+
     // Admin
     'POST admin/reset' => ['AdminController::reset', true],
     

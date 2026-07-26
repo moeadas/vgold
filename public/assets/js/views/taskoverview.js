@@ -161,13 +161,15 @@ function overviewTaskRowHTML(t) {
       <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
         <span style="width:6px;height:6px;border-radius:99px;background:${t.project_color}"></span>${esc(t.project_name)}
       </span>
-      ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'};font-weight:${t.deadline_label.includes('Overdue') ? 700 : 400}">${esc(t.deadline_label)}</span>` : ''}
-      <span class="meeting-status" style="background:${t.status_color};color:#FFF;font-size:10px;padding:2px 7px">${esc(t.status_label)}</span>
-      <div style="display:flex;align-items:center;margin-left:auto">${assigneeHTML}</div>
-      <div style="position:relative;flex:none">
-        <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
-        <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
-          <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})">Add to Agenda</button>
+      <div class="task-row-right" style="display:flex;align-items:center;gap:8px;margin-left:auto;flex:none">
+        ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'};font-weight:${t.deadline_label.includes('Overdue') ? 700 : 400}">${esc(t.deadline_label)}</span>` : ''}
+        <span class="meeting-status" style="background:${t.status_color};color:#FFF;font-size:10px;padding:2px 7px">${esc(t.status_label)}</span>
+        <div class="task-avatars-wrap" style="display:flex;align-items:center">${assigneeHTML}</div>
+        <div class="task-row-agenda" style="position:relative;flex:none">
+          <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
+          <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})">Add to Agenda</button>
+          </div>
         </div>
       </div>
     </div>
@@ -246,7 +248,7 @@ function agendaRow(a) {
       </button>
       <div class="agenda-item-content">
         <div class="agenda-item-title" id="agenda-title-${a.id}" data-value="${esc(a.title)}">${a.is_completed ? '✓ ' : ''}${esc(a.title)}</div>
-        ${a.description ? `<div class="agenda-item-desc">${esc(a.description)}</div>` : ''}
+        ${a.description ? `<div class="agenda-item-desc">${linkifyText(a.description)}</div>` : ''}
         ${a.related_project_name && !a.related_task_title ? `<div class="agenda-item-link"${projLink}><span style="width:8px;height:8px;border-radius:99px;background:${a.related_project_color || 'var(--gold)'};display:inline-block;margin-right:6px"></span>${esc(a.related_project_name)}</div>` : ''}
         ${a.related_task_title ? `<div class="agenda-item-link"${taskLink}>→ ${esc(a.related_task_title)}</div>` : ''}
         ${a.assignee_name ? `<div class="agenda-item-assignee"><div class="avatar avatar-sm" style="background:${a.assignee_color || '#9A8A78'}">${a.assignee_initials || '?'}</div><span>${esc(a.assignee_name)}</span></div>` : ''}

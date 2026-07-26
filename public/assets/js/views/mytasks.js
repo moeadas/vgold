@@ -52,18 +52,38 @@ async function renderMyTasks() {
     filteredGroups = filteredGroups.filter(g => g.tasks[0]?.status === filter);
   }
 
-  const groupsHTML = filteredGroups.map(g => `
+  const isCrmTask = t => t.source_module === 'crm.follow_up' || t.source_module === 'crm.followup' || (t.source_module || '').indexOf('crm') === 0 || !!t.crm_lead_id;
+  const groupsHTML = filteredGroups.map((g, gi) => {
+    const crmTasks = g.tasks.filter(isCrmTask);
+    const wfTasks = g.tasks.filter(t => !isCrmTask(t));
+    const bodyId = `crm-tasks-body-${gi}`;
+    const chevId = `crm-tasks-chevron-${gi}`;
+    const crmSection = crmTasks.length ? `
+      <div class="cat-toggle-section" style="margin-top:10px">
+        <button class="cat-toggle-header" onclick="toggleCatSection('${bodyId}')">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="cat-toggle-chevron" id="${chevId}">${I.arrowR}</span>
+            <span style="font-weight:600;color:#8E6B3A">CRM follow-ups</span>
+            <span class="count">${crmTasks.length}</span>
+          </span>
+        </button>
+        <div class="cat-toggle-body" id="${bodyId}" style="display:none">
+          <div class="task-list">${crmTasks.map(t => taskRowHTML(t)).join('')}</div>
+        </div>
+      </div>` : '';
+    return `
     <div class="task-group">
       <div class="task-group-header">
         <span class="dot" style="background:${g.color}"></span>
         <span class="label">${g.label}</span>
-        <span class="count">${g.tasks.length}</span>
+        <span class="count">${wfTasks.length}${crmTasks.length ? ` + ${crmTasks.length} CRM` : ''}</span>
       </div>
       <div class="task-list">
-        ${g.tasks.map(t => taskRowHTML(t)).join('')}
+        ${wfTasks.map(t => taskRowHTML(t)).join('') || (crmTasks.length ? '<div class="empty-state" style="padding:10px 2px;text-align:left"><div class="desc">No workflow tasks — see CRM follow-ups below.</div></div>' : '')}
       </div>
-    </div>
-  `).join('') || (filter !== 'all' ? '<div class="empty-state"><div class="title">No tasks</div><div class="desc">No tasks match this filter.</div></div>' : '');
+      ${crmSection}
+    </div>`;
+  }).join('') || (filter !== 'all' ? '<div class="empty-state"><div class="title">No tasks</div><div class="desc">No tasks match this filter.</div></div>' : '');
 
   // Day plan card
   const planCardHTML = plan && plan.html ? `
@@ -97,16 +117,18 @@ function taskRowHTML(t) {
       <div class="task-checkbox ${t.done ? 'done' : ''}" onclick="event.stopPropagation();toggleMyTask(${t.id},this)">${I.check}</div>
       <span class="task-name-wrap"><span class="task-name ${t.done ? 'done' : ''}">${esc(t.title)}</span>${t.source_module === 'crm.follow_up' && t.description ? `<small class="task-crm-context">${esc(t.description.split('\n')[0])}${t.crm_lead_id ? ` · <a href="#crm/lead/${t.crm_lead_id}" onclick="event.stopPropagation();event.preventDefault();goCrmLead(${t.crm_lead_id})" style="color:#8E6B3A;font-weight:600;text-decoration:none">View lead →</a>` : ''}</small>` : ''}</span>
       ${t.priority === 'urgent' ? '<span style="font-size:11px;font-weight:700;color:#FFF;background:#B0432B;border-radius:99px;padding:2px 8px">URGENT</span>' : ''}
-      <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
-        <span style="width:6px;height:6px;border-radius:99px;background:${t.project_color}"></span>${esc(t.project_name)}
-      </span>
-      ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'};font-weight:${t.deadline_label.includes('Overdue') ? 700 : 400}">${esc(t.deadline_label)}</span>` : ''}
-      <div class="task-row-actions" onclick="event.stopPropagation()">
-        <button class="task-row-dots" onclick="toggleTaskMenu(${t.id}, this)">${I.dots}</button>
-        <div class="task-quick-menu" id="task-menu-${t.id}">
-          <button onclick="openTaskFromMyTasks(${t.id}, ${t.project_id})">Open task</button>
-          <button onclick="cycleTaskStatus(${t.id})">Change status</button>
-          <button onclick="deleteTaskFromMyTasks(${t.id})" style="color:var(--red)">Delete</button>
+      <div class="task-row-right" style="display:flex;align-items:center;gap:8px;margin-left:auto;flex:none">
+        <span style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)">
+          <span style="width:6px;height:6px;border-radius:99px;background:${t.project_color}"></span>${esc(t.project_name)}
+        </span>
+        ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'};font-weight:${t.deadline_label.includes('Overdue') ? 700 : 400}">${esc(t.deadline_label)}</span>` : ''}
+        <div class="task-row-actions" onclick="event.stopPropagation()">
+          <button class="task-row-dots" onclick="toggleTaskMenu(${t.id}, this)">${I.dots}</button>
+          <div class="task-quick-menu" id="task-menu-${t.id}">
+            <button onclick="openTaskFromMyTasks(${t.id}, ${t.project_id})">Open task</button>
+            <button onclick="cycleTaskStatus(${t.id})">Change status</button>
+            <button onclick="deleteTaskFromMyTasks(${t.id})" style="color:var(--red)">Delete</button>
+          </div>
         </div>
       </div>
     </div>

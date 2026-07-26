@@ -1,0 +1,57 @@
+/* VGold — targeted UI overrides.
+   Loaded AFTER app.css and crm-native.css so equal-specificity rules win by
+   cascade order (no !important needed). Keep selectors minimal and reuse the
+   existing class names / CSS variables from app.css. */
+
+/* ============================================================
+   1a) Assignee "Assign to… / Search members…" dropdown overlap.
+   The open dropdown must be a proper floating popover: pulled out of
+   flow (absolute), painted above everything on the page with a solid,
+   opaque background, border and shadow — so it never shows the task
+   list bleeding through underneath it.
+   ------------------------------------------------------------ */
+
+/* Ensure the picker wrapper is the positioning context and establishes a
+   stacking context so its dropdown reliably floats above sibling sections. */
+.ap-wrap { position: relative; }
+
+.ap-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 500;                 /* above page chrome; below app modals (2000+) */
+  min-width: 240px;
+  background: var(--surface, #ffffff);   /* solid, opaque — no bleed-through */
+  border: 1px solid var(--border-2, rgba(61, 46, 34, .16));
+  border-radius: 10px;
+  box-shadow: 0 12px 32px -8px rgba(61, 46, 34, .28);
+  overflow: hidden;             /* clip the scrolling list to the rounded corners */
+}
+
+/* Keep the scrollable options list contained inside the popover. */
+.ap-dropdown .ap-list { max-height: 260px; overflow-y: auto; }
+
+/* ============================================================
+   1b) Task-row right-side control cluster (due text, "+", avatars).
+   Keep it a single inline flex row that never wraps the "+" (or the
+   avatars) onto their own line.
+   ------------------------------------------------------------ */
+
+/* The row itself must not wrap its trailing controls. */
+.task-row { flex-wrap: nowrap; }
+
+/* The actions cluster is an inline flex row: centered, gapped, no wrap. */
+.task-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  flex-wrap: nowrap;
+}
+
+/* The "+" / dots trigger stays inline and never shrinks or drops. */
+.task-row .task-row-dots { flex: none; }
+
+/* Trailing avatar stack also stays on the same line. */
+.task-row .task-avatars { flex: none; }

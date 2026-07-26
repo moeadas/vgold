@@ -52,6 +52,9 @@ echo '<!DOCTYPE html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/assets/css/app.css?v=' . ASSET_VERSION . '">
+<link rel="stylesheet" href="/assets/css/crm-native.css?v=' . ASSET_VERSION . '">
+<link rel="stylesheet" href="/assets/css/overrides.css?v=' . ASSET_VERSION . '">
+<link rel="stylesheet" href="/assets/css/accounting.css?v=' . ASSET_VERSION . '">
 <link rel="icon" href="/assets/img/vgo-logo.png">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/img/icon-180.png">
@@ -84,6 +87,8 @@ echo '<!DOCTYPE html>
 <script src="/assets/js/views/assignee-picker.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/modals.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/accounting.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/accounting2.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/app.js?v=' . ASSET_VERSION . '"></script>
 </body>
 </html>';

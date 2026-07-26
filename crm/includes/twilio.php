@@ -63,7 +63,8 @@ class TwilioHelper {
             $rows = $db->query("SELECT setting_key, setting_value FROM settings WHERE setting_key IN (
                 'twilio_account_sid','twilio_auth_token','twilio_phone_number','twilio_twiml_app_sid',
                 'whatsapp_from_number','twilio_api_key','twilio_api_secret','app_url',
-                'voip_recording_enabled','whatsapp_sandbox_mode'
+                'voip_recording_enabled','whatsapp_sandbox_mode',
+                'voip_enabled','whatsapp_enabled','wa_lead_assignment_notify'
             )")->fetchAll(\PDO::FETCH_KEY_PAIR);
             // Only return keys that have non-empty values (so env fallback works)
             return array_filter($rows, function($v) { return $v !== '' && $v !== null; });

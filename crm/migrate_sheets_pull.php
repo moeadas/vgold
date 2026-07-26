@@ -11,7 +11,6 @@
  */
 
 require_once __DIR__ . '/config/database.php';
-require_once __DIR__ . '/includes/migration-guard.php';  // admin/CLI only
 
 $db = Database::getInstance();
 
@@ -48,7 +47,7 @@ foreach ($queries as $label => $sql) {
         echo "$label: OK\n";
     } catch (Exception $e) {
         $msg = $e->getMessage();
-        // Ignore \"Duplicate column\" errors (already migrated)
+        // Ignore "Duplicate column" errors (already migrated)
         if (strpos($msg, 'Duplicate column') !== false) {
             echo "$label: SKIPPED (column already exists)\n";
         } else {

@@ -34,11 +34,9 @@ switch ($action) {
         getNotificationsList($db, $userId);
         break;
     case 'mark_read':
-        requireCSRF();
         markRead($db, $userId);
         break;
     case 'mark_all_read':
-        requireCSRF();
         markAllRead($db, $userId);
         break;
     default:

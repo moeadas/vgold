@@ -48,6 +48,8 @@ const API = {
     fd.append('file', file);
     return API.uploadReq('/tasks/' + taskId + '/upload', fd);
   },
+  addTaskFileLink: (taskId, url, name) => API.req('/tasks/' + taskId + '/file-link', { method: 'POST', body: JSON.stringify({ url, name }) }),
+  deleteTaskFile: (taskId, fileId) => API.req('/tasks/' + taskId + '/files/' + fileId, { method: 'DELETE' }),
   today: () => API.req('/tasks/today'),
   allTasks: () => API.req('/tasks/all'),
   myTasks: () => API.req('/tasks/my-tasks'),
@@ -140,8 +142,12 @@ const API = {
   crmLeadDetail: (id) => API.req('/crm/leads/' + id),
   updateCrmLead: (id, data) => API.req('/crm/leads/' + id, { method: 'PUT', body: JSON.stringify(data) }),
   crmLeadOptions: () => API.req('/crm/lead-options'),
-  crmInteractions: () => API.req('/crm/interactions'),
+  crmBulkAssign: (leadIds, assignedTo) => API.req('/crm/leads/bulk-assign', { method: 'POST', body: JSON.stringify({ lead_ids: leadIds, assigned_to: assignedTo }) }),
+  crmBulkDelete: (leadIds) => API.req('/crm/leads/bulk-delete', { method: 'POST', body: JSON.stringify({ lead_ids: leadIds }) }),
+  crmImportLeads: (leads, dedupe) => API.req('/crm/leads/import', { method: 'POST', body: JSON.stringify({ leads, dedupe }) }),
+  crmInteractions: (params = {}) => API.req('/crm/interactions?' + new URLSearchParams(params).toString()),
   createCrmInteraction: (data) => API.req('/crm/interactions', { method: 'POST', body: JSON.stringify(data) }),
+  crmDeleteInteraction: (id) => API.req('/crm/interactions/' + id, { method: 'DELETE' }),
   // AI
   providers: () => API.req('/ai/providers'),
   ask: (prompt) => API.req('/ai/ask', { method: 'POST', body: JSON.stringify({ prompt }) }),

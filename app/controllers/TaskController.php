@@ -232,21 +232,30 @@ class TaskController {
             [$id]
         );
         
-        // Get task files
+        // Get task files (join uploader for display metadata)
         $files = DB::fetchAll(
-            "SELECT * FROM task_files WHERE task_id = ? ORDER BY created_at DESC",
+            "SELECT tf.*, u.name AS uploader_name
+             FROM task_files tf LEFT JOIN users u ON tf.uploaded_by = u.id
+             WHERE tf.task_id = ? ORDER BY tf.created_at DESC",
             [$id]
         );
-        
-        // Format files
-        $formattedFiles = array_map(function($f) {
+
+        // Format files. Link-type attachments (file_type = 'link') carry an
+        // external_url instead of a stored binary.
+        $currentUserId = Auth::userId();
+        $formattedFiles = array_map(function($f) use ($currentUserId) {
+            $isLink = ($f['file_type'] ?? '') === 'link';
             $size = (int)($f['file_size'] ?? 0);
             $sizeLabel = $size < 1048576 ? round($size/1024) . ' KB' : round($size/1048576, 1) . ' MB';
             return [
                 'id' => (int)$f['id'],
                 'name' => $f['file_name'],
-                'ext' => strtoupper(pathinfo($f['file_name'], PATHINFO_EXTENSION)),
+                'ext' => $isLink ? 'LINK' : strtoupper(pathinfo($f['file_name'], PATHINFO_EXTENSION)),
                 'size' => $sizeLabel,
+                'is_link' => $isLink,
+                'external_url' => $isLink ? ($f['external_url'] ?? null) : null,
+                'by' => ((int)$f['uploaded_by'] === (int)$currentUserId) ? 'You' : ($f['uploader_name'] ?? ''),
+                'when' => !empty($f['created_at']) ? timeAgo($f['created_at']) : '',
                 'uploaded_by' => (int)$f['uploaded_by'],
             ];
         }, $files);
@@ -337,7 +346,65 @@ class TaskController {
             'when' => 'just now',
         ]]);
     }
-    
+
+    // ===== ATTACH FILE BY LINK/URL to task =====
+    // Restores the original "add by link" affordance: stores a link-type row in
+    // task_files (file_type = 'link', external_url = the URL) with no binary.
+    public static function addFileLink($id) {
+        Authz::requireTaskAccess($id);
+        $data = input();
+        requireFields(['url', 'name'], $data);
+        $url = trim($data['url']);
+        if (!filter_var($url, FILTER_VALIDATE_URL) || !preg_match('#^https?://#i', $url)) {
+            jsonError('Please enter a valid http(s) link');
+        }
+        $name = trim($data['name']);
+        if ($name === '') $name = $url;
+
+        $fileId = DB::insert('task_files', [
+            'task_id'     => $id,
+            'file_name'   => $name,
+            'file_path'   => $url,
+            'file_size'   => 0,
+            'file_type'   => 'link',
+            'external_url'=> $url,
+            'uploaded_by' => Auth::userId(),
+        ]);
+
+        jsonResponse(['ok' => true, 'file' => [
+            'id' => (int)$fileId,
+            'name' => $name,
+            'ext' => 'LINK',
+            'size' => '0 KB',
+            'is_link' => true,
+            'external_url' => $url,
+            'by' => 'You',
+            'when' => 'just now',
+            'uploaded_by' => (int)Auth::userId(),
+        ]]);
+    }
+
+    // ===== DELETE a task file (local upload or link) =====
+    public static function deleteFile($id, $fileId) {
+        Authz::requireTaskAccess($id);
+        $f = DB::fetch("SELECT * FROM task_files WHERE id = ? AND task_id = ?", [$fileId, $id]);
+        if (!$f) jsonError('File not found', 404);
+
+        $user = Auth::user();
+        if ((int)$f['uploaded_by'] !== (int)Auth::userId() && (!$user || $user['role'] !== 'admin')) {
+            jsonError('You can only delete files you uploaded', 403);
+        }
+
+        // Remove the stored binary for local uploads (links have nothing to unlink).
+        if (($f['file_type'] ?? '') !== 'link' && !empty($f['file_path'])) {
+            $full = __DIR__ . '/../../' . $f['file_path'];
+            if (is_file($full)) @unlink($full);
+        }
+
+        DB::delete('task_files', 'id = ?', [$fileId]);
+        jsonResponse(['ok' => true]);
+    }
+
     public static function delete($id) {
         Authz::requireTaskAccess($id);
         CRMTaskBridge::unlinkTask((int)$id);

@@ -1,105 +1,59 @@
-# Victory Genomics CRM - Apache Configuration (SiteGround Optimized)
+# Victory Genomics CRM — now a MOUNTED module inside the VGold unified app.
+# The CRM is never served standalone anymore: every /crm/* request must be
+# funnelled up to the VGold front controller (../public/index.php), which
+# boots the unified session bridge (crm/mount.php) so there is ONE login.
+#
+# This file DELIBERATELY overrides the legacy CRM routing (which used
+# `DirectoryIndex login.php` + ErrorDocument /login.php and made /crm/ serve
+# crm/login.php directly, bypassing the mount and showing a second login).
 
-# Enable Rewrite Engine
 RewriteEngine On
+RewriteBase /crm/
 
-# Force HTTPS (SiteGround provides free SSL)
+# Force HTTPS (SiteGround free SSL).
 RewriteCond %{HTTPS} off
-RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Prevent directory listing
+# No directory listings and, crucially, do NOT auto-serve login.php/index.php
+# for a bare /crm/ directory request — let the rewrite below take it to the
+# unified front controller instead.
 Options -Indexes
+DirectoryIndex disabled
 
-# Protect .env files
+# Protect sensitive files (defense in depth; root .htaccess also blocks these).
 <FilesMatch "\.env(\.\w+)?$">
-    Order allow,deny
-    Deny from all
+    Require all denied
 </FilesMatch>
-
-# Protect configuration files
 <FilesMatch "^(database\.php|config\.php)$">
-    Order allow,deny
-    Deny from all
+    Require all denied
 </FilesMatch>
-
-# Protect database files
 <FilesMatch "\.(sql|db|sqlite)$">
-    Order allow,deny
-    Deny from all
+    Require all denied
 </FilesMatch>
-
-# Protect log files
 <Files "*.log">
-    Order allow,deny
-    Deny from all
+    Require all denied
 </Files>
-
-# Protect CSV data files
 <FilesMatch "^VG_.*\.csv$">
-    Order allow,deny
-    Deny from all
+    Require all denied
 </FilesMatch>
-
-# Block access to .git directory
 RedirectMatch 404 /\.git
 
-# Set default index files
-DirectoryIndex login.php index.php
+# ── Funnel everything through the VGold front controller ─────────────────────
+# Serve real static assets that physically exist under crm/ directly (css, js,
+# images, fonts, uploaded media) — the mount also handles these, but letting
+# Apache serve existing files is faster and avoids a PHP round-trip.
+RewriteCond %{REQUEST_FILENAME} -f
+RewriteCond %{REQUEST_URI} \.(css|js|mjs|map|png|jpe?g|gif|svg|webp|ico|woff2?|ttf|eot|pdf|mp4|mp3|ogg|wav|webm|docx?|xlsx?|pptx?)$ [NC]
+RewriteRule ^ - [L]
 
-# PHP Security Settings (SiteGround compatible)
-<IfModule mod_php7.c>
-    php_flag display_errors Off
-    php_flag log_errors On
-    php_value max_execution_time 300
-    php_value max_input_time 300
-    php_value upload_max_filesize 10M
-    php_value post_max_size 10M
-    php_value memory_limit 256M
-    php_value session.cookie_httponly 1
-    php_value session.use_only_cookies 1
-</IfModule>
+# Everything else under /crm/* (including the bare /crm/ directory, all .php
+# pages, and the API endpoints) goes to the unified front controller, which
+# require's crm/mount.php. Use an absolute filesystem path up one level.
+RewriteRule ^ /public/index.php [QSA,L]
 
-# Also support PHP 8.x on SiteGround
-<IfModule mod_php.c>
-    php_flag display_errors Off
-    php_flag log_errors On
-    php_value max_execution_time 300
-    php_value max_input_time 300
-    php_value upload_max_filesize 10M
-    php_value post_max_size 10M
-    php_value memory_limit 256M
-    php_value session.cookie_httponly 1
-    php_value session.use_only_cookies 1
-</IfModule>
-
-# Enable compression
-<IfModule mod_deflate.c>
-    AddOutputFilterByType DEFLATE text/html text/plain text/xml text/css
-    AddOutputFilterByType DEFLATE text/javascript application/javascript application/json
-    AddOutputFilterByType DEFLATE image/svg+xml
-</IfModule>
-
-# Browser caching
-<IfModule mod_expires.c>
-    ExpiresActive On
-    ExpiresByType image/jpg "access plus 1 year"
-    ExpiresByType image/jpeg "access plus 1 year"
-    ExpiresByType image/png "access plus 1 year"
-    ExpiresByType image/svg+xml "access plus 1 year"
-    ExpiresByType text/css "access plus 1 month"
-    ExpiresByType application/javascript "access plus 1 month"
-    ExpiresByType font/woff2 "access plus 1 year"
-    ExpiresByType font/woff "access plus 1 year"
-</IfModule>
-
-# Security headers (backup for PHP headers)
+# Security headers.
 <IfModule mod_headers.c>
     Header always set X-Content-Type-Options "nosniff"
     Header always set X-Frame-Options "SAMEORIGIN"
-    Header always set X-XSS-Protection "1; mode=block"
     Header always set Referrer-Policy "strict-origin-when-cross-origin"
 </IfModule>
-
-# Custom error pages
-ErrorDocument 404 /login.php
-ErrorDocument 403 /login.php

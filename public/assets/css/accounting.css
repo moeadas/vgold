@@ -1,0 +1,229 @@
+/* ==========================================================================
+   Accounting & Finance — native VGold module
+   Built entirely on the VGO design tokens declared in app.css (--bg, --surface,
+   --text, --primary, --gold, --sage, --ochre, --barn …). No new palette, no
+   imported framework: the finance app should read as the same product as
+   Workflow and CRM.
+   ========================================================================== */
+
+/* ---------- Sidebar group (third app) ---------- */
+.module-nav-mark.acc { background: linear-gradient(145deg, #6B8E5A, #3F6B32); }
+.acc-group .nav-btn.active { background: linear-gradient(90deg, #E4EDE7 0%, rgba(228,237,231,.35) 100%); color: #2E5A3F; }
+
+.acc-page { padding-bottom: 40px; }
+
+/* ---------- Page header ---------- */
+.acc-head {
+  display: flex; align-items: flex-start; gap: 16px;
+  flex-wrap: wrap; margin-bottom: 18px;
+}
+.acc-head-main { flex: 1; min-width: 260px; }
+.acc-head-actions { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.acc-head h1 { font-size: 25px; font-weight: 700; letter-spacing: -.4px; line-height: 1.15; }
+.acc-head .page-desc { font-size: 13.5px; color: var(--muted); margin-top: 4px; }
+
+/* ---------- Cards ---------- */
+.acc-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 18px 20px; margin-bottom: 16px;
+  box-shadow: 0 1px 2px rgba(61,46,34,.04);
+}
+.acc-card-flush { padding: 0; overflow: hidden; }
+.acc-card-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 15px 20px; border-bottom: 1px solid var(--border);
+}
+.acc-card-flush > .acc-card-head { margin: 0; }
+.acc-card-title { font-size: 14.5px; font-weight: 700; flex: 1; }
+.acc-card-note { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+
+/* ---------- Stat tiles ---------- */
+.acc-stats {
+  display: grid; gap: 12px; margin-bottom: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+.acc-stat {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 14px; padding: 15px 17px;
+}
+.acc-stat-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted); margin-bottom: 7px;
+}
+.acc-stat-value {
+  font-size: 23px; font-weight: 700; letter-spacing: -.5px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+}
+.acc-stat-sub { font-size: 12px; color: var(--muted); margin-top: 5px; }
+.acc-pos { color: var(--sage); }
+.acc-neg { color: var(--barn); }
+.acc-warn { color: var(--ochre); }
+
+/* ---------- Grid tables ---------- */
+.acc-table-wrap { overflow-x: auto; }
+.acc-table { min-width: 100%; }
+.acc-row {
+  display: grid; align-items: center; gap: 12px;
+  padding: 11px 20px; border-bottom: 1px solid var(--border);
+  font-size: 13.5px;
+}
+.acc-row:last-child { border-bottom: 0; }
+.acc-row-head {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .08em;
+  text-transform: uppercase; color: var(--muted);
+  background: var(--surface-2); padding-top: 9px; padding-bottom: 9px;
+}
+.acc-row-link { cursor: pointer; transition: background .12s; }
+.acc-row-link:hover { background: var(--gold-bg); }
+.acc-row-total { background: var(--surface-2); font-weight: 700; border-top: 2px solid var(--border-2); }
+.acc-num { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.acc-mono { font-family: var(--mono); font-size: 12.5px; }
+.acc-strong { font-weight: 700; }
+.acc-sub { font-size: 12px; color: var(--muted); }
+.acc-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-dim { color: var(--muted); }
+
+/* ---------- Status pills ---------- */
+.acc-pill {
+  display: inline-block; font-size: 10.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase;
+  border-radius: 999px; padding: 3px 9px; white-space: nowrap;
+  background: var(--primary-bg); color: var(--primary-dark);
+}
+.acc-pill.draft, .acc-pill.cancelled, .acc-pill.inactive, .acc-pill.reversed { background: #EFEAE1; color: var(--muted); }
+.acc-pill.sent, .acc-pill.open, .acc-pill.partial { background: var(--ochre-bg); color: #8C6510; }
+.acc-pill.paid, .acc-pill.posted, .acc-pill.active, .acc-pill.completed { background: var(--sage-bg); color: #3F6B32; }
+.acc-pill.overdue { background: var(--barn-bg); color: #8E2F1B; }
+.acc-chip {
+  display: inline-block; font-size: 11.5px; border-radius: 7px;
+  padding: 2px 8px; background: var(--surface-2); color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Tabs & filters ---------- */
+.acc-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.acc-tab {
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text-2); border-radius: 999px; padding: 6px 14px;
+  font-size: 13px; font-weight: 600; cursor: pointer; font-family: inherit;
+  display: inline-flex; align-items: center; gap: 7px; transition: all .12s;
+}
+.acc-tab:hover { border-color: var(--border-2); }
+.acc-tab.active { background: var(--primary); border-color: var(--primary); color: #FFF; }
+.acc-tab-count {
+  font-size: 11px; font-weight: 700; border-radius: 999px;
+  padding: 1px 6px; background: var(--surface-2); color: var(--muted);
+}
+.acc-tab.active .acc-tab-count { background: rgba(255,255,255,.22); color: #FFF; }
+
+.acc-toolbar {
+  display: flex; gap: 10px; align-items: center;
+  flex-wrap: wrap; margin-bottom: 14px;
+}
+.acc-search { flex: 1; min-width: 190px; max-width: 340px; }
+.acc-summary { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; }
+.acc-summary b { font-variant-numeric: tabular-nums; }
+
+/* ---------- Empty state ---------- */
+.acc-empty { padding: 34px 20px; text-align: center; color: var(--muted); font-size: 13.5px; }
+
+/* ---------- Two-column detail layout ---------- */
+.acc-split { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+@media (max-width: 900px) { .acc-split { grid-template-columns: 1fr; } }
+
+.acc-kv { display: flex; justify-content: space-between; gap: 14px; padding: 8px 0; font-size: 13.5px; border-bottom: 1px solid var(--border); }
+.acc-kv:last-child { border-bottom: 0; }
+.acc-kv-label { color: var(--muted); }
+.acc-kv-value { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+
+.acc-totals { margin-left: auto; width: 280px; max-width: 100%; }
+.acc-totals .acc-kv-grand { border-top: 2px solid var(--border-2); font-size: 15px; font-weight: 700; padding-top: 11px; }
+.acc-due-box {
+  background: var(--gold-bg); border-radius: 10px; padding: 11px 14px;
+  display: flex; justify-content: space-between; font-weight: 700; margin-top: 10px;
+}
+
+/* ---------- Timeline ---------- */
+.acc-timeline { position: relative; padding-left: 16px; }
+.acc-timeline-item { position: relative; padding: 0 0 14px 12px; border-left: 2px solid var(--border); }
+.acc-timeline-item:last-child { border-left-color: transparent; padding-bottom: 0; }
+.acc-timeline-item::before {
+  content: ''; position: absolute; left: -6px; top: 3px;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--primary); border: 2px solid var(--surface);
+}
+.acc-timeline-title { font-size: 13px; font-weight: 700; }
+.acc-timeline-meta { font-size: 11.5px; color: var(--muted); font-family: var(--mono); }
+
+/* ---------- Bar chart ---------- */
+.acc-chart { display: flex; align-items: flex-end; gap: 14px; height: 150px; padding: 8px 2px 0; }
+.acc-chart-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; min-width: 0; }
+.acc-chart-bars { display: flex; align-items: flex-end; gap: 4px; height: 120px; }
+.acc-chart-bar { width: 15px; border-radius: 4px 4px 0 0; min-height: 2px; }
+.acc-chart-bar.in { background: var(--primary); }
+.acc-chart-bar.out { background: #DCCEB9; }
+.acc-chart-label { font-size: 10.5px; font-family: var(--mono); text-transform: uppercase; color: var(--muted); }
+.acc-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); align-items: center; }
+.acc-legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; margin-right: 5px; }
+
+/* ---------- Progress bars (spending breakdown) ---------- */
+.acc-bar-row { margin-bottom: 12px; }
+.acc-bar-top { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 5px; }
+.acc-bar-track { height: 7px; background: var(--surface-2); border-radius: 999px; overflow: hidden; }
+.acc-bar-fill { height: 100%; background: var(--primary); border-radius: 999px; }
+
+/* ---------- Line-item editor ---------- */
+.acc-lines { margin-top: 6px; }
+.acc-line {
+  display: grid; grid-template-columns: minmax(0,2fr) 80px 110px 110px 34px;
+  gap: 8px; align-items: center; margin-bottom: 8px;
+}
+.acc-line-amount {
+  text-align: right; font-variant-numeric: tabular-nums;
+  font-weight: 600; font-size: 13.5px; padding-right: 4px;
+}
+.acc-line-del {
+  border: 1px solid var(--border); background: var(--surface); cursor: pointer;
+  border-radius: 8px; width: 30px; height: 30px; color: var(--muted); font-size: 15px;
+  line-height: 1; font-family: inherit;
+}
+.acc-line-del:hover { color: var(--barn); border-color: var(--barn); }
+@media (max-width: 760px) {
+  .acc-line { grid-template-columns: 1fr 1fr; }
+  .acc-line-amount { text-align: left; }
+}
+
+/* ---------- Journal balance checker ---------- */
+.acc-balance {
+  border-radius: 12px; padding: 14px 16px; margin-top: 12px;
+  border: 1px solid var(--border); background: var(--surface-2);
+}
+.acc-balance.ok { border-color: var(--sage); background: var(--sage-bg); }
+.acc-balance.bad { border-color: var(--ochre); background: var(--ochre-bg); }
+.acc-balance-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+
+/* ---------- Settings: module access grouping ---------- */
+.acc-module-group { margin-top: 10px; }
+.acc-module-group-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted); margin: 0 0 5px;
+  display: flex; align-items: center; gap: 6px;
+}
+.acc-module-group-label .acc-owner-tag {
+  font-size: 9.5px; letter-spacing: .03em; text-transform: none;
+  background: var(--gold-bg); color: var(--primary-dark);
+  border-radius: 999px; padding: 1px 7px; font-weight: 700;
+}
+.acc-module-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* ---------- Print (invoice preview) ---------- */
+.acc-print-doc { background: #FFF; color: #1F1714; padding: 40px; border-radius: 14px; border: 1px solid var(--border); }
+.acc-print-head { display: flex; justify-content: space-between; gap: 24px; margin-bottom: 28px; }
+.acc-print-title { font-size: 30px; font-weight: 700; letter-spacing: -.6px; }
+.acc-print-parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 26px; }
+.acc-print-label { font-size: 10.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+@media print {
+  .sidebar, .topbar, .mobile-nav, .acc-head-actions, .acc-noprint { display: none !important; }
+  .acc-print-doc { border: 0; padding: 0; }
+  .main, .content { padding: 0 !important; }
+}

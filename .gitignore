@@ -53,3 +53,6 @@ migration/data/
 migration/sql/crm_data_import.sql
 migration/sql/*.sql
 *.dump.sql
+
+# Task file attachments — runtime user data, never commit
+uploads/

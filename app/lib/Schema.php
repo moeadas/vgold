@@ -83,6 +83,8 @@ class Schema {
             // ---- Columns (add only if missing — portable across MariaDB/MySQL) ----
             self::addColumnIfMissing('files', 'folder_id', "ALTER TABLE `files` ADD COLUMN `folder_id` INT NULL AFTER `project_id`");
             self::addColumnIfMissing('files', 'external_url', "ALTER TABLE `files` ADD COLUMN `external_url` TEXT NULL");
+            // Task-level link attachments (attach-by-URL on the task page).
+            self::addColumnIfMissing('task_files', 'external_url', "ALTER TABLE `task_files` ADD COLUMN `external_url` TEXT NULL");
             self::addColumnIfMissing('user_settings', 'default_screen', "ALTER TABLE `user_settings` ADD COLUMN `default_screen` VARCHAR(20) NOT NULL DEFAULT 'mytasks'");
             self::addColumnIfMissing('user_settings', 'notify_comments', "ALTER TABLE `user_settings` ADD COLUMN `notify_comments` TINYINT(1) DEFAULT 1");
 

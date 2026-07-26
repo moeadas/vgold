@@ -375,23 +375,28 @@ function getWhatsAppStats() {
     try {
         $db = Database::getInstance();
 
+        // Single scan with conditional aggregation (was 4 separate full scans).
+        $filter = '';
+        $params = [];
         if ($_isSalesRep) {
             $userId = getCurrentUserId();
-            $userFilter = "AND (wm.user_id = $userId OR wm.lead_id IN (SELECT lead_id FROM leads WHERE assigned_to = $userId))";
-            $stats = [
-                'total_sent'    => $db->query("SELECT COUNT(*) FROM whatsapp_messages wm WHERE direction = 'Outbound' $userFilter")->fetchColumn(),
-                'total_received'=> $db->query("SELECT COUNT(*) FROM whatsapp_messages wm WHERE direction = 'Inbound' $userFilter")->fetchColumn(),
-                'today_sent'    => $db->query("SELECT COUNT(*) FROM whatsapp_messages wm WHERE direction = 'Outbound' AND DATE(wm.created_at) = CURDATE() $userFilter")->fetchColumn(),
-                'delivered'     => $db->query("SELECT COUNT(*) FROM whatsapp_messages wm WHERE status IN ('Delivered','Read') $userFilter")->fetchColumn(),
-            ];
-        } else {
-            $stats = [
-                'total_sent'    => $db->query("SELECT COUNT(*) FROM whatsapp_messages WHERE direction = 'Outbound'")->fetchColumn(),
-                'total_received'=> $db->query("SELECT COUNT(*) FROM whatsapp_messages WHERE direction = 'Inbound'")->fetchColumn(),
-                'today_sent'    => $db->query("SELECT COUNT(*) FROM whatsapp_messages WHERE direction = 'Outbound' AND DATE(created_at) = CURDATE()")->fetchColumn(),
-                'delivered'     => $db->query("SELECT COUNT(*) FROM whatsapp_messages WHERE status IN ('Delivered','Read')")->fetchColumn(),
-            ];
+            $filter = "WHERE (wm.user_id = ? OR wm.lead_id IN (SELECT lead_id FROM leads WHERE assigned_to = ?))";
+            $params = [$userId, $userId];
         }
+        $row = $db->query(
+            "SELECT SUM(CASE WHEN direction = 'Outbound' THEN 1 ELSE 0 END) AS total_sent,
+                    SUM(CASE WHEN direction = 'Inbound' THEN 1 ELSE 0 END) AS total_received,
+                    SUM(CASE WHEN direction = 'Outbound' AND DATE(wm.created_at) = CURDATE() THEN 1 ELSE 0 END) AS today_sent,
+                    SUM(CASE WHEN status IN ('Delivered','Read') THEN 1 ELSE 0 END) AS delivered
+             FROM whatsapp_messages wm $filter",
+            $params
+        )->fetch(PDO::FETCH_ASSOC);
+        $stats = [
+            'total_sent'     => (int) ($row['total_sent'] ?? 0),
+            'total_received' => (int) ($row['total_received'] ?? 0),
+            'today_sent'     => (int) ($row['today_sent'] ?? 0),
+            'delivered'      => (int) ($row['delivered'] ?? 0),
+        ];
         echo json_encode(['success' => true, 'data' => $stats]);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);

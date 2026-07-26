@@ -309,8 +309,14 @@ class SettingsController {
         
         DB::insert('user_settings', ['user_id' => $userId]);
 
+        // Accounting modules may only be handed out by someone who holds
+        // acc.settings themselves; CRM modules keep their existing semantics.
+        $canGrantAcc = Authz::hasModuleAccess('acc.settings');
         foreach (($data['module_access'] ?? []) as $moduleKey) {
-            if (!isset(Authz::CRM_MODULES[$moduleKey])) continue;
+            $isCrm = isset(Authz::CRM_MODULES[$moduleKey]);
+            $isAcc = isset(Authz::ACC_MODULES[$moduleKey]);
+            if (!$isCrm && !$isAcc) continue;
+            if ($isAcc && !$canGrantAcc) continue;
             DB::insert('user_module_access', [
                 'workspace_id' => Auth::workspaceId(),
                 'user_id' => $userId,
@@ -412,10 +418,30 @@ class SettingsController {
         );
         if (!$member) jsonError('User is not a member of this workspace', 404);
 
-        $modules = array_values(array_unique(array_filter(
+        $incoming = array_values(array_unique(array_filter(
             $data['modules'],
-            fn($key) => is_string($key) && isset(Authz::CRM_MODULES[$key])
+            fn($key) => is_string($key) && (isset(Authz::CRM_MODULES[$key]) || isset(Authz::ACC_MODULES[$key]))
         )));
+
+        // Only someone who holds acc.settings can change another user's
+        // Accounting access. For everyone else the existing accounting grants
+        // are preserved verbatim, so a CRM-only edit can never silently revoke
+        // (or silently hand out) finance access.
+        $canGrantAcc = Authz::hasModuleAccess('acc.settings');
+        $modules = array_values(array_filter($incoming, fn($key) => isset(Authz::CRM_MODULES[$key])));
+        if ($canGrantAcc) {
+            $modules = array_merge($modules, array_values(array_filter($incoming, fn($key) => isset(Authz::ACC_MODULES[$key]))));
+        } else {
+            $existingAcc = DB::fetchAll(
+                "SELECT module_key FROM user_module_access
+                  WHERE workspace_id = ? AND user_id = ? AND can_access = 1",
+                [$workspaceId, $userId]
+            );
+            foreach ($existingAcc as $row) {
+                if (isset(Authz::ACC_MODULES[$row['module_key']])) $modules[] = $row['module_key'];
+            }
+        }
+        $modules = array_values(array_unique($modules));
         DB::conn()->beginTransaction();
         try {
             DB::delete('user_module_access', 'workspace_id = ? AND user_id = ?', [$workspaceId, $userId]);
