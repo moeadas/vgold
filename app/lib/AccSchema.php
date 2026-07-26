@@ -21,6 +21,7 @@ class AccSchema
 
     /** Every business table, in child → parent order (safe for bulk wipes). */
     const BUSINESS_TABLES = [
+        'acc_attachments', 'acc_transaction_splits',
         'acc_document_item_taxes', 'acc_document_items', 'acc_document_totals',
         'acc_document_histories', 'acc_documents',
         'acc_transaction_taxes', 'acc_transactions', 'acc_transfers',
@@ -29,6 +30,12 @@ class AccSchema
         'acc_items', 'acc_categories', 'acc_taxes', 'acc_accounts',
         'acc_chart_of_accounts',
     ];
+
+    /** Where uploaded accounting files live — OUTSIDE the web docroot. */
+    const ATTACHMENT_DIR = 'uploads/acc_attachments';
+
+    /** Things an attachment can hang off. */
+    const ATTACHABLE = ['document', 'reconciliation', 'transaction'];
 
     public static function ensure()
     {
@@ -350,9 +357,90 @@ class AccSchema
                 KEY `acc_rec_target` (`recurable_type`, `recurable_id`),
                 KEY `acc_rec_deleted` (`deleted_at`)
             )$eng");
+
+            /**
+             * Attachments — bank statements on a reconciliation, a supplier PDF on
+             * a bill, a remittance advice on a transaction. Polymorphic on
+             * (attachable_type, attachable_id); files live outside the docroot and
+             * are only ever served through an authorised controller action.
+             */
+            DB::query("CREATE TABLE IF NOT EXISTS `acc_attachments` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `attachable_type` VARCHAR(32) NOT NULL,
+                `attachable_id` INT NOT NULL,
+                `name` VARCHAR(255) NOT NULL,
+                `path` VARCHAR(500) NOT NULL,
+                `mime` VARCHAR(120) NULL,
+                `size` BIGINT NOT NULL DEFAULT 0,
+                `uploaded_by` INT NULL,
+                `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                KEY `acc_att_target` (`attachable_type`, `attachable_id`)
+            )$eng");
+
+            /**
+             * Payment adjustments — the gap between the cash that actually moved
+             * and the amount a document is settled for (wire fees, early-payment
+             * discounts, small write-offs).
+             *
+             * `amount` is the SIGNED effect on the document's settlement, so
+             * settled = SUM(transaction.amount) + SUM(split.amount) with no
+             * per-type branching downstream:
+             *   invoice + fee      → +25  (received 9,975, credited 10,000)
+             *   invoice + discount → +50
+             *   bill    + fee      → −25  (paid 1,025, AP settled 1,000)
+             *   bill    + discount → +20  (paid 980,   AP settled 1,000)
+             */
+            DB::query("CREATE TABLE IF NOT EXISTS `acc_transaction_splits` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `transaction_id` INT NOT NULL,
+                `document_id` INT NULL,
+                `kind` VARCHAR(24) NOT NULL,
+                `amount` DECIMAL(15,4) NOT NULL DEFAULT 0,
+                `description` VARCHAR(255) NULL,
+                `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                KEY `acc_ts_transaction` (`transaction_id`),
+                KEY `acc_ts_document` (`document_id`)
+            )$eng");
+
+            // Sales-agent dimension. Added as ALTERs because both tables predate it.
+            self::addColumnIfMissing('acc_documents', 'user_id',
+                "ALTER TABLE `acc_documents` ADD COLUMN `user_id` INT NULL, ADD KEY `acc_doc_user` (`user_id`)");
+            self::addColumnIfMissing('acc_transactions', 'user_id',
+                "ALTER TABLE `acc_transactions` ADD COLUMN `user_id` INT NULL, ADD KEY `acc_tx_user` (`user_id`)");
         } catch (\Throwable $e) {
             error_log('AccSchema::ensure: ' . $e->getMessage());
         }
+    }
+
+    private static function columnExists($table, $column)
+    {
+        try {
+            $r = DB::fetch(
+                "SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                [$table, $column]
+            );
+            return $r && (int)$r['n'] > 0;
+        } catch (\Throwable $e) {
+            // Fail closed: pretend it exists rather than retry a failing ALTER forever.
+            return true;
+        }
+    }
+
+    private static function addColumnIfMissing($table, $column, $ddl)
+    {
+        if (self::columnExists($table, $column)) return;
+        try { DB::query($ddl); }
+        catch (\Throwable $e) { error_log("AccSchema add $table.$column: " . $e->getMessage()); }
+    }
+
+    /** Absolute path of the attachment directory, created on demand. */
+    public static function attachmentDir()
+    {
+        $dir = dirname(dirname(__DIR__)) . '/' . self::ATTACHMENT_DIR;
+        if (!is_dir($dir)) @mkdir($dir, 0755, true);
+        return $dir;
     }
 
     /** True when the accounting tables hold no business rows at all. */
@@ -376,6 +464,21 @@ class AccSchema
     public static function wipe($includeSettings = false)
     {
         $deleted = [];
+
+        // Unlink the uploaded files before the rows that point at them go away,
+        // otherwise the directory silently accumulates orphans forever.
+        try {
+            $root = dirname(dirname(__DIR__)) . '/';
+            foreach (DB::fetchAll("SELECT path FROM acc_attachments") as $a) {
+                $p = $root . ltrim((string)$a['path'], '/');
+                if (strpos(realpath(dirname($p)) ?: '', realpath(self::attachmentDir()) ?: 'x') === 0 && is_file($p)) {
+                    @unlink($p);
+                }
+            }
+        } catch (\Throwable $e) {
+            error_log('AccSchema::wipe attachments: ' . $e->getMessage());
+        }
+
         DB::query('SET FOREIGN_KEY_CHECKS=0');
         try {
             foreach (self::BUSINESS_TABLES as $t) {

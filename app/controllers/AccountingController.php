@@ -89,7 +89,31 @@ class AccountingController
             'categories' => DB::fetchAll("SELECT id, name, type, color, parent_id FROM acc_categories WHERE deleted_at IS NULL ORDER BY type, name"),
             'items'      => DB::fetchAll("SELECT id, name, sku, sale_price, purchase_price, type FROM acc_items WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
             'coa'        => DB::fetchAll("SELECT id, code, name, type, side FROM acc_chart_of_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY code"),
+            'agents'     => self::agentList(),
+            'adjustment_kinds' => Acc::ADJUSTMENT_KINDS,
         ];
+    }
+
+    /**
+     * Workspace members usable as the sales agent on a document or transaction.
+     * Reuses the same membership join Settings → Team uses, so the picker can
+     * never offer someone outside the workspace.
+     */
+    private static function agentList()
+    {
+        try {
+            return DB::fetchAll(
+                "SELECT u.id, u.name, u.email, u.avatar_color
+                   FROM users u
+                   JOIN workspace_members wm ON wm.user_id = u.id
+                  WHERE wm.workspace_id = ? AND u.is_active = 1
+                  ORDER BY u.name",
+                [Auth::workspaceId()]
+            );
+        } catch (\Throwable $e) {
+            error_log('AccountingController::agentList: ' . $e->getMessage());
+            return [];
+        }
     }
 
     private static function companySettings()
@@ -328,18 +352,25 @@ class AccountingController
         }
         unset($it);
 
+        $payments = DB::fetchAll(
+            "SELECT t.*, a.name AS account_name, u.name AS agent_name FROM acc_transactions t
+          LEFT JOIN acc_accounts a ON a.id = t.account_id
+          LEFT JOIN users u ON u.id = t.user_id
+              WHERE t.document_id = ? AND t.deleted_at IS NULL ORDER BY t.paid_at DESC, t.id DESC",
+            [(int)$doc['id']]
+        );
+        foreach ($payments as &$p) $p['adjustments'] = Acc::transactionSplits($p['id']);
+        unset($p);
+
         jsonResponse([
             'document' => $doc,
             'contact' => $contact,
             'items' => $items,
+            'agent' => $doc['user_id'] ? DB::fetch("SELECT id, name, email, avatar_color FROM users WHERE id = ?", [(int)$doc['user_id']]) : null,
             'totals' => DB::fetchAll("SELECT * FROM acc_document_totals WHERE document_id = ? ORDER BY sort_order", [(int)$doc['id']]),
             'histories' => DB::fetchAll("SELECT * FROM acc_document_histories WHERE document_id = ? ORDER BY id DESC", [(int)$doc['id']]),
-            'payments' => DB::fetchAll(
-                "SELECT t.*, a.name AS account_name FROM acc_transactions t
-              LEFT JOIN acc_accounts a ON a.id = t.account_id
-                  WHERE t.document_id = ? AND t.deleted_at IS NULL ORDER BY t.paid_at DESC, t.id DESC",
-                [(int)$doc['id']]
-            ),
+            'payments' => $payments,
+            'attachments' => self::attachmentsFor('document', $doc['id']),
             'company' => self::companySettings(),
         ]);
     }
@@ -378,6 +409,7 @@ class AccountingController
                 'notes'         => $data['notes'] ?? null,
                 'terms'         => $data['terms'] ?? null,
                 'crm_lead_id'   => Acc::intOrNull($data['crm_lead_id'] ?? null),
+                'user_id'       => Acc::intOrNull($data['user_id'] ?? null),
             ]);
 
             Acc::writeDocumentLines($docId, $data['items']);
@@ -408,12 +440,13 @@ class AccountingController
                 'category_id'  => Acc::intOrNull($data['category_id'] ?? $doc['category_id']),
                 'notes'        => array_key_exists('notes', $data) ? $data['notes'] : $doc['notes'],
                 'terms'        => array_key_exists('terms', $data) ? $data['terms'] : $doc['terms'],
+                'user_id'      => array_key_exists('user_id', $data) ? Acc::intOrNull($data['user_id']) : Acc::intOrNull($doc['user_id']),
             ];
             DB::query(
                 "UPDATE acc_documents SET contact_id = ?, order_number = ?, issued_at = ?, due_at = ?,
-                        category_id = ?, notes = ?, terms = ? WHERE id = ?",
+                        category_id = ?, notes = ?, terms = ?, user_id = ? WHERE id = ?",
                 [$fields['contact_id'], $fields['order_number'], $fields['issued_at'], $fields['due_at'],
-                 $fields['category_id'], $fields['notes'], $fields['terms'], (int)$doc['id']]
+                 $fields['category_id'], $fields['notes'], $fields['terms'], $fields['user_id'], (int)$doc['id']]
             );
 
             if (isset($data['items']) && is_array($data['items']) && count($data['items'])) {
@@ -501,8 +534,20 @@ class AccountingController
         $amount = Acc::money($data['amount'] ?? 0);
         if ($amount <= 0) jsonError('Enter a payment amount greater than zero');
 
+        // Adjustments absorb the gap between cash and debt (wire fee, early-pay
+        // discount, small write-off), so the document can settle for more — or
+        // less — than the money that actually moved.
+        $adjustments = Acc::normaliseAdjustments($doc['type'], $data['adjustments'] ?? []);
+        $settled = $amount;
+        foreach ($adjustments as $a) $settled += $a['delta'];
+        $settled = Acc::money($settled);
+
         $balance = Acc::money(Acc::num($doc['amount']) - Acc::num($doc['paid_amount']));
-        if ($amount > $balance + 0.005) jsonError('Payment exceeds the outstanding balance of ' . number_format($balance, 2));
+        if ($settled <= 0) jsonError('Adjustments cannot cancel out the whole payment');
+        if ($settled > $balance + 0.005) {
+            jsonError('This settles ' . number_format($settled, 2)
+                . ' against an outstanding balance of ' . number_format($balance, 2));
+        }
 
         $accountId = (int)($data['account_id'] ?? 0);
         $account = DB::fetch("SELECT * FROM acc_accounts WHERE id = ? AND deleted_at IS NULL", [$accountId]);
@@ -510,7 +555,7 @@ class AccountingController
 
         $paidAt = Acc::date($data['paid_at'] ?? null, date('Y-m-d'));
 
-        self::tx(function () use ($doc, $data, $amount, $accountId, $paidAt) {
+        self::tx(function () use ($doc, $data, $amount, $accountId, $paidAt, $adjustments, $settled) {
             // A draft document that receives a payment is implicitly issued first.
             if ($doc['status'] === 'draft') {
                 DB::query("UPDATE acc_documents SET status = ? WHERE id = ?",
@@ -533,15 +578,22 @@ class AccountingController
                 'payment_method' => Acc::strOrNull($data['payment_method'] ?? 'bank_transfer', 64),
                 'reference'      => Acc::strOrNull($data['reference'] ?? null),
                 'is_transfer'    => 0,
+                'user_id'        => Acc::intOrNull($data['user_id'] ?? $doc['user_id']),
             ]);
 
             $fresh = DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$doc['id']]);
-            if ($doc['type'] === 'invoice') Acc::postInvoicePayment($fresh, $amount, $paidAt, $txId);
-            else Acc::postBillPayment($fresh, $amount, $paidAt, $txId);
+            Acc::applyPayment($fresh, $txId, $amount, $data['adjustments'] ?? [], $paidAt);
 
             Acc::recalcAccount($accountId);
             Acc::syncDocumentPaymentState($doc['id']);
-            Acc::addHistory($doc['id'], 'payment', 'Payment of ' . number_format($amount, 2) . ' recorded');
+
+            $note = 'Payment of ' . number_format($amount, 2) . ' recorded';
+            if (count($adjustments)) {
+                $parts = [];
+                foreach ($adjustments as $a) $parts[] = strtolower(Acc::ADJUSTMENT_KINDS[$a['kind']]) . ' ' . number_format($a['gross'], 2);
+                $note .= ' (settles ' . number_format($settled, 2) . ' — ' . implode(', ', $parts) . ')';
+            }
+            Acc::addHistory($doc['id'], 'payment', $note);
         });
 
         jsonResponse(['ok' => true, 'document' => DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$id])]);
@@ -760,6 +812,14 @@ class AccountingController
         if (!empty($_GET['account_id'])) { $where .= " AND t.account_id = ?"; $params[] = (int)$_GET['account_id']; }
         if (isset($_GET['hide_transfers']) && $_GET['hide_transfers'] === '1') $where .= " AND t.is_transfer = 0";
 
+        // "Unmatched" = real money with no document behind it — the working
+        // queue when you are reconciling a statement against invoices.
+        $match = $_GET['match'] ?? 'all';
+        if ($match === 'unmatched')    $where .= " AND t.document_id IS NULL AND t.is_transfer = 0";
+        elseif ($match === 'matched')  $where .= " AND t.document_id IS NOT NULL";
+
+        if (!empty($_GET['user_id'])) { $where .= " AND t.user_id = ?"; $params[] = (int)$_GET['user_id']; }
+
         $search = trim((string)($_GET['search'] ?? ''));
         if ($search !== '') {
             $where .= " AND (t.description LIKE ? OR t.reference LIKE ? OR c.name LIKE ?)";
@@ -768,13 +828,17 @@ class AccountingController
         }
 
         $rows = DB::fetchAll(
-            "SELECT t.*, a.name AS account_name, c.name AS contact_name,
-                    cat.name AS category_name, d.number AS document_number, d.type AS document_type
+            "SELECT t.*, a.name AS account_name, c.name AS contact_name, c.country AS contact_country,
+                    cat.name AS category_name, d.number AS document_number, d.type AS document_type,
+                    u.name AS agent_name,
+                    (SELECT COUNT(*) FROM acc_transaction_splits s WHERE s.transaction_id = t.id) AS adjustment_count,
+                    (SELECT COUNT(*) FROM acc_attachments at2 WHERE at2.attachable_type = 'transaction' AND at2.attachable_id = t.id) AS attachment_count
                FROM acc_transactions t
           LEFT JOIN acc_accounts a ON a.id = t.account_id
           LEFT JOIN acc_contacts c ON c.id = t.contact_id
           LEFT JOIN acc_categories cat ON cat.id = t.category_id
           LEFT JOIN acc_documents d ON d.id = t.document_id
+          LEFT JOIN users u ON u.id = t.user_id
               WHERE $where
            ORDER BY t.paid_at DESC, t.id DESC
               LIMIT $per OFFSET $offset",
@@ -786,7 +850,55 @@ class AccountingController
             $params
         );
 
-        jsonResponse(['transactions' => $rows, 'meta' => self::meta($page, $per, $count['n'] ?? 0)]);
+        $unmatched = DB::fetch(
+            "SELECT COUNT(*) AS n FROM acc_transactions t
+              WHERE t.deleted_at IS NULL AND t.is_transfer = 0 AND t.document_id IS NULL"
+        );
+
+        jsonResponse([
+            'transactions' => $rows,
+            'unmatched_count' => (int)($unmatched['n'] ?? 0),
+            'meta' => self::meta($page, $per, $count['n'] ?? 0),
+        ]);
+    }
+
+    /**
+     * Open documents a transaction could be applied to. Income matches unpaid
+     * invoices, expense matches unpaid bills; the contact narrows it when known.
+     * Each row carries its outstanding balance so the UI can show the difference
+     * against the transaction amount before anything is committed.
+     */
+    public static function matchableDocuments()
+    {
+        self::boot('acc.banking');
+        $type = ($_GET['type'] ?? 'income') === 'expense' ? 'bill' : 'invoice';
+
+        $where = "d.deleted_at IS NULL AND d.type = ? AND d.status NOT IN ('paid','cancelled')
+                  AND (d.amount - d.paid_amount) > 0.005";
+        $params = [$type];
+
+        if (!empty($_GET['contact_id'])) { $where .= " AND d.contact_id = ?"; $params[] = (int)$_GET['contact_id']; }
+
+        $search = trim((string)($_GET['search'] ?? ''));
+        if ($search !== '') {
+            $where .= " AND (d.number LIKE ? OR c.name LIKE ?)";
+            $like = '%' . $search . '%';
+            array_push($params, $like, $like);
+        }
+
+        $rows = DB::fetchAll(
+            "SELECT d.id, d.number, d.type, d.status, d.issued_at, d.due_at, d.amount, d.paid_amount,
+                    (d.amount - d.paid_amount) AS balance, c.name AS contact_name, d.contact_id
+               FROM acc_documents d
+          LEFT JOIN acc_contacts c ON c.id = d.contact_id
+              WHERE $where
+           ORDER BY d.due_at ASC, d.id ASC LIMIT 50",
+            $params
+        );
+        foreach ($rows as &$r) $r['display_status'] = Acc::displayStatus($r);
+        unset($r);
+
+        jsonResponse(['documents' => $rows]);
     }
 
     public static function createAccount()
@@ -869,6 +981,54 @@ class AccountingController
         ]);
     }
 
+    /**
+     * Validate a document a transaction is being applied to and work out how
+     * much of it the transaction settles. Returns [document|null, settled].
+     * Errors out rather than silently ignoring a bad match.
+     */
+    private static function resolveMatch($documentId, $type, $cash, $adjustments, $excludeTxId = null)
+    {
+        $documentId = Acc::intOrNull($documentId);
+        if (!$documentId) return [null, 0.0, []];
+
+        $doc = DB::fetch("SELECT * FROM acc_documents WHERE id = ? AND deleted_at IS NULL", [$documentId]);
+        if (!$doc) jsonError('The document you are matching to no longer exists', 404);
+        if ($doc['status'] === 'cancelled') jsonError('That document was cancelled');
+
+        $wantType = $doc['type'] === 'invoice' ? 'income' : 'expense';
+        if ($type !== $wantType) {
+            jsonError($doc['type'] === 'invoice'
+                ? 'An invoice can only be matched to money coming in'
+                : 'A bill can only be matched to money going out');
+        }
+
+        $adj = Acc::normaliseAdjustments($doc['type'], $adjustments);
+        $settled = Acc::money($cash);
+        foreach ($adj as $a) $settled += $a['delta'];
+        $settled = Acc::money($settled);
+        if ($settled <= 0) jsonError('Adjustments cannot cancel out the whole payment');
+
+        // Outstanding balance ignoring this transaction's own current effect, so
+        // re-saving an existing match does not read as an overpayment.
+        $already = DB::fetch(
+            "SELECT
+               COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
+                          WHERE t.document_id = ? AND t.deleted_at IS NULL AND t.is_transfer = 0
+                            AND (? IS NULL OR t.id <> ?)), 0)
+             + COALESCE((SELECT SUM(s.amount) FROM acc_transaction_splits s
+                          JOIN acc_transactions t2 ON t2.id = s.transaction_id
+                         WHERE s.document_id = ? AND t2.deleted_at IS NULL
+                           AND (? IS NULL OR s.transaction_id <> ?)), 0) AS paid",
+            [$documentId, $excludeTxId, $excludeTxId, $documentId, $excludeTxId, $excludeTxId]
+        );
+        $balance = Acc::money(Acc::num($doc['amount']) - Acc::money($already['paid'] ?? 0));
+        if ($settled > $balance + 0.005) {
+            jsonError('This settles ' . number_format($settled, 2) . ' against an outstanding balance of '
+                . number_format($balance, 2) . ' on ' . $doc['number']);
+        }
+        return [$doc, $settled, $adj];
+    }
+
     public static function createTransaction()
     {
         self::boot('acc.banking');
@@ -882,22 +1042,37 @@ class AccountingController
             jsonError('Select an account');
         }
 
-        $id = DB::insert('acc_transactions', [
-            'type' => $type,
-            'paid_at' => Acc::date($data['paid_at'] ?? null, date('Y-m-d')),
-            'amount' => $amount,
-            'currency_code' => Acc::setting('default_currency', 'USD'),
-            'account_id' => $accountId,
-            'document_id' => Acc::intOrNull($data['document_id'] ?? null),
-            'contact_id' => Acc::intOrNull($data['contact_id'] ?? null),
-            'category_id' => Acc::intOrNull($data['category_id'] ?? null),
-            'description' => $data['description'] ?? null,
-            'payment_method' => Acc::strOrNull($data['payment_method'] ?? null, 64),
-            'reference' => Acc::strOrNull($data['reference'] ?? null),
-            'is_transfer' => 0,
-        ]);
-        Acc::recalcAccount($accountId);
-        if (!empty($data['document_id'])) Acc::syncDocumentPaymentState((int)$data['document_id']);
+        $adjustments = $data['adjustments'] ?? [];
+        list($doc) = self::resolveMatch($data['document_id'] ?? null, $type, $amount, $adjustments);
+
+        $id = self::tx(function () use ($data, $type, $amount, $accountId, $doc, $adjustments) {
+            $paidAt = Acc::date($data['paid_at'] ?? null, date('Y-m-d'));
+            $id = DB::insert('acc_transactions', [
+                'type' => $type,
+                'paid_at' => $paidAt,
+                'amount' => $amount,
+                'currency_code' => Acc::setting('default_currency', 'USD'),
+                'account_id' => $accountId,
+                'document_id' => $doc ? (int)$doc['id'] : null,
+                'contact_id' => Acc::intOrNull($data['contact_id'] ?? ($doc['contact_id'] ?? null)),
+                'category_id' => Acc::intOrNull($data['category_id'] ?? null),
+                'description' => $data['description'] ?? null,
+                'payment_method' => Acc::strOrNull($data['payment_method'] ?? null, 64),
+                'reference' => Acc::strOrNull($data['reference'] ?? null),
+                'is_transfer' => 0,
+                'user_id' => Acc::intOrNull($data['user_id'] ?? ($doc['user_id'] ?? null)),
+            ]);
+
+            // Matching to a document is a payment: it must hit the ledger too,
+            // or the trial balance drifts away from the document balances.
+            if ($doc) {
+                Acc::applyPayment($doc, $id, $amount, $adjustments, $paidAt);
+                Acc::syncDocumentPaymentState($doc['id']);
+                Acc::addHistory($doc['id'], 'payment', 'Matched bank transaction of ' . number_format($amount, 2));
+            }
+            Acc::recalcAccount($accountId);
+            return $id;
+        });
 
         jsonResponse(['ok' => true, 'id' => (int)$id]);
     }
@@ -913,26 +1088,57 @@ class AccountingController
         $newAccount = (int)($data['account_id'] ?? $tx['account_id']);
         $amount = Acc::money($data['amount'] ?? $tx['amount']);
         if ($amount <= 0) jsonError('Enter an amount greater than zero');
+        $type = Acc::enum($data['type'] ?? $tx['type'], ['income', 'expense'], $tx['type']);
 
-        DB::query(
-            "UPDATE acc_transactions SET type = ?, paid_at = ?, amount = ?, account_id = ?, contact_id = ?,
-                    category_id = ?, description = ?, payment_method = ?, reference = ? WHERE id = ?",
-            [
-                Acc::enum($data['type'] ?? $tx['type'], ['income', 'expense'], $tx['type']),
-                Acc::date($data['paid_at'] ?? null, $tx['paid_at']),
-                $amount,
-                $newAccount,
-                Acc::intOrNull($data['contact_id'] ?? $tx['contact_id']),
-                Acc::intOrNull($data['category_id'] ?? $tx['category_id']),
-                array_key_exists('description', $data) ? $data['description'] : $tx['description'],
-                Acc::strOrNull($data['payment_method'] ?? $tx['payment_method'], 64),
-                Acc::strOrNull($data['reference'] ?? $tx['reference']),
-                (int)$id,
-            ]
-        );
-        Acc::recalcAccount($tx['account_id']);
-        if ($newAccount !== (int)$tx['account_id']) Acc::recalcAccount($newAccount);
-        if ($tx['document_id']) Acc::syncDocumentPaymentState((int)$tx['document_id']);
+        // Omitting document_id leaves the existing match alone; sending null clears it.
+        $targetDocId = array_key_exists('document_id', $data)
+            ? Acc::intOrNull($data['document_id'])
+            : Acc::intOrNull($tx['document_id']);
+        $adjustments = array_key_exists('adjustments', $data)
+            ? $data['adjustments']
+            : array_map(
+                fn($s) => ['kind' => $s['kind'], 'amount' => abs(Acc::num($s['amount'])), 'description' => $s['description']],
+                Acc::transactionSplits($tx['id'])
+            );
+        if (!$targetDocId) $adjustments = [];
+
+        list($doc) = self::resolveMatch($targetDocId, $type, $amount, $adjustments, (int)$id);
+
+        self::tx(function () use ($tx, $id, $data, $type, $amount, $newAccount, $doc, $adjustments) {
+            $paidAt = Acc::date($data['paid_at'] ?? null, $tx['paid_at']);
+
+            // Posted entries are never edited, only reversed and re-posted.
+            Acc::unapplyPayment((int)$id, 'Payment edited');
+
+            DB::query(
+                "UPDATE acc_transactions SET type = ?, paid_at = ?, amount = ?, account_id = ?, contact_id = ?,
+                        category_id = ?, description = ?, payment_method = ?, reference = ?,
+                        document_id = ?, user_id = ? WHERE id = ?",
+                [
+                    $type,
+                    $paidAt,
+                    $amount,
+                    $newAccount,
+                    Acc::intOrNull($data['contact_id'] ?? $tx['contact_id']),
+                    Acc::intOrNull($data['category_id'] ?? $tx['category_id']),
+                    array_key_exists('description', $data) ? $data['description'] : $tx['description'],
+                    Acc::strOrNull($data['payment_method'] ?? $tx['payment_method'], 64),
+                    Acc::strOrNull($data['reference'] ?? $tx['reference']),
+                    $doc ? (int)$doc['id'] : null,
+                    array_key_exists('user_id', $data) ? Acc::intOrNull($data['user_id']) : Acc::intOrNull($tx['user_id']),
+                    (int)$id,
+                ]
+            );
+
+            if ($doc) Acc::applyPayment($doc, (int)$id, $amount, $adjustments, $paidAt);
+
+            Acc::recalcAccount($tx['account_id']);
+            if ($newAccount !== (int)$tx['account_id']) Acc::recalcAccount($newAccount);
+
+            // Both the old and the new document need their balance re-derived.
+            if ($tx['document_id']) Acc::syncDocumentPaymentState((int)$tx['document_id']);
+            if ($doc && (int)$doc['id'] !== (int)$tx['document_id']) Acc::syncDocumentPaymentState((int)$doc['id']);
+        });
 
         jsonResponse(['ok' => true]);
     }
@@ -944,9 +1150,14 @@ class AccountingController
         if (!$tx) jsonError('Transaction not found', 404);
         if ((int)$tx['is_transfer'] === 1) jsonError('Delete the transfer instead — this row is one half of it.');
 
-        DB::query("UPDATE acc_transactions SET deleted_at = NOW() WHERE id = ?", [(int)$id]);
-        Acc::recalcAccount($tx['account_id']);
-        if ($tx['document_id']) Acc::syncDocumentPaymentState((int)$tx['document_id']);
+        self::tx(function () use ($tx, $id) {
+            // Reverse the ledger before the row goes away, else the trial balance
+            // keeps a payment that no longer exists.
+            Acc::unapplyPayment((int)$id, 'Payment deleted');
+            DB::query("UPDATE acc_transactions SET deleted_at = NOW() WHERE id = ?", [(int)$id]);
+            Acc::recalcAccount($tx['account_id']);
+            if ($tx['document_id']) Acc::syncDocumentPaymentState((int)$tx['document_id']);
+        });
         jsonResponse(['ok' => true]);
     }
 
@@ -1060,6 +1271,7 @@ class AccountingController
             'reconciliation' => $rec,
             'unreconciled' => $unreconciled,
             'cleared_total' => Acc::money($cleared['v'] ?? 0),
+            'attachments' => self::attachmentsFor('reconciliation', $rec['id']),
         ]);
     }
 
@@ -1588,55 +1800,225 @@ class AccountingController
      * Reports — every figure computed live
      * ============================================================ */
 
+    /* ============================================================
+     * Attachments — bank statements, supplier PDFs, remittance advice
+     * ============================================================ */
+
+    /** Attachments hanging off one record, newest first. */
+    private static function attachmentsFor($type, $id)
+    {
+        try {
+            return DB::fetchAll(
+                "SELECT a.id, a.name, a.mime, a.size, a.created_at, u.name AS uploaded_by_name
+                   FROM acc_attachments a
+              LEFT JOIN users u ON u.id = a.uploaded_by
+                  WHERE a.attachable_type = ? AND a.attachable_id = ?
+               ORDER BY a.id DESC",
+                [$type, (int)$id]
+            );
+        } catch (\Throwable $e) {
+            error_log('AccountingController::attachmentsFor: ' . $e->getMessage());
+            return [];
+        }
+    }
+
+    /**
+     * Validate an attachment target and enforce the module grant that owns it.
+     * A bill PDF is gated by acc.bills, a statement by acc.banking — so the
+     * attachment surface can never widen someone's access.
+     */
+    private static function attachableGuard($type, $id)
+    {
+        $type = Acc::enum((string)$type, AccSchema::ATTACHABLE, '');
+        $id   = (int)$id;
+        if ($type === '' || $id <= 0) jsonError('Unknown attachment target');
+
+        if ($type === 'document') {
+            $doc = DB::fetch("SELECT id, type FROM acc_documents WHERE id = ? AND deleted_at IS NULL", [$id]);
+            if (!$doc) jsonError('Document not found', 404);
+            Authz::requireAccModule(self::docModule($doc['type']));
+        } elseif ($type === 'reconciliation') {
+            if (!DB::fetch("SELECT id FROM acc_reconciliations WHERE id = ? AND deleted_at IS NULL", [$id])) {
+                jsonError('Reconciliation not found', 404);
+            }
+            Authz::requireAccModule('acc.banking');
+        } else {
+            if (!DB::fetch("SELECT id FROM acc_transactions WHERE id = ? AND deleted_at IS NULL", [$id])) {
+                jsonError('Transaction not found', 404);
+            }
+            Authz::requireAccModule('acc.banking');
+        }
+        return [$type, $id];
+    }
+
+    public static function uploadAttachment()
+    {
+        AccSchema::ensure();
+        if (!Authz::hasAnyAccAccess()) jsonError('You do not have access to the Accounting & Finance app', 403);
+
+        list($type, $targetId) = self::attachableGuard(
+            $_POST['attachable_type'] ?? '', $_POST['attachable_id'] ?? 0
+        );
+
+        if (!isset($_FILES['file'])) jsonError('No file uploaded');
+        $file = $_FILES['file'];
+        if ($file['error'] !== UPLOAD_ERR_OK) jsonError('Upload failed');
+        if ($file['size'] <= 0) jsonError('That file is empty');
+        if ($file['size'] > 25 * 1024 * 1024) jsonError('File too large (max 25MB)');
+
+        // Never accept anything the server could be tricked into executing.
+        $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $blocked = ['php','php3','php4','php5','php7','php8','phtml','phar','cgi','pl','py','sh','bash',
+                    'htaccess','htpasswd','exe','bat','cmd','com','js','jsp','asp','aspx'];
+        if ($ext === '' || in_array($ext, $blocked, true)) jsonError('That file type is not allowed');
+
+        $dir = AccSchema::attachmentDir();
+        if (!is_dir($dir) || !is_writable($dir)) jsonError('Attachment storage is not writable on the server');
+
+        $safe = preg_replace('/[^A-Za-z0-9._-]/', '_', $file['name']);
+        $safe = ltrim(mb_substr($safe, 0, 120), '.');
+        $unique = $type . '_' . $targetId . '_' . time() . '_' . bin2hex(random_bytes(4)) . '_' . $safe;
+        $full = $dir . '/' . $unique;
+
+        if (!move_uploaded_file($file['tmp_name'], $full)) jsonError('Failed to save the file');
+        @chmod($full, 0644);
+
+        $id = DB::insert('acc_attachments', [
+            'attachable_type' => $type,
+            'attachable_id'   => $targetId,
+            'name'            => mb_substr($file['name'], 0, 255),
+            'path'            => AccSchema::ATTACHMENT_DIR . '/' . $unique,
+            'mime'            => Acc::strOrNull($file['type'] ?? null, 120),
+            'size'            => (int)$file['size'],
+            'uploaded_by'     => Auth::userId(),
+        ]);
+
+        if ($type === 'document') Acc::addHistory($targetId, 'attachment', 'Attached ' . $file['name']);
+
+        jsonResponse(['ok' => true, 'id' => (int)$id, 'attachments' => self::attachmentsFor($type, $targetId)]);
+    }
+
+    public static function downloadAttachment($id)
+    {
+        AccSchema::ensure();
+        if (!Authz::hasAnyAccAccess()) jsonError('You do not have access to the Accounting & Finance app', 403);
+
+        $row = DB::fetch("SELECT * FROM acc_attachments WHERE id = ?", [(int)$id]);
+        if (!$row) jsonError('Attachment not found', 404);
+        self::attachableGuard($row['attachable_type'], $row['attachable_id']);
+
+        $dir  = realpath(AccSchema::attachmentDir());
+        $full = realpath(dirname(dirname(__DIR__)) . '/' . ltrim($row['path'], '/'));
+        // Refuse anything that resolves outside the attachment directory.
+        if (!$dir || !$full || strpos($full, $dir . DIRECTORY_SEPARATOR) !== 0 || !is_file($full)) {
+            jsonError('That file is no longer on the server', 404);
+        }
+
+        $inline = isset($_GET['inline']) && $_GET['inline'] === '1';
+        $mime = $row['mime'] ?: 'application/octet-stream';
+        // Only ever render a handful of types inline; everything else downloads.
+        if ($inline && !preg_match('#^(image/|application/pdf|text/plain)#i', $mime)) $inline = false;
+
+        while (ob_get_level() > 0) ob_end_clean();
+        header('Content-Type: ' . $mime);
+        header('Content-Length: ' . filesize($full));
+        header('Content-Disposition: ' . ($inline ? 'inline' : 'attachment')
+            . '; filename="' . str_replace('"', '', $row['name']) . '"');
+        header('X-Content-Type-Options: nosniff');
+        header('Cache-Control: private, max-age=0, no-store');
+        readfile($full);
+        exit;
+    }
+
+    public static function deleteAttachment($id)
+    {
+        AccSchema::ensure();
+        if (!Authz::hasAnyAccAccess()) jsonError('You do not have access to the Accounting & Finance app', 403);
+
+        $row = DB::fetch("SELECT * FROM acc_attachments WHERE id = ?", [(int)$id]);
+        if (!$row) jsonError('Attachment not found', 404);
+        self::attachableGuard($row['attachable_type'], $row['attachable_id']);
+
+        $dir  = realpath(AccSchema::attachmentDir());
+        $full = realpath(dirname(dirname(__DIR__)) . '/' . ltrim($row['path'], '/'));
+        if ($dir && $full && strpos($full, $dir . DIRECTORY_SEPARATOR) === 0 && is_file($full)) @unlink($full);
+
+        DB::query("DELETE FROM acc_attachments WHERE id = ?", [(int)$row['id']]);
+        if ($row['attachable_type'] === 'document') {
+            Acc::addHistory($row['attachable_id'], 'attachment', 'Removed ' . $row['name']);
+        }
+
+        jsonResponse(['ok' => true, 'attachments' => self::attachmentsFor($row['attachable_type'], $row['attachable_id'])]);
+    }
+
     public static function reports()
     {
         self::boot('acc.reports');
         $year = (int)($_GET['year'] ?? date('Y'));
         if ($year < 2000 || $year > 2100) $year = (int)date('Y');
 
+        // Filing period. Defaults to the whole year, so callers that only send
+        // ?year= get exactly the same numbers as before.
+        $period = Acc::enum($_GET['period'] ?? 'year', ['year', 'q1', 'q2', 'q3', 'q4'], 'year');
+        $qStart = ['year' => 1, 'q1' => 1, 'q2' => 4, 'q3' => 7, 'q4' => 10][$period];
+        $qMonths = $period === 'year' ? 12 : 3;
+        $from = sprintf('%04d-%02d-01', $year, $qStart);
+        $to   = date('Y-m-t', mktime(0, 0, 0, $qStart + $qMonths - 1, 1, $year));
+
+        // Accrual recognises tax when the document is issued; cash recognises it
+        // when the money actually arrives. Most US sales-tax filings are cash.
+        $basis = Acc::enum($_GET['basis'] ?? 'accrual', ['accrual', 'cash'], 'accrual');
+
         // ── Profit & Loss (operational transactions only) ──
         $revenue = DB::fetchAll(
             "SELECT COALESCE(c.name, 'Uncategorized') AS name, SUM(t.amount) AS total
                FROM acc_transactions t
           LEFT JOIN acc_categories c ON c.id = t.category_id
-              WHERE t.deleted_at IS NULL AND t.is_transfer = 0 AND t.type = 'income' AND YEAR(t.paid_at) = ?
+              WHERE t.deleted_at IS NULL AND t.is_transfer = 0 AND t.type = 'income' AND t.paid_at BETWEEN ? AND ?
            GROUP BY COALESCE(c.name, 'Uncategorized') ORDER BY total DESC",
-            [$year]
+            [$from, $to]
         );
         $expenses = DB::fetchAll(
             "SELECT COALESCE(c.name, 'Uncategorized') AS name, SUM(t.amount) AS total
                FROM acc_transactions t
           LEFT JOIN acc_categories c ON c.id = t.category_id
-              WHERE t.deleted_at IS NULL AND t.is_transfer = 0 AND t.type = 'expense' AND YEAR(t.paid_at) = ?
+              WHERE t.deleted_at IS NULL AND t.is_transfer = 0 AND t.type = 'expense' AND t.paid_at BETWEEN ? AND ?
            GROUP BY COALESCE(c.name, 'Uncategorized') ORDER BY total DESC",
-            [$year]
+            [$from, $to]
         );
         $totalRevenue = 0; foreach ($revenue as $r) $totalRevenue += Acc::num($r['total']);
         $totalExpense = 0; foreach ($expenses as $r) $totalExpense += Acc::num($r['total']);
 
         // ── Tax summary ──
-        $collected = DB::fetchAll(
-            "SELECT tx.name, tx.rate, SUM(dit.amount) AS total
-               FROM acc_document_item_taxes dit
-               JOIN acc_document_items di ON di.id = dit.document_item_id
-               JOIN acc_documents d ON d.id = di.document_id
-               JOIN acc_taxes tx ON tx.id = dit.tax_id
-              WHERE d.deleted_at IS NULL AND d.type = 'invoice' AND d.status <> 'cancelled'
-                AND YEAR(d.issued_at) = ?
-           GROUP BY tx.id, tx.name, tx.rate ORDER BY total DESC",
-            [$year]
-        );
-        $paidTax = DB::fetchAll(
-            "SELECT tx.name, tx.rate, SUM(dit.amount) AS total
-               FROM acc_document_item_taxes dit
-               JOIN acc_document_items di ON di.id = dit.document_item_id
-               JOIN acc_documents d ON d.id = di.document_id
-               JOIN acc_taxes tx ON tx.id = dit.tax_id
-              WHERE d.deleted_at IS NULL AND d.type = 'bill' AND d.status <> 'cancelled'
-                AND YEAR(d.issued_at) = ?
-           GROUP BY tx.id, tx.name, tx.rate ORDER BY total DESC",
-            [$year]
-        );
+        // Accrual: the tax on every document issued in the period.
+        // Cash: each document's tax allocated pro-rata to the money actually
+        //       received against it in the period (amount paid ÷ document total).
+        if ($basis === 'cash') {
+            $taxSql =
+                "SELECT tx.name, tx.rate,
+                        SUM(dit.amount * (t.amount / NULLIF(d.amount, 0))) AS total
+                   FROM acc_transactions t
+                   JOIN acc_documents d ON d.id = t.document_id
+                   JOIN acc_document_items di ON di.document_id = d.id
+                   JOIN acc_document_item_taxes dit ON dit.document_item_id = di.id
+                   JOIN acc_taxes tx ON tx.id = dit.tax_id
+                  WHERE t.deleted_at IS NULL AND t.is_transfer = 0
+                    AND d.deleted_at IS NULL AND d.status <> 'cancelled' AND d.type = ?
+                    AND t.paid_at BETWEEN ? AND ?
+               GROUP BY tx.id, tx.name, tx.rate ORDER BY total DESC";
+        } else {
+            $taxSql =
+                "SELECT tx.name, tx.rate, SUM(dit.amount) AS total
+                   FROM acc_document_item_taxes dit
+                   JOIN acc_document_items di ON di.id = dit.document_item_id
+                   JOIN acc_documents d ON d.id = di.document_id
+                   JOIN acc_taxes tx ON tx.id = dit.tax_id
+                  WHERE d.deleted_at IS NULL AND d.type = ? AND d.status <> 'cancelled'
+                    AND d.issued_at BETWEEN ? AND ?
+               GROUP BY tx.id, tx.name, tx.rate ORDER BY total DESC";
+        }
+        $collected = DB::fetchAll($taxSql, ['invoice', $from, $to]);
+        $paidTax   = DB::fetchAll($taxSql, ['bill', $from, $to]);
         $totalCollected = 0; foreach ($collected as $r) $totalCollected += Acc::num($r['total']);
         $totalPaidTax = 0;  foreach ($paidTax as $r)  $totalPaidTax += Acc::num($r['total']);
 
@@ -1683,6 +2065,66 @@ class AccountingController
             );
         }
 
+        // ── Sales analysis: by location, by agent, by type ──
+        // All three are invoice-based (what was sold), not cash-based, and all
+        // group by the NORMALISED label so NULL and '' never split into two rows.
+        $salesWhere = "d.deleted_at IS NULL AND d.type = 'invoice'
+                       AND d.status NOT IN ('cancelled','draft') AND d.issued_at BETWEEN ? AND ?";
+        $salesParams = [$from, $to];
+
+        $byCountry = DB::fetchAll(
+            "SELECT COALESCE(NULLIF(TRIM(c.country), ''), 'Unspecified') AS name,
+                    COUNT(*) AS invoices,
+                    COALESCE(SUM(d.amount), 0) AS total,
+                    COALESCE(SUM(d.paid_amount), 0) AS collected
+               FROM acc_documents d
+          LEFT JOIN acc_contacts c ON c.id = d.contact_id
+              WHERE $salesWhere
+           GROUP BY COALESCE(NULLIF(TRIM(c.country), ''), 'Unspecified')
+           ORDER BY total DESC",
+            $salesParams
+        );
+        $byRegion = DB::fetchAll(
+            "SELECT COALESCE(NULLIF(TRIM(c.state), ''), 'Unspecified') AS name,
+                    COALESCE(NULLIF(TRIM(c.country), ''), 'Unspecified') AS country,
+                    COUNT(*) AS invoices,
+                    COALESCE(SUM(d.amount), 0) AS total,
+                    COALESCE(SUM(d.paid_amount), 0) AS collected
+               FROM acc_documents d
+          LEFT JOIN acc_contacts c ON c.id = d.contact_id
+              WHERE $salesWhere
+           GROUP BY COALESCE(NULLIF(TRIM(c.state), ''), 'Unspecified'),
+                    COALESCE(NULLIF(TRIM(c.country), ''), 'Unspecified')
+           ORDER BY total DESC",
+            $salesParams
+        );
+        $byAgent = DB::fetchAll(
+            "SELECT d.user_id, COALESCE(u.name, 'Unassigned') AS name,
+                    COUNT(*) AS invoices,
+                    COALESCE(SUM(d.amount), 0) AS total,
+                    COALESCE(SUM(d.paid_amount), 0) AS collected,
+                    COALESCE(SUM(d.amount - d.paid_amount), 0) AS outstanding
+               FROM acc_documents d
+          LEFT JOIN users u ON u.id = d.user_id
+              WHERE $salesWhere
+           GROUP BY d.user_id, COALESCE(u.name, 'Unassigned')
+           ORDER BY total DESC",
+            $salesParams
+        );
+        $byType = DB::fetchAll(
+            "SELECT COALESCE(NULLIF(TRIM(cat.name), ''), 'Uncategorized') AS name,
+                    COUNT(*) AS invoices,
+                    COALESCE(SUM(d.amount), 0) AS total,
+                    COALESCE(SUM(d.paid_amount), 0) AS collected
+               FROM acc_documents d
+          LEFT JOIN acc_categories cat ON cat.id = d.category_id
+              WHERE $salesWhere
+           GROUP BY COALESCE(NULLIF(TRIM(cat.name), ''), 'Uncategorized')
+           ORDER BY total DESC",
+            $salesParams
+        );
+        $salesTotal = 0; foreach ($byCountry as $r) $salesTotal += Acc::num($r['total']);
+
         $years = DB::fetchAll(
             "SELECT DISTINCT YEAR(paid_at) AS y FROM acc_transactions WHERE deleted_at IS NULL ORDER BY y DESC"
         );
@@ -1694,6 +2136,17 @@ class AccountingController
         jsonResponse([
             'year' => $year,
             'years' => $yearList,
+            'period' => $period,
+            'basis' => $basis,
+            'from' => $from,
+            'to' => $to,
+            'sales' => [
+                'by_country' => $byCountry,
+                'by_region'  => $byRegion,
+                'by_agent'   => $byAgent,
+                'by_type'    => $byType,
+                'total'      => Acc::money($salesTotal),
+            ],
             'profit_loss' => [
                 'revenue' => $revenue,
                 'expenses' => $expenses,

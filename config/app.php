@@ -25,7 +25,7 @@ if ($isSiteGround) {
 }
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.26.1');
+define('ASSET_VERSION', '2026.07.26.2');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

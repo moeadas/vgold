@@ -190,6 +190,8 @@ $routes = [
     'DELETE acc/contacts/{id}' => ['AccountingController::deleteContact', true],
 
     'GET acc/banking' => ['AccountingController::banking', true],
+    // Literal path must be declared before the {id} sibling below.
+    'GET acc/transactions/matchable' => ['AccountingController::matchableDocuments', true],
     'GET acc/transactions' => ['AccountingController::transactions', true],
     'POST acc/transactions' => ['AccountingController::createTransaction', true],
     'PUT acc/transactions/{id}' => ['AccountingController::updateTransaction', true],
@@ -204,6 +206,11 @@ $routes = [
     'GET acc/reconciliations/{id}' => ['AccountingController::reconciliation', true],
     'POST acc/reconciliations/{id}/mark' => ['AccountingController::reconciliationMark', true],
     'POST acc/reconciliations/{id}/close' => ['AccountingController::reconciliationClose', true],
+
+    // Attachments — bank statements, supplier PDFs, remittance advice.
+    'POST acc/attachments' => ['AccountingController::uploadAttachment', true],
+    'GET acc/attachments/{id}/download' => ['AccountingController::downloadAttachment', true],
+    'DELETE acc/attachments/{id}' => ['AccountingController::deleteAttachment', true],
 
     'GET acc/journal' => ['AccountingController::journal', true],
     'POST acc/journal' => ['AccountingController::createJournalEntry', true],

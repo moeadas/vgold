@@ -143,6 +143,75 @@
   display: flex; justify-content: space-between; font-weight: 700; margin-top: 10px;
 }
 
+/* ---------- Attachments ---------- */
+.acc-att {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 0; border-bottom: 1px solid var(--border);
+}
+.acc-att:last-child { border-bottom: 0; }
+.acc-att-ext {
+  flex: none; width: 42px; text-align: center;
+  font-size: 9.5px; font-weight: 700; letter-spacing: .05em;
+  padding: 5px 0; border-radius: 6px;
+  background: var(--primary-bg); color: var(--primary-dark);
+}
+.acc-att-name {
+  display: block; font-size: 13.5px; font-weight: 600; color: var(--text);
+  text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.acc-att-name:hover { color: var(--primary); text-decoration: underline; }
+.acc-att-act {
+  flex: none; width: 26px; height: 26px; border: 0; border-radius: 7px;
+  background: var(--surface-2); color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 15px; line-height: 1; text-decoration: none; font-family: inherit;
+}
+.acc-att-act:hover { background: var(--gold-bg); color: var(--text); }
+.acc-att-del:hover { background: var(--barn-bg); color: var(--barn); }
+
+/* ---------- Payment adjustments & matching ---------- */
+.acc-adj, .acc-match {
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border);
+}
+.acc-adj-head {
+  display: flex; align-items: center; gap: 10px;
+  justify-content: space-between; margin-bottom: 4px; flex-wrap: wrap;
+}
+.acc-adj-row {
+  display: grid; gap: 8px; align-items: center; margin-bottom: 8px;
+  grid-template-columns: minmax(0, 1.1fr) 110px minmax(0, 1.2fr) 30px;
+}
+@media (max-width: 620px) { .acc-adj-row { grid-template-columns: 1fr 1fr; } }
+.acc-adj-x {
+  width: 28px; height: 28px; border: 0; border-radius: 7px; cursor: pointer;
+  background: var(--surface-2); color: var(--muted); font-size: 17px; line-height: 1;
+  font-family: inherit;
+}
+.acc-adj-x:hover { background: var(--barn-bg); color: var(--barn); }
+.acc-adj-summary {
+  margin-top: 10px; padding: 10px 14px;
+  background: var(--surface-2); border-radius: 10px;
+}
+.acc-adj-summary .acc-kv { padding: 4px 0; border-bottom: 0; }
+.acc-kv-sub { padding-top: 0; padding-left: 14px; border-bottom: 0; font-size: 12.5px; }
+
+.acc-chip-match { background: var(--sage-bg); color: #3F6B32; border-color: transparent; }
+.acc-link-btn {
+  border: 1px dashed var(--border-2); background: none; color: var(--muted);
+  border-radius: 7px; padding: 2px 9px; font-size: 12px; font-family: inherit;
+  cursor: pointer;
+}
+.acc-link-btn:hover { border-color: var(--primary); color: var(--primary); border-style: solid; }
+
+/* ---------- Share bar (sales analysis) ---------- */
+.acc-share {
+  display: inline-block; vertical-align: middle;
+  width: calc(100% - 46px); height: 7px; border-radius: 99px;
+  background: var(--surface-2); overflow: hidden;
+}
+.acc-share > span { display: block; height: 100%; background: var(--primary); border-radius: 99px; }
+.acc-share-pct { display: inline-block; width: 42px; text-align: right; vertical-align: middle; }
+
 /* ---------- Timeline ---------- */
 .acc-timeline { position: relative; padding-left: 16px; }
 .acc-timeline-item { position: relative; padding: 0 0 14px 12px; border-left: 2px solid var(--border); }

@@ -183,13 +183,35 @@ class AccSeed
                 ['INV-0143', 4, 'paid',    '2026-06-01', '2026-07-01', 5000,  [['Bioinformatics retainer — June 2026', 1, 5000]]],
                 ['INV-0142', 0, 'paid',    '2026-05-18', '2026-06-17', 9340,  [['Library prep — 44 samples', 44, 185], ['Sample QC & normalization', 1, 1200]]],
             ];
+            // Spread the demo invoices across real workspace members so the
+            // sales-by-agent report has something to show out of the box.
+            $agentIds = [];
+            try {
+                foreach (DB::fetchAll(
+                    "SELECT u.id FROM users u JOIN workspace_members wm ON wm.user_id = u.id
+                      WHERE wm.workspace_id = ? AND u.is_active = 1 ORDER BY u.id LIMIT 4",
+                    [Auth::workspaceId()]
+                ) as $u) $agentIds[] = (int)$u['id'];
+            } catch (\Throwable $e) { $agentIds = []; }
+
+            // Revenue type per invoice (index into $incomeCatIds), so the
+            // sales-by-type report is meaningful rather than all "Uncategorized".
+            $invoiceCat = [
+                'INV-0149' => 0, 'INV-0148' => 0, 'INV-0147' => 0, 'INV-0146' => 0,
+                'INV-0145' => 0, 'INV-0144' => 1, 'INV-0143' => 2, 'INV-0142' => 0,
+            ];
+
             $docIds = [];
+            $agentSeq = 0;
             foreach ($invoices as $inv) {
                 list($num, $custIdx, $status, $issued, $due, $paid, $lines) = $inv;
+                $agentId = $agentIds ? $agentIds[$agentSeq++ % count($agentIds)] : null;
                 $docId = DB::insert('acc_documents', [
                     'type' => 'invoice', 'number' => $num, 'status' => $status,
                     'issued_at' => $issued, 'due_at' => $due, 'amount' => 0, 'paid_amount' => $paid,
                     'currency_code' => 'USD', 'contact_id' => $customerIds[$custIdx], 'terms' => 'Net 30',
+                    'user_id' => $agentId,
+                    'category_id' => isset($invoiceCat[$num]) ? ($incomeCatIds[$invoiceCat[$num]] ?? null) : null,
                 ]);
                 self::writeLines($docId, $lines);
                 Acc::addHistory($docId, $status, 'Invoice ' . $status);

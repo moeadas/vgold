@@ -76,8 +76,13 @@ async function accBankingTransactions() {
   const rows = (data.transactions || []).map(t => [
     accDateShort(t.paid_at),
     `<div style="min-width:0"><div class="acc-strong acc-truncate">${esc(t.description || '—')}</div>
-      <div class="acc-sub acc-truncate">${esc(t.contact_name || '')}${t.document_number ? ' · ' + esc(t.document_number) : ''}</div></div>`,
-    t.category_name ? `<span class="acc-chip">${esc(t.category_name)}</span>` : (Number(t.is_transfer) ? '<span class="acc-chip">Transfer</span>' : '<span class="acc-dim">—</span>'),
+      <div class="acc-sub acc-truncate">${esc(t.contact_name || '')}${t.agent_name ? ' · ' + esc(t.agent_name) : ''}</div></div>`,
+    Number(t.is_transfer)
+      ? '<span class="acc-chip">Transfer</span>'
+      : (t.document_number
+          ? `<span class="acc-chip acc-chip-match">${esc(t.document_number)}</span>${Number(t.adjustment_count) ? `<span class="acc-sub"> +${Number(t.adjustment_count)} adj</span>` : ''}`
+          : `<button class="acc-link-btn" onclick="event.stopPropagation();accTransactionModal(${t.id})">Match…</button>`),
+    t.category_name ? `<span class="acc-chip">${esc(t.category_name)}</span>` : '<span class="acc-dim">—</span>',
     esc(t.account_name || '—'),
     `<span class="${t.type === 'income' ? 'acc-pos' : 'acc-neg'}">${t.type === 'income' ? '+' : '−'}${accMoney(t.amount).replace('-', '')}</span>`,
     Number(t.is_transfer) ? '<span class="acc-dim">—</span>' :
@@ -90,14 +95,20 @@ async function accBankingTransactions() {
         ${[['all', 'All'], ['income', 'Income'], ['expense', 'Expense']].map(t =>
           `<button class="acc-tab ${f.tx_type === t[0] ? 'active' : ''}" onclick="accTxType('${t[0]}')">${t[1]}</button>`).join('')}
       </div>
+      <div class="acc-tabs" style="margin:0">
+        ${[['all', 'Any match'], ['unmatched', 'Unmatched'], ['matched', 'Matched']].map(t =>
+          `<button class="acc-tab ${(f.match || 'all') === t[0] ? 'active' : ''}" onclick="accTxMatch('${t[0]}')">${t[1]}${
+            t[0] === 'unmatched' && Number(data.unmatched_count) ? `<span class="acc-tab-count">${Number(data.unmatched_count)}</span>` : ''}</button>`).join('')}
+      </div>
       <div style="min-width:170px">${accSelect('acc-tx-account', accounts.map(a => ({ value: a.id, label: a.name })), f.account_id, 'All accounts', 'onchange="accTxAccount()"')}</div>
       <div class="acc-search"><input class="form-input" id="acc-tx-search" placeholder="Search description or reference…" value="${esc(f.search)}" onkeydown="if(event.key==='Enter')accTxSearch()"></div>
       <button class="btn-secondary" onclick="accTxSearch()">Search</button>
     </div>
     <div class="acc-card acc-card-flush">
       ${accTable(
-        [{ label: 'Date', width: '95px' }, { label: 'Description', width: 'minmax(0,2fr)' },
-         { label: 'Category', width: '150px' }, { label: 'Account', width: '140px' },
+        [{ label: 'Date', width: '95px' }, { label: 'Description', width: 'minmax(0,1.6fr)' },
+         { label: 'Applied to', width: '160px' },
+         { label: 'Category', width: '140px' }, { label: 'Account', width: '130px' },
          { label: 'Amount', width: '130px', align: 'right' }, { label: '', width: '80px', align: 'right' }],
         rows, 'No transactions found.')}
       ${accPager(data.meta, 'accTxPage')}
@@ -105,6 +116,7 @@ async function accBankingTransactions() {
 }
 
 function accTxType(t) { AccState.txFilter.tx_type = t; AccState.txFilter.page = 1; AccState.transactions = null; render(); }
+function accTxMatch(m) { AccState.txFilter.match = m; AccState.txFilter.page = 1; AccState.transactions = null; render(); }
 function accTxAccount() { AccState.txFilter.account_id = accVal('acc-tx-account'); AccState.txFilter.page = 1; AccState.transactions = null; render(); }
 function accTxSearch() { AccState.txFilter.search = accVal('acc-tx-search'); AccState.txFilter.page = 1; AccState.transactions = null; render(); }
 function accTxPage(p) { AccState.txFilter.page = p; AccState.transactions = null; render(); }
@@ -260,41 +272,113 @@ function accTransactionModal(id) {
         ${accField('Category', `<span id="acc-t-cat-wrap">${accSelect('acc-t-category', (o.categories || []).map(c => ({ value: c.id, label: c.name + ' (' + c.type + ')' })), t ? t.category_id : '', 'No category')}</span>`)}
       </div>
       <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
-        ${accField('Contact', accSelect('acc-t-contact', contacts.map(c => ({ value: c.id, label: c.name })), t ? t.contact_id : '', 'No contact'))}
+        ${accField('Contact', accSelect('acc-t-contact', contacts.map(c => ({ value: c.id, label: c.name })), t ? t.contact_id : '', 'No contact', 'onchange="accMatchReload()"'))}
         ${accField('Method', accSelect('acc-t-method', [
           { value: 'bank_transfer', label: 'Bank transfer' }, { value: 'credit_card', label: 'Credit card' },
           { value: 'cash', label: 'Cash' }, { value: 'check', label: 'Check' }, { value: 'other', label: 'Other' },
         ], t ? t.payment_method : 'bank_transfer'))}
       </div>
-      <div class="form-row" style="gap:12px;margin-top:10px">
+      <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
+        ${accField('Sales agent', accSelect('acc-t-agent', (o.agents || []).map(a => ({ value: a.id, label: a.name })), t ? t.user_id : '', 'Unassigned'))}
         ${accField('Description', `<input class="form-input" id="acc-t-desc" value="${esc(t ? (t.description || '') : '')}">`)}
       </div>
       <div class="form-row" style="gap:12px;margin-top:10px">
         ${accField('Reference', `<input class="form-input" id="acc-t-ref" value="${esc(t ? (t.reference || '') : '')}">`)}
-      </div>`,
+      </div>
+
+      <div class="acc-match" id="acc-match-block">
+        <div class="acc-adj-head">
+          <span class="acc-card-title">Apply to an invoice or bill</span>
+          <span class="acc-sub" id="acc-match-note"></span>
+        </div>
+        <div id="acc-match-select">${accMatchPlaceholder()}</div>
+      </div>
+      ${accAdjBlock('invoice', 0, 'acc-t-amount')}`,
     footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteTransaction(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveTransaction(${id || 'null'})">${id ? 'Save changes' : 'Add transaction'}</button>`,
   });
+  accMatchReload(t ? t.document_id : null);
+  ((t && t.adjustments) || []).forEach(a => accAdjAdd({ kind: a.kind, amount: Math.abs(Number(a.amount)), description: a.description }));
+  accAdjRecalc();
 }
 
-function accTxCatFilter() { /* categories list is intentionally unfiltered — labels show the type */ }
+function accTxCatFilter() { accMatchReload(); }
+
+/* ---------- Matching a bank transaction to a document ---------- */
+
+function accMatchPlaceholder() {
+  return `${accSelect('acc-t-document', [], '', 'Not applied to a document', 'onchange="accMatchPicked()"')}`;
+}
+
+/**
+ * Reload the candidate documents for the type/contact currently selected.
+ * Income offers unpaid invoices, expense offers unpaid bills.
+ */
+async function accMatchReload(preselect) {
+  const host = document.getElementById('acc-match-select');
+  if (!host) return;
+  const type = accVal('acc-t-type') || 'income';
+  const contactId = accVal('acc-t-contact');
+  const keep = preselect !== undefined ? preselect : accVal('acc-t-document');
+
+  try {
+    const res = await API.accMatchable({ type, contact_id: contactId || '' });
+    AccState.matchable = res.documents || [];
+  } catch (e) {
+    AccState.matchable = [];
+  }
+
+  const opts = AccState.matchable.map(d => ({
+    value: d.id,
+    label: d.number + ' · ' + (d.contact_name || '—') + ' · ' + accMoney(d.balance) + ' outstanding',
+  }));
+  host.innerHTML = accSelect('acc-t-document', opts, keep || '', 'Not applied to a document', 'onchange="accMatchPicked()"');
+  accMatchPicked();
+}
+
+/** Re-point the adjustment preview at the picked document's balance. */
+function accMatchPicked() {
+  const box = document.getElementById('acc-adj-summary');
+  const note = document.getElementById('acc-match-note');
+  const id = accVal('acc-t-document');
+  const doc = (AccState.matchable || []).find(d => Number(d.id) === Number(id));
+
+  if (box) {
+    box.setAttribute('data-doc-type', doc ? doc.type : (accVal('acc-t-type') === 'expense' ? 'bill' : 'invoice'));
+    box.setAttribute('data-balance', doc ? Number(doc.balance).toFixed(2) : '0.00');
+  }
+  if (note) {
+    note.textContent = doc
+      ? `${doc.number} · ${accMoney(doc.balance)} outstanding · due ${accDate(doc.due_at)}`
+      : 'Optional — leave empty for a standalone transaction.';
+  }
+  const adj = document.querySelector('.acc-adj');
+  if (adj) adj.style.display = doc ? '' : 'none';
+  accAdjRecalc();
+}
 
 async function accSaveTransaction(id) {
   const amount = accNumVal('acc-t-amount');
   if (!amount || amount <= 0) { toast('Enter an amount', 'error'); return; }
   if (!accVal('acc-t-account')) { toast('Select an account', 'error'); return; }
+  const docId = accVal('acc-t-document');
   const payload = {
     type: accVal('acc-t-type'), amount, paid_at: accVal('acc-t-date'),
     account_id: Number(accVal('acc-t-account')),
     category_id: accVal('acc-t-category') ? Number(accVal('acc-t-category')) : null,
     contact_id: accVal('acc-t-contact') ? Number(accVal('acc-t-contact')) : null,
+    user_id: accVal('acc-t-agent') ? Number(accVal('acc-t-agent')) : null,
+    document_id: docId ? Number(docId) : null,
+    adjustments: docId ? accAdjCollect() : [],
     description: accVal('acc-t-desc'), payment_method: accVal('acc-t-method'), reference: accVal('acc-t-ref'),
   };
   try {
     if (id) await API.accUpdateTransaction(id, payload); else await API.accCreateTransaction(payload);
     Modal.close();
+    // Matching moves a document's balance, so the document caches go too.
     AccState.transactions = null; AccState.banking = null; AccState.dashboard = null; AccState.account = null;
+    AccState.doc = null; AccState.docs = { invoice: null, bill: null }; AccState.reports = null;
     toast(id ? 'Transaction saved' : 'Transaction added', 'success');
     render();
   } catch (e) { toast(e.message, 'error'); }
@@ -306,7 +390,9 @@ async function accDeleteTransaction(id) {
   try {
     await API.accDeleteTransaction(id);
     Modal.close();
+    // Matching moves a document's balance, so the document caches go too.
     AccState.transactions = null; AccState.banking = null; AccState.dashboard = null; AccState.account = null;
+    AccState.doc = null; AccState.docs = { invoice: null, bill: null }; AccState.reports = null;
     toast('Transaction deleted', 'success');
     render();
   } catch (e) { toast(e.message, 'error'); }
@@ -439,6 +525,7 @@ async function renderAccReconciliation(id) {
            { label: 'Type', width: '110px' }, { label: 'Amount', width: '130px', align: 'right' }],
           rows, 'No unreconciled transactions remaining.')}
       </div>
+      ${accAttachmentsCard('reconciliation', r.id, AccState.reconciliation.attachments, 'Bank statements')}
     </div>`;
 }
 
@@ -1042,13 +1129,18 @@ async function renderAccReports() {
   await accBoot();
   if (!accHas('acc.reports')) return accDenied('financial reports');
   const year = AccState.reportsYear || new Date().getFullYear();
-  if (!AccState.reports || Number(AccState.reports.year) !== Number(year)) {
-    AccState.reports = await API.accReports(year);
+  const period = AccState.reportPeriod || 'year';
+  const basis = AccState.reportBasis || 'accrual';
+  if (!AccState.reports || Number(AccState.reports.year) !== Number(year)
+      || AccState.reports.period !== period || AccState.reports.basis !== basis) {
+    AccState.reports = await API.accReports({ year, period, basis });
   }
   const r = AccState.reports;
   const tab = AccState.reportTab;
+  const periodLabel = r.period === 'year' ? 'Year ' + r.year : r.period.toUpperCase() + ' ' + r.year;
 
-  const tabs = [['pnl', 'Profit & loss'], ['tax', 'Tax summary'], ['trial', 'Trial balance'], ['cashflow', 'Cash flow'], ['aging', 'Aging']];
+  const tabs = [['pnl', 'Profit & loss'], ['sales', 'Sales analysis'], ['tax', 'Tax summary'],
+                ['trial', 'Trial balance'], ['cashflow', 'Cash flow'], ['aging', 'Aging']];
   const tabBar = `<div class="acc-tabs">${tabs.map(t =>
     `<button class="acc-tab ${tab === t[0] ? 'active' : ''}" onclick="accReportTab('${t[0]}')">${t[1]}</button>`).join('')}</div>`;
 
@@ -1066,10 +1158,57 @@ async function renderAccReports() {
       <div style="padding:16px 20px"><div class="acc-due-box" style="background:${Number(p.net_income) >= 0 ? 'var(--sage-bg)' : 'var(--barn-bg)'}">
         <span>Net income</span><span style="font-size:20px">${accMoney(p.net_income)}</span></div></div>
     </div>`;
+  } else if (tab === 'sales') {
+    const s = r.sales || {};
+    const grand = Number(s.total) || 0;
+    // Share bar makes the concentration obvious at a glance — one customer
+    // country carrying 80% of revenue is the thing you want to notice.
+    const share = (v) => {
+      const pct = grand > 0 ? (Number(v) / grand) * 100 : 0;
+      return `<div class="acc-share"><span style="width:${Math.max(2, Math.min(100, pct)).toFixed(1)}%"></span></div>
+              <span class="acc-sub acc-share-pct">${pct.toFixed(1)}%</span>`;
+    };
+    const salesCard = (title, note, rows, emptyText, firstLabel) => `
+      <div class="acc-card acc-card-flush">
+        <div class="acc-card-head"><span class="acc-card-title">${title}</span><span class="acc-card-note">${note}</span></div>
+        ${accTable(
+          [{ label: firstLabel, width: 'minmax(0,1.4fr)' }, { label: 'Invoices', width: '90px', align: 'right' },
+           { label: 'Share', width: 'minmax(0,1fr)' },
+           { label: 'Invoiced', width: '140px', align: 'right' }, { label: 'Collected', width: '140px', align: 'right' }],
+          (rows || []).map(x => [
+            esc(x.name) + (x.country && x.country !== x.name ? ` <span class="acc-sub">${esc(x.country)}</span>` : ''),
+            `<span class="acc-mono">${Number(x.invoices)}</span>`,
+            share(x.total),
+            accMoney(x.total),
+            `<span class="acc-pos">${accMoney(x.collected)}</span>`,
+          ]), emptyText)}
+      </div>`;
+
+    body = `
+      <div class="acc-stats">
+        ${accStat('Total sales', accMoney(s.total), periodLabel + ' · invoiced')}
+        ${accStat('Countries', String((s.by_country || []).length), 'With activity')}
+        ${accStat('Agents', String((s.by_agent || []).length), 'With attributed sales')}
+        ${accStat('Revenue types', String((s.by_type || []).length), 'Categories used')}
+      </div>
+      ${salesCard('Sales by country', periodLabel, s.by_country, 'No invoices in this period.', 'Country')}
+      ${salesCard('Sales by region', 'State / province, from the customer record', s.by_region, 'No invoices in this period.', 'Region')}
+      ${salesCard('Sales by agent', 'Attributed from the sales agent on each invoice', s.by_agent, 'No invoices in this period.', 'Agent')}
+      ${salesCard('Sales by type', 'Revenue category on each invoice', s.by_type, 'No invoices in this period.', 'Type')}
+      <p class="acc-sub" style="margin-top:6px">
+        Location comes from the country and state on the customer record, so filling those in on
+        Customers &amp; vendors is what makes this report accurate. Rows without one group under "Unspecified".
+      </p>`;
   } else if (tab === 'tax') {
     const t = r.tax;
     body = `<div class="acc-card acc-card-flush">
-      <div class="acc-card-head"><span class="acc-card-title">Tax summary</span><span class="acc-card-note">Year ${r.year}</span></div>
+      <div class="acc-card-head"><span class="acc-card-title">Tax summary</span>
+        <span class="acc-card-note">${periodLabel} · ${r.basis === 'cash' ? 'cash basis' : 'accrual basis'}</span></div>
+      <div style="padding:12px 20px;border-bottom:1px solid var(--border)" class="acc-sub">
+        ${r.basis === 'cash'
+          ? 'Cash basis — tax is recognised as payments arrive, allocated pro-rata across each document. This is what most US state sales-tax filings ask for.'
+          : 'Accrual basis — tax is recognised when the document is issued, whether or not it has been paid.'}
+      </div>
       ${accTable([{ label: 'Tax collected (invoices)', width: 'minmax(0,2fr)' }, { label: 'Amount', width: '160px', align: 'right' }],
         (t.collected || []).map(x => [esc(x.name) + ' (' + Number(x.rate).toFixed(2) + '%)', accMoney(x.total)]), 'No tax collected.')}
       <div class="acc-row acc-row-total" style="grid-template-columns:minmax(0,2fr) 160px"><div>Total collected</div><div class="acc-num">${accMoney(t.total_collected)}</div></div>
@@ -1128,14 +1267,31 @@ async function renderAccReports() {
 
   return `<div class="fade-in acc-page">
     ${accHeader('Reports', 'Every figure is computed live from your ledger — nothing here is hard-coded.',
-      `<div style="min-width:120px">${accSelect('acc-report-year', (r.years || []).map(y => ({ value: y, label: String(y) })), r.year, null, 'onchange="accReportYear()"')}</div>
+      `<div style="min-width:110px">${accSelect('acc-report-year', (r.years || []).map(y => ({ value: y, label: String(y) })), r.year, null, 'onchange="accReportRefresh()"')}</div>
+       <div style="min-width:130px">${accSelect('acc-report-period', [
+          { value: 'year', label: 'Full year' }, { value: 'q1', label: 'Q1 (Jan–Mar)' }, { value: 'q2', label: 'Q2 (Apr–Jun)' },
+          { value: 'q3', label: 'Q3 (Jul–Sep)' }, { value: 'q4', label: 'Q4 (Oct–Dec)' },
+        ], r.period, null, 'onchange="accReportRefresh()"')}</div>
+       <div style="min-width:130px">${accSelect('acc-report-basis', [
+          { value: 'accrual', label: 'Accrual basis' }, { value: 'cash', label: 'Cash basis' },
+        ], r.basis, null, 'onchange="accReportRefresh()"')}</div>
        <button class="btn-secondary" onclick="window.print()">Print</button>`)}
     ${tabBar}${body}
   </div>`;
 }
 
 function accReportTab(t) { AccState.reportTab = t; render(); }
-function accReportYear() { AccState.reportsYear = Number(accVal('acc-report-year')); AccState.reports = null; render(); }
+
+/** Year, quarter and basis all reload the same payload. */
+function accReportRefresh() {
+  AccState.reportsYear = Number(accVal('acc-report-year')) || AccState.reportsYear;
+  AccState.reportPeriod = accVal('acc-report-period') || 'year';
+  AccState.reportBasis = accVal('acc-report-basis') || 'accrual';
+  AccState.reports = null;
+  render();
+}
+// Kept for any older call sites.
+function accReportYear() { accReportRefresh(); }
 
 /* ===================== Accounting settings ===================== */
 

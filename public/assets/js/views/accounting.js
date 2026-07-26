@@ -39,7 +39,7 @@ const AccState = {
   banking: null,
   bankingTab: 'accounts',
   transactions: null,
-  txFilter: { tx_type: 'all', account_id: '', search: '', page: 1 },
+  txFilter: { tx_type: 'all', account_id: '', search: '', match: 'all', page: 1 },
   account: null,
   reconciliation: null,
   journal: null,
@@ -50,9 +50,12 @@ const AccState = {
   recurring: null,
   reports: null,
   reportsYear: null,
+  reportPeriod: 'year',  // year | q1..q4 — filing period for reports
+  reportBasis: 'accrual',// accrual | cash — tax recognition basis
   reportTab: 'pnl',
   settings: null,
   editor: null,          // in-flight document editor state
+  matchable: [],         // open documents offered in the transaction matcher
 };
 
 /* ===================== API ===================== */
@@ -114,7 +117,23 @@ Object.assign(API, {
   accDeleteRecurring: (id) => API.req('/acc/recurring/' + id, { method: 'DELETE' }),
   accRunRecurring: () => API.req('/acc/recurring/run', { method: 'POST' }),
 
-  accReports: (year) => API.req('/acc/reports?year=' + encodeURIComponent(year || '')),
+  accMatchable: (p = {}) => API.req('/acc/transactions/matchable?' + new URLSearchParams(p).toString()),
+
+  // Attachments. Upload reuses the shared multipart helper so CSRF is handled
+  // exactly the same way it is for task and message uploads.
+  accUploadAttachment: (type, id, file) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('attachable_type', type);
+    fd.append('attachable_id', id);
+    return API.uploadReq('/acc/attachments', fd);
+  },
+  accDeleteAttachment: (id) => API.req('/acc/attachments/' + id, { method: 'DELETE' }),
+  accAttachmentUrl: (id, inline) => '/api/acc/attachments/' + id + '/download' + (inline ? '?inline=1' : ''),
+
+  accReports: (p = {}) => API.req('/acc/reports?' + new URLSearchParams(
+    typeof p === 'object' && p !== null ? p : { year: p }
+  ).toString()),
   accSettings: () => API.req('/acc/settings'),
   accUpdateSettings: (d) => API.req('/acc/settings', { method: 'PUT', body: JSON.stringify(d) }),
   accRecalcBalances: () => API.req('/acc/settings/recalc', { method: 'POST' }),
@@ -448,6 +467,7 @@ function accResetCaches() {
   AccState.recurring = null;
   AccState.reports = null;
   AccState.settings = null;
+  AccState.matchable = [];
 }
 
 /* ===================== Invoices & bills — list ===================== */
@@ -546,7 +566,7 @@ async function renderAccDocument(id) {
   if (!AccState.doc || Number(AccState.doc.document.id) !== Number(id)) {
     AccState.doc = await API.accDocument(id);
   }
-  const { document: d, contact, items, totals, histories, payments } = AccState.doc;
+  const { document: d, contact, items, totals, histories, payments, attachments, agent } = AccState.doc;
   const isInvoice = d.type === 'invoice';
   const module = isInvoice ? 'acc.invoices' : 'acc.bills';
   if (!accHas(module)) return accDenied(isInvoice ? 'invoices' : 'bills');
@@ -597,9 +617,10 @@ async function renderAccDocument(id) {
                 ${contact && contact.phone ? `<div class="acc-sub">${esc(contact.phone)}</div>` : ''}
                 ${contact && contact.address ? `<div class="acc-sub">${esc(contact.address)}</div>` : ''}
               </div>
-              <div style="display:flex;gap:26px">
+              <div style="display:flex;gap:26px;flex-wrap:wrap">
                 <div><div class="acc-print-label">Issued</div><div class="acc-strong">${accDate(d.issued_at)}</div></div>
                 <div><div class="acc-print-label">Due</div><div class="acc-strong">${accDate(d.due_at)}</div></div>
+                ${agent ? `<div><div class="acc-print-label">${isInvoice ? 'Sales agent' : 'Owner'}</div><div class="acc-strong">${esc(agent.name)}</div></div>` : ''}
               </div>
             </div>
             ${accTable(
@@ -628,8 +649,15 @@ async function renderAccDocument(id) {
                 <span><span class="acc-strong">${esc((p.payment_method || 'bank transfer').replace(/_/g, ' '))}</span>
                   <span class="acc-sub"> · ${accDate(p.paid_at)}${p.account_name ? ' · ' + esc(p.account_name) : ''}</span></span>
                 <span class="acc-kv-value acc-pos">${accMoney(p.amount)}</span>
-              </div>`).join('') : `<div class="acc-sub">No payments recorded yet.</div>`}
+              </div>
+              ${(p.adjustments || []).map(a => `
+                <div class="acc-kv acc-kv-sub">
+                  <span class="acc-kv-label">${esc(accAdjLabel(a.kind))}${a.description ? ' · ' + esc(a.description) : ''}</span>
+                  <span class="acc-kv-value acc-dim">${accMoney(Math.abs(Number(a.amount)))}</span>
+                </div>`).join('')}
+            `).join('') : `<div class="acc-sub">No payments recorded yet.</div>`}
           </div>
+          ${accAttachmentsCard('document', d.id, attachments, isInvoice ? 'Attachments' : 'Bill & receipts')}
           <div class="acc-card">
             <div class="acc-card-title" style="margin-bottom:12px">Activity</div>
             ${(histories || []).length ? `<div class="acc-timeline">${histories.map(h => `
@@ -718,6 +746,14 @@ async function accDocEditor(type, id) {
         ${accField('Apply tax to all lines', accSelect('acc-ed-tax',
           (o.taxes || []).map(t => ({ value: t.id, label: t.name + ' (' + Number(t.rate) + '%)' })),
           (AccState.editor.lines[0] && AccState.editor.lines[0].tax_ids[0]) || '', 'No tax', 'onchange="accEditorRecalc()"'))}
+      </div>
+      <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
+        ${accField(isInvoice ? 'Revenue type' : 'Expense type', accSelect('acc-ed-category',
+          (o.categories || []).filter(c => c.type === (isInvoice ? 'income' : 'expense')).map(c => ({ value: c.id, label: c.name })),
+          doc ? doc.category_id : '', 'Uncategorized'))}
+        ${accField(isInvoice ? 'Sales agent' : 'Owner', accSelect('acc-ed-agent',
+          (o.agents || []).map(a => ({ value: a.id, label: a.name })),
+          doc ? doc.user_id : '', 'Unassigned'))}
       </div>
 
       <div style="margin-top:16px">
@@ -834,6 +870,8 @@ async function accEditorSave() {
     due_at: accVal('acc-ed-due'),
     notes: accVal('acc-ed-notes'),
     terms: accVal('acc-ed-terms'),
+    category_id: accVal('acc-ed-category') ? Number(accVal('acc-ed-category')) : null,
+    user_id: accVal('acc-ed-agent') ? Number(accVal('acc-ed-agent')) : null,
     items: lines,
   };
 
@@ -856,6 +894,198 @@ async function accEditorSave() {
 
 /* ===================== Payment modal ===================== */
 
+/* ===================== Attachments (shared) =====================
+ * One card used by invoices, bills, reconciliations and transactions. Files are
+ * stored outside the docroot and streamed back through an authorised endpoint,
+ * so a link is useless to anyone without the matching module grant.
+ */
+
+function accFileExt(name) {
+  const m = String(name || '').match(/\.([A-Za-z0-9]{1,6})$/);
+  return m ? m[1].toUpperCase() : 'FILE';
+}
+
+function accFileSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return b + ' B';
+  if (b < 1048576) return Math.round(b / 1024) + ' KB';
+  return (b / 1048576).toFixed(1) + ' MB';
+}
+
+function accAttachmentList(list) {
+  if (!list || !list.length) return `<div class="acc-sub">No files attached yet.</div>`;
+  return list.map(a => `
+    <div class="acc-att">
+      <span class="acc-att-ext">${esc(accFileExt(a.name))}</span>
+      <div style="min-width:0;flex:1">
+        <a class="acc-att-name" href="${API.accAttachmentUrl(a.id, true)}" target="_blank" rel="noopener">${esc(a.name)}</a>
+        <div class="acc-sub">${accFileSize(a.size)}${a.uploaded_by_name ? ' · ' + esc(a.uploaded_by_name) : ''}${a.created_at ? ' · ' + accDate(a.created_at) : ''}</div>
+      </div>
+      <a class="acc-att-act" href="${API.accAttachmentUrl(a.id)}" title="Download">&darr;</a>
+      <button type="button" class="acc-att-act acc-att-del" title="Remove" onclick="accRemoveAttachment(${a.id})">&times;</button>
+    </div>`).join('');
+}
+
+function accAttachmentsCard(type, id, attachments, title) {
+  return `
+    <div class="acc-card" id="acc-att-card" data-att-type="${type}" data-att-id="${id}">
+      <div class="acc-card-title" style="margin-bottom:10px">${esc(title || 'Attachments')}</div>
+      <div id="acc-att-list">${accAttachmentList(attachments)}</div>
+      <div style="margin-top:12px;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <input type="file" id="acc-att-file" style="display:none" onchange="accAddAttachment()">
+        <button type="button" class="btn-secondary" onclick="document.getElementById('acc-att-file').click()">Attach file</button>
+        <span class="acc-sub">PDF, image or spreadsheet · max 25MB</span>
+      </div>
+    </div>`;
+}
+
+/** Refresh the on-screen list and the cached copy without a full re-render. */
+function accSetAttachments(type, id, list) {
+  const el = document.getElementById('acc-att-list');
+  if (el) el.innerHTML = accAttachmentList(list);
+  if (type === 'document' && AccState.doc && Number(AccState.doc.document.id) === Number(id)) {
+    AccState.doc.attachments = list;
+  }
+  if (type === 'reconciliation' && AccState.reconciliation
+      && Number(id) === Number(AccState.reconciliation.reconciliation.id)) {
+    AccState.reconciliation.attachments = list;
+  }
+}
+
+async function accAddAttachment() {
+  const card = document.getElementById('acc-att-card');
+  const input = document.getElementById('acc-att-file');
+  const file = input && input.files && input.files[0];
+  if (!card || !file) return;
+  const type = card.getAttribute('data-att-type');
+  const id = card.getAttribute('data-att-id');
+  try {
+    const res = await API.accUploadAttachment(type, id, file);
+    accSetAttachments(type, id, res.attachments || []);
+    toast('File attached', 'success');
+  } catch (e) {
+    toast(e.message, 'error');
+  } finally {
+    if (input) input.value = '';
+  }
+}
+
+async function accRemoveAttachment(attId) {
+  const ok = await Modal.confirm({
+    title: 'Remove file',
+    message: 'This permanently deletes the file from the server. This cannot be undone.',
+    confirmText: 'Remove', danger: true,
+  });
+  if (!ok) return;
+  const card = document.getElementById('acc-att-card');
+  try {
+    const res = await API.accDeleteAttachment(attId);
+    if (card) accSetAttachments(card.getAttribute('data-att-type'), card.getAttribute('data-att-id'), res.attachments || []);
+    toast('File removed', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+/* ---------- Payment adjustments (bank fees, discounts, write-offs) ---------- */
+// Shared by the document payment modal and the bank-transaction matcher: the
+// cash that moved and the amount a document settles for are rarely identical.
+
+let ACC_ADJ_SEQ = 0;
+
+function accAdjLabel(kind) {
+  const k = accOpts().adjustment_kinds || {};
+  return k[kind] || (kind === 'fee' ? 'Bank / processing fee' : kind === 'writeoff' ? 'Write-off' : 'Discount');
+}
+
+function accAdjKinds() {
+  const k = accOpts().adjustment_kinds || { fee: 'Bank / processing fee', discount: 'Discount', writeoff: 'Write-off' };
+  return Object.keys(k).map(key => ({ value: key, label: k[key] }));
+}
+
+function accAdjRow(a) {
+  const i = ACC_ADJ_SEQ++;
+  a = a || {};
+  return `<div class="acc-adj-row" data-adj="${i}">
+    ${accSelect('acc-adj-kind-' + i, accAdjKinds(), a.kind || 'fee', null, 'onchange="accAdjRecalc()"')}
+    <input class="form-input" type="number" step="0.01" min="0" id="acc-adj-amt-${i}"
+           value="${a.amount != null ? Number(a.amount) : ''}" placeholder="0.00"
+           style="text-align:right" oninput="accAdjRecalc()">
+    <input class="form-input" id="acc-adj-desc-${i}" value="${esc(a.description || '')}" placeholder="Note (optional)">
+    <button type="button" class="acc-adj-x" title="Remove" onclick="accAdjRemove(${i})">&times;</button>
+  </div>`;
+}
+
+function accAdjAdd(a) {
+  const host = document.getElementById('acc-adj-rows');
+  if (!host) return;
+  host.insertAdjacentHTML('beforeend', accAdjRow(a));
+  accAdjRecalc();
+}
+
+function accAdjRemove(i) {
+  const row = document.querySelector('[data-adj="' + i + '"]');
+  if (row) row.remove();
+  accAdjRecalc();
+}
+
+/** Collect the adjustment rows currently on screen. */
+function accAdjCollect() {
+  const out = [];
+  document.querySelectorAll('#acc-adj-rows [data-adj]').forEach(el => {
+    const i = el.getAttribute('data-adj');
+    const amount = Math.abs(accNumVal('acc-adj-amt-' + i) || 0);
+    if (!amount) return;
+    out.push({ kind: accVal('acc-adj-kind-' + i), amount, description: accVal('acc-adj-desc-' + i) });
+  });
+  return out;
+}
+
+/**
+ * Settlement preview. Mirrors Acc::normaliseAdjustments on the server: a fee on
+ * money coming in adds to what the document settles for, a fee on money going
+ * out subtracts. The server re-checks all of this — this is only the preview.
+ */
+function accAdjSettled(docType, cash) {
+  let settled = Number(cash) || 0;
+  accAdjCollect().forEach(a => {
+    settled += (docType === 'bill' && a.kind === 'fee') ? -a.amount : a.amount;
+  });
+  return Math.round(settled * 100) / 100;
+}
+
+function accAdjRecalc() {
+  const box = document.getElementById('acc-adj-summary');
+  if (!box) return;
+  const docType = box.getAttribute('data-doc-type') || 'invoice';
+  const balance = Number(box.getAttribute('data-balance')) || 0;
+  const cashId = box.getAttribute('data-cash-field') || 'acc-pay-amount';
+  const cash = accNumVal(cashId) || 0;
+  const settled = accAdjSettled(docType, cash);
+  const left = Math.round((balance - settled) * 100) / 100;
+  const over = settled > balance + 0.005;
+
+  box.innerHTML = `
+    <div class="acc-kv"><span class="acc-kv-label">Cash ${docType === 'bill' ? 'paid' : 'received'}</span><span class="acc-kv-value">${accMoney(cash)}</span></div>
+    <div class="acc-kv"><span class="acc-kv-label">Settles</span><span class="acc-kv-value ${over ? 'acc-neg' : ''}">${accMoney(settled)}</span></div>
+    <div class="acc-kv"><span class="acc-kv-label">${over ? 'Over the balance by' : 'Still outstanding after'}</span><span class="acc-kv-value ${over ? 'acc-neg' : (Math.abs(left) < 0.005 ? 'acc-pos' : '')}">${accMoney(over ? settled - balance : left)}</span></div>`;
+}
+
+function accAdjBlock(docType, balance, cashField) {
+  return `
+    <div class="acc-adj">
+      <div class="acc-adj-head">
+        <span class="acc-card-title">Adjustments</span>
+        <button type="button" class="btn-secondary btn-sm" onclick="accAdjAdd()">+ Add adjustment</button>
+      </div>
+      <p class="acc-sub" style="margin:0 0 8px">
+        Use these when the money that moved doesn't equal the amount owed — a wire fee,
+        an early-payment discount, or a small write-off.
+      </p>
+      <div id="acc-adj-rows"></div>
+      <div id="acc-adj-summary" class="acc-adj-summary"
+           data-doc-type="${docType}" data-balance="${Number(balance).toFixed(2)}" data-cash-field="${cashField}"></div>
+    </div>`;
+}
+
 function accPaymentModal(docId) {
   const d = AccState.doc && AccState.doc.document;
   if (!d) return;
@@ -866,7 +1096,7 @@ function accPaymentModal(docId) {
     title: d.type === 'invoice' ? 'Record payment received' : 'Record payment made',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
-        ${accField('Amount', `<input class="form-input" type="number" step="0.01" min="0" id="acc-pay-amount" value="${balance.toFixed(2)}" style="text-align:right">`)}
+        ${accField('Amount', `<input class="form-input" type="number" step="0.01" min="0" id="acc-pay-amount" value="${balance.toFixed(2)}" style="text-align:right" oninput="accAdjRecalc()">`)}
         ${accField('Date', `<input class="form-input" type="date" id="acc-pay-date" value="${accToday()}">`)}
       </div>
       <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
@@ -880,10 +1110,12 @@ function accPaymentModal(docId) {
       <div class="form-row" style="gap:12px;margin-top:10px">
         ${accField('Reference', `<input class="form-input" id="acc-pay-ref" placeholder="Transaction ID (optional)">`)}
       </div>
+      ${accAdjBlock(d.type, balance, 'acc-pay-amount')}
       <p class="acc-sub" style="margin-top:12px">Outstanding balance: <b>${accMoney(balance)}</b></p>`,
     footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
              <button class="btn-primary" onclick="accSavePayment(${docId})">Record payment</button>`,
   });
+  accAdjRecalc();
 }
 
 async function accSavePayment(docId) {
@@ -897,6 +1129,7 @@ async function accSavePayment(docId) {
       paid_at: accVal('acc-pay-date'),
       payment_method: accVal('acc-pay-method'),
       reference: accVal('acc-pay-ref'),
+      adjustments: accAdjCollect(),
     });
     Modal.close();
     AccState.doc = null;

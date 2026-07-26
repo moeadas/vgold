@@ -195,7 +195,18 @@ class Acc
     const AP          = '2000';
     const TAX_PAYABLE = '2100';
     const REVENUE     = '4000';
+    const DISCOUNT_RECEIVED = '4100';
     const EXPENSE     = '5000';
+    const BANK_FEES   = '5100';
+    const DISCOUNT_GIVEN = '5200';
+    const BAD_DEBT    = '5300';
+
+    /** Adjustment kinds accepted on a payment, with their display labels. */
+    const ADJUSTMENT_KINDS = [
+        'fee'      => 'Bank / processing fee',
+        'discount' => 'Discount',
+        'writeoff' => 'Write-off',
+    ];
 
     /** Resolve (or create) a chart-of-accounts row by code, so posting never fails. */
     public static function coa($code, $name, $type, $side)
@@ -305,6 +316,154 @@ class Acc
             ['coa' => self::coa(self::AP, 'Accounts Payable', 'liability', 'credit'), 'debit' => $amount],
             ['coa' => self::coa(self::CASH, 'Cash — Operating', 'asset', 'debit'), 'credit' => $amount],
         ], $doc['id'], $transactionId);
+    }
+
+    /* ===================== Payment application (with adjustments) ===================== */
+
+    /**
+     * Normalise a caller-supplied adjustments array into
+     * [['kind','gross','delta','description'], ...] where:
+     *   gross — the positive money amount of the adjustment
+     *   delta — its SIGNED effect on how much the document is settled for
+     *
+     * A fee on money coming IN reduces the cash but not the debt, so it adds to
+     * the settlement. A fee on money going OUT increases the cash above the
+     * debt, so it subtracts. Discounts and write-offs always add.
+     */
+    public static function normaliseAdjustments($docType, $adjustments)
+    {
+        $out = [];
+        if (!is_array($adjustments)) return $out;
+        foreach ($adjustments as $a) {
+            if (!is_array($a)) continue;
+            $kind  = self::enum($a['kind'] ?? 'fee', array_keys(self::ADJUSTMENT_KINDS), 'fee');
+            $gross = self::money(abs(self::num($a['amount'] ?? 0)));
+            if ($gross <= 0) continue;
+            $delta = ($docType === 'bill' && $kind === 'fee') ? -$gross : $gross;
+            $out[] = [
+                'kind'        => $kind,
+                'gross'       => $gross,
+                'delta'       => $delta,
+                'description' => self::strOrNull($a['description'] ?? null, 255),
+            ];
+        }
+        return $out;
+    }
+
+    /**
+     * Settle part (or all) of a document from a single cash movement, posting one
+     * balanced entry that splits the difference between cash and debt out to the
+     * right expense/income accounts.
+     *
+     *   Invoice 10,000, customer wires it, bank takes 25:
+     *     DR Cash 9,975 · DR Bank fees 25 · CR Accounts Receivable 10,000
+     *
+     * Returns the settled amount (how far the document's balance moves).
+     * Caller must already be inside a DB transaction.
+     */
+    public static function applyPayment($doc, $transactionId, $cash, array $adjustments, $date)
+    {
+        $isInvoice = $doc['type'] === 'invoice';
+        $cash      = self::money($cash);
+        $adj       = self::normaliseAdjustments($doc['type'], $adjustments);
+
+        $settled = $cash;
+        foreach ($adj as $a) $settled += $a['delta'];
+        $settled = self::money($settled);
+
+        foreach ($adj as $a) {
+            DB::insert('acc_transaction_splits', [
+                'transaction_id' => (int)$transactionId,
+                'document_id'    => (int)$doc['id'],
+                'kind'           => $a['kind'],
+                'amount'         => $a['delta'],
+                'description'    => $a['description'],
+            ]);
+        }
+
+        $feeCoa = self::coa(self::BANK_FEES, 'Bank & Processing Fees', 'expense', 'debit');
+        $lines  = [];
+
+        if ($isInvoice) {
+            $lines[] = ['coa' => self::coa(self::CASH, 'Cash — Operating', 'asset', 'debit'), 'debit' => $cash];
+            foreach ($adj as $a) {
+                $coa = $a['kind'] === 'fee' ? $feeCoa
+                    : ($a['kind'] === 'writeoff'
+                        ? self::coa(self::BAD_DEBT, 'Bad Debt Expense', 'expense', 'debit')
+                        : self::coa(self::DISCOUNT_GIVEN, 'Discounts Given', 'expense', 'debit'));
+                $lines[] = ['coa' => $coa, 'debit' => $a['gross'], 'description' => self::ADJUSTMENT_KINDS[$a['kind']]];
+            }
+            $lines[] = ['coa' => self::coa(self::AR, 'Accounts Receivable', 'asset', 'debit'), 'credit' => $settled];
+            $memo = "Payment received for {$doc['number']}";
+        } else {
+            $lines[] = ['coa' => self::coa(self::AP, 'Accounts Payable', 'liability', 'credit'), 'debit' => $settled];
+            foreach ($adj as $a) {
+                if ($a['kind'] === 'fee') {
+                    $lines[] = ['coa' => $feeCoa, 'debit' => $a['gross'], 'description' => self::ADJUSTMENT_KINDS[$a['kind']]];
+                } else {
+                    $lines[] = [
+                        'coa' => self::coa(self::DISCOUNT_RECEIVED, 'Discounts Received', 'revenue', 'credit'),
+                        'credit' => $a['gross'],
+                        'description' => self::ADJUSTMENT_KINDS[$a['kind']],
+                    ];
+                }
+            }
+            $lines[] = ['coa' => self::coa(self::CASH, 'Cash — Operating', 'asset', 'debit'), 'credit' => $cash];
+            $memo = "Payment made for {$doc['number']}";
+        }
+
+        self::postEntry($memo, 'payment', $date, $lines, $doc['id'], $transactionId);
+        return $settled;
+    }
+
+    /**
+     * Undo the ledger effect of one transaction: mirror every entry posted
+     * against it, mark the originals reversed, and drop its adjustment splits.
+     * Used when a payment transaction is edited, unlinked or deleted.
+     */
+    public static function unapplyPayment($transactionId, $reason = 'Payment reversed')
+    {
+        $transactionId = (int)$transactionId;
+        if (!$transactionId) return 0;
+
+        $entries = DB::fetchAll(
+            "SELECT * FROM acc_journal_entries
+              WHERE transaction_id = ? AND status = 'posted' AND deleted_at IS NULL",
+            [$transactionId]
+        );
+        foreach ($entries as $entry) {
+            $lines = DB::fetchAll("SELECT * FROM acc_journal_lines WHERE journal_entry_id = ?", [(int)$entry['id']]);
+            $mirror = [];
+            foreach ($lines as $l) {
+                $coa = DB::fetch("SELECT * FROM acc_chart_of_accounts WHERE id = ?", [(int)$l['chart_of_account_id']]);
+                if (!$coa) continue;
+                $mirror[] = [
+                    'coa'         => $coa,
+                    'debit'       => self::num($l['credit']),   // swapped
+                    'credit'      => self::num($l['debit']),    // swapped
+                    'description' => $reason,
+                ];
+            }
+            if (count($mirror) >= 2) {
+                self::postEntry("$reason: reversing {$entry['number']}", 'reversal', date('Y-m-d'),
+                    $mirror, $entry['document_id'], $transactionId);
+            }
+            DB::query("UPDATE acc_journal_entries SET status = 'reversed' WHERE id = ?", [(int)$entry['id']]);
+            foreach ($lines as $l) self::recalcCoa((int)$l['chart_of_account_id']);
+        }
+
+        DB::query("DELETE FROM acc_transaction_splits WHERE transaction_id = ?", [$transactionId]);
+        return count($entries);
+    }
+
+    /** Adjustment splits recorded against one transaction. */
+    public static function transactionSplits($transactionId)
+    {
+        return DB::fetchAll(
+            "SELECT id, document_id, kind, amount, description
+               FROM acc_transaction_splits WHERE transaction_id = ? ORDER BY id",
+            [(int)$transactionId]
+        );
     }
 
     /**
@@ -432,10 +591,16 @@ class Acc
     {
         $doc = DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$documentId]);
         if (!$doc) return null;
+        // Settled = cash that moved + every adjustment absorbed against it
+        // (a wire fee still settles the invoice even though it never hit the bank).
         $row = DB::fetch(
-            "SELECT COALESCE(SUM(amount), 0) AS paid FROM acc_transactions
-              WHERE document_id = ? AND deleted_at IS NULL AND is_transfer = 0",
-            [(int)$documentId]
+            "SELECT
+               COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
+                          WHERE t.document_id = ? AND t.deleted_at IS NULL AND t.is_transfer = 0), 0)
+             + COALESCE((SELECT SUM(s.amount) FROM acc_transaction_splits s
+                          JOIN acc_transactions t2 ON t2.id = s.transaction_id
+                         WHERE s.document_id = ? AND t2.deleted_at IS NULL), 0) AS paid",
+            [(int)$documentId, (int)$documentId]
         );
         $paid = self::money($row['paid'] ?? 0);
         $amount = self::num($doc['amount']);
