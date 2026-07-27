@@ -2069,7 +2069,7 @@ function voipOpenSoftphone(prefill, leadId) {
       <div id="sp-post" style="display:none">
         <p style="text-align:center;font-weight:600;margin-bottom:12px">Call ended — log the outcome</p>
         <div class="form-group"><label class="form-label">Outcome</label>
-          <select class="form-control" id="sp-outcome"><option value="">— Select —</option>${['Positive', 'Neutral', 'Negative', 'No Answer', 'Voicemail', 'Callback Requested', 'Wrong Number'].map(o => `<option>${o}</option>`).join('')}</select></div>
+          <select class="form-control" id="sp-outcome"><option value="">— Select —</option>${(typeof CRM_INTERACTION_OUTCOMES !== 'undefined' ? CRM_INTERACTION_OUTCOMES : ['Positive', 'Neutral', 'Negative', 'No Response']).map(o => `<option>${o}</option>`).join('')}</select></div>
         <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="sp-notes" rows="3" placeholder="Call notes…"></textarea></div>
       </div>`),
     footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button><button class="btn-primary" id="sp-savelog" style="display:none" onclick="voipSaveLog()">Save Log</button>`,

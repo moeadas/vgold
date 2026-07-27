@@ -255,18 +255,94 @@ class CRMController {
         jsonResponse(['ok' => true, 'inserted' => $inserted, 'skipped' => $skipped]);
     }
 
+    /**
+     * Country → business region. Mirrors regionForCountry() in
+     * public/assets/js/countries.js — keep the two in sync.
+     *
+     * Region used to be a hand-typed free-text column, which is why the
+     * "By Region" report showed 2,139 leads as "North America" while their
+     * countries were spread across four continents. Deriving it from the
+     * country makes the report trustworthy.
+     */
+    private const REGION_BY_COUNTRY = [
+        'north america' => ['United States','Canada','Bermuda'],
+        'latin america' => ['Mexico','Guatemala','Belize','El Salvador','Honduras','Nicaragua','Costa Rica','Panama','Colombia','Venezuela','Ecuador','Peru','Bolivia','Brazil','Paraguay','Uruguay','Argentina','Chile','Guyana','Suriname','Cuba','Dominican Republic','Haiti','Jamaica','Trinidad and Tobago','Bahamas','Barbados','Puerto Rico','Cayman Islands','Antigua and Barbuda','Dominica','Grenada'],
+        'middle east'   => ['Saudi Arabia','United Arab Emirates','Qatar','Kuwait','Bahrain','Oman','Yemen','Jordan','Lebanon','Syria','Iraq','Iran','Israel','Palestine','Egypt','Libya'],
+        'africa'        => ['Algeria','Morocco','Tunisia','Sudan','South Sudan','Ethiopia','Eritrea','Djibouti','Somalia','Kenya','Uganda','Tanzania','Rwanda','Burundi','Nigeria','Ghana','Senegal','Mali','Burkina Faso','Niger','Chad','Cameroon','Congo','Congo (DRC)','Gabon','Equatorial Guinea','Central African Republic','Angola','Zambia','Zimbabwe','Malawi','Mozambique','Botswana','Namibia','South Africa','Lesotho','Eswatini','Madagascar','Mauritius','Seychelles','Comoros','Cape Verde','Gambia','Guinea','Guinea-Bissau','Sierra Leone','Liberia','Cote d\'Ivoire','Togo','Benin','Mauritania'],
+        'asia pacific'  => ['Australia','New Zealand','Fiji','Papua New Guinea','China','Japan','South Korea','Taiwan','Hong Kong','Macau','Mongolia','India','Pakistan','Bangladesh','Sri Lanka','Nepal','Bhutan','Maldives','Afghanistan','Thailand','Vietnam','Laos','Cambodia','Myanmar','Malaysia','Singapore','Indonesia','Philippines','Brunei','Kazakhstan','Uzbekistan','Turkmenistan','Kyrgyzstan','Tajikistan'],
+        'europe'        => ['United Kingdom','Ireland','France','Germany','Italy','Spain','Portugal','Netherlands','Belgium','Luxembourg','Switzerland','Austria','Denmark','Sweden','Norway','Finland','Iceland','Poland','Czechia','Slovakia','Hungary','Romania','Bulgaria','Greece','Croatia','Slovenia','Serbia','Bosnia and Herzegovina','Montenegro','North Macedonia','Albania','Estonia','Latvia','Lithuania','Belarus','Ukraine','Moldova','Russia','Turkey','Cyprus','Malta','Monaco','Andorra','Liechtenstein','Gibraltar','Georgia','Armenia','Azerbaijan'],
+    ];
+
+    /** Common free-text spellings seen in the imported data. */
+    private const COUNTRY_ALIASES = [
+        'usa' => 'United States', 'u.s.a.' => 'United States', 'u.s.' => 'United States',
+        'united states of america' => 'United States', 'america' => 'United States',
+        'uk' => 'United Kingdom', 'u.k.' => 'United Kingdom', 'great britain' => 'United Kingdom',
+        'england' => 'United Kingdom', 'scotland' => 'United Kingdom', 'wales' => 'United Kingdom',
+        'northern ireland' => 'United Kingdom', 'uae' => 'United Arab Emirates',
+        'u.a.e.' => 'United Arab Emirates', 'emirates' => 'United Arab Emirates',
+        'ksa' => 'Saudi Arabia', 'holland' => 'Netherlands', 'the netherlands' => 'Netherlands',
+        'korea' => 'South Korea', 'czech republic' => 'Czechia', 'ivory coast' => 'Cote d\'Ivoire',
+        'swaziland' => 'Eswatini', 'burma' => 'Myanmar', 'macedonia' => 'North Macedonia',
+        'russian federation' => 'Russia', 'republic of ireland' => 'Ireland',
+    ];
+
+    /** Canonical country name for free text, or '' when unrecognised. */
+    public static function canonicalCountry($value) {
+        $v = trim((string)$value);
+        if ($v === '') return '';
+        $lc = mb_strtolower($v);
+        if (isset(self::COUNTRY_ALIASES[$lc])) return self::COUNTRY_ALIASES[$lc];
+        foreach (self::REGION_BY_COUNTRY as $countries) {
+            foreach ($countries as $c) {
+                if (mb_strtolower($c) === $lc) return $c;
+            }
+        }
+        return $v; // unknown — keep what the user typed rather than blanking it
+    }
+
+    /** Business region for a country name, or '' when unrecognised. */
+    public static function regionForCountry($country) {
+        $c = mb_strtolower(self::canonicalCountry($country));
+        if ($c === '') return '';
+        foreach (self::REGION_BY_COUNTRY as $region => $countries) {
+            foreach ($countries as $name) {
+                if (mb_strtolower($name) === $c) {
+                    return ucwords($region);
+                }
+            }
+        }
+        return '';
+    }
+
+    /**
+     * Lead picker options. With ?q= this is a server-side search across name,
+     * company, email and phone — the list is ~2,400 rows, far too long to ship
+     * to the browser and scroll through.
+     */
     public static function leadOptions() {
         if (!Authz::hasModuleAccess('crm.leads') && !Authz::hasModuleAccess('crm.interactions')) {
             jsonError('You do not have access to CRM leads', 403);
         }
+        $q = trim((string)($_GET['q'] ?? ''));
+        $params = [];
+        $where = '1=1';
+        if ($q !== '') {
+            $like = '%' . $q . '%';
+            $where = '(contact_person LIKE ? OR company_name LIKE ? OR email LIKE ? OR phone LIKE ? OR mobile LIKE ?)';
+            $params = [$like, $like, $like, $like, $like];
+        }
         $rows = DB::fetchAll(
-            "SELECT lead_id, company_name, contact_person, lead_status FROM crm_leads
-             ORDER BY COALESCE(NULLIF(contact_person, ''), company_name) ASC LIMIT 500"
+            "SELECT lead_id, company_name, contact_person, lead_status, country FROM crm_leads
+             WHERE $where
+             ORDER BY COALESCE(NULLIF(contact_person, ''), company_name) ASC LIMIT 50",
+            $params
         );
         jsonResponse(['leads' => array_map(fn($row) => [
             'id' => (int)$row['lead_id'],
             'name' => $row['contact_person'] ?: $row['company_name'] ?: ('Lead #' . $row['lead_id']),
             'company' => $row['company_name'],
+            'country' => $row['country'],
             'status' => $row['lead_status'],
         ], $rows)]);
     }
@@ -281,13 +357,19 @@ class CRMController {
         $assignedVgoldId = !empty($data['assigned_to']) ? (int)$data['assigned_to'] : Auth::userId();
         $assignedCrmId = self::crmUserIdForWorkspaceMember($assignedVgoldId, true);
         $creatorCrmId = self::crmUserIdForWorkspaceMember(Auth::userId(), true);
+        // Region is always derived from the country so the "By Region" report
+        // stays consistent, whatever the client sent.
+        $country = self::canonicalCountry($data['country'] ?? '');
+        $region = self::regionForCountry($country) ?: trim((string)($data['region'] ?? ''));
         $id = DB::insert('crm_leads', [
             'company_name' => $company ?: null,
             'contact_person' => $contact ?: null,
             'email' => self::nullable($data['email'] ?? null),
             'phone' => self::nullable($data['phone'] ?? null),
-            'country' => self::nullable($data['country'] ?? null),
-            'region' => self::nullable($data['region'] ?? null),
+            'mobile' => self::nullable($data['mobile'] ?? null),
+            'city' => self::nullable($data['city'] ?? null),
+            'country' => $country ?: null,
+            'region' => $region ?: null,
             'lead_type' => self::choice($data['lead_type'] ?? 'Stable', ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'], 'Stable'),
             'lead_status' => self::choice($data['status'] ?? 'New Lead', ['New Lead','Contacted','Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold','Not Interested'], 'New Lead'),
             'priority' => self::choice($data['priority'] ?? 'Medium', ['Low','Medium','High','Urgent'], 'Medium'),
@@ -423,11 +505,15 @@ class CRMController {
             if (array_key_exists($f, $data)) $fields[$f] = self::nullable($data[$f]);
         }
         // country + region are NOT NULL — only overwrite when a real value is sent.
+        // Whenever the country changes, the region is re-derived from it rather
+        // than trusting whatever the client posted.
         if (array_key_exists('country', $data) && trim((string)$data['country']) !== '') {
-            $fields['country'] = trim($data['country']);
+            $fields['country'] = self::canonicalCountry($data['country']);
+            $derived = self::regionForCountry($fields['country']);
+            if ($derived !== '') $fields['region'] = $derived;
         }
-        if (array_key_exists('region', $data) && trim((string)$data['region']) !== '') {
-            $fields['region'] = self::choice($data['region'], ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other'], $lead['region']);
+        if (!isset($fields['region']) && array_key_exists('region', $data) && trim((string)$data['region']) !== '') {
+            $fields['region'] = self::choice($data['region'], ['North America','Latin America','Europe','Middle East','Africa','Asia Pacific','Other'], $lead['region']);
         }
         if (array_key_exists('lead_type', $data)) {
             $fields['lead_type'] = self::choice($data['lead_type'], ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'], $lead['lead_type']);

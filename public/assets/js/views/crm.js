@@ -599,66 +599,232 @@ function crmErrorBox(id) {
   return `<div id="${id}" style="display:none;margin-top:12px;padding:10px 12px;border-radius:8px;background:#fde8e8;color:#b3261e;font-size:13px;font-weight:600;"></div>`;
 }
 
-async function openCrmLeadModal() {
+// ===== Shared form controls: country <select> and international phone input ==
+// Both live here so the add-lead page, the edit-lead page and any future
+// customer form stay consistent.
+
+/** A country <select> that also re-syncs any phone inputs bound to it. */
+function crmCountryField(id, label, value, opts = {}) {
+  const bind = opts.phoneIds ? ` data-phone-ids="${opts.phoneIds.join(',')}"` : '';
+  return `<div class="form-group">
+    <label class="form-label" for="${id}">${esc(label)}</label>
+    <select class="form-control crm-country-select" id="${id}"${bind} onchange="crmOnCountryChange(this)">
+      ${typeof countryOptions === 'function' ? countryOptions(value) : `<option>${esc(value || '')}</option>`}
+    </select>
+  </div>`;
+}
+
+/**
+ * Phone field with a live country flag + dial-code prefix and inline validation.
+ * The visible flag is derived from the number itself, so a pasted E.164 number
+ * shows the right country even before the country <select> is touched.
+ */
+function crmPhoneField(id, label, value, opts = {}) {
+  const v = value || '';
+  return `<div class="form-group">
+    <label class="form-label" for="${id}">${esc(label)}</label>
+    <div class="crm-phone-wrap">
+      <span class="crm-phone-flag" id="${id}-flag" aria-hidden="true">${typeof countryForPhone === 'function' && countryForPhone(v) ? countryFlag(countryForPhone(v).iso2) : '🏳'}</span>
+      <input class="form-control crm-phone-input" id="${id}" type="tel" inputmode="tel"
+             value="${esc(v)}" placeholder="${esc(opts.placeholder || '+34 600 123 456')}"
+             oninput="crmOnPhoneInput(this)" onblur="crmOnPhoneInput(this)">
+    </div>
+    <div class="crm-phone-hint" id="${id}-hint">Include the country code, e.g. +34 600 123 456</div>
+  </div>`;
+}
+
+/** Update the flag + validity hint as the user types a phone number. */
+function crmOnPhoneInput(input) {
+  const flag = document.getElementById(input.id + '-flag');
+  const hint = document.getElementById(input.id + '-hint');
+  const raw = input.value.trim();
+  const c = (typeof countryForPhone === 'function') ? countryForPhone(raw) : null;
+  if (flag) flag.textContent = c ? countryFlag(c.iso2) : '🏳';
+  if (!hint) return;
+  if (!raw) {
+    input.classList.remove('is-invalid', 'is-valid');
+    hint.textContent = 'Include the country code, e.g. +34 600 123 456';
+    hint.className = 'crm-phone-hint';
+    return;
+  }
+  const valid = (typeof crmIsPhone === 'function') ? crmIsPhone(raw) : /^\+?[0-9 ()-]{7,}$/.test(raw);
+  const hasPlus = raw.startsWith('+');
+  if (valid && hasPlus && c) {
+    input.classList.add('is-valid'); input.classList.remove('is-invalid');
+    hint.textContent = c.name + ' (+' + c.dial + ')';
+    hint.className = 'crm-phone-hint ok';
+  } else if (valid && !hasPlus) {
+    input.classList.remove('is-valid'); input.classList.add('is-invalid');
+    hint.textContent = 'Add the country code — start the number with “+”.';
+    hint.className = 'crm-phone-hint warn';
+  } else {
+    input.classList.remove('is-valid'); input.classList.add('is-invalid');
+    hint.textContent = 'That does not look like a valid phone number.';
+    hint.className = 'crm-phone-hint warn';
+  }
+}
+
+/** Prefill the dial code on bound phone fields when a country is picked. */
+function crmOnCountryChange(sel) {
+  const ids = (sel.dataset.phoneIds || '').split(',').filter(Boolean);
+  const opt = sel.options[sel.selectedIndex];
+  const dial = opt ? opt.getAttribute('data-dial') : '';
+  if (!dial) return;
+  ids.forEach(id => {
+    const inp = document.getElementById(id);
+    if (!inp) return;
+    const cur = inp.value.trim();
+    if (!cur || cur === '+') { inp.value = '+' + dial + ' '; crmOnPhoneInput(inp); }
+  });
+}
+
+// ===== Add lead — full page (replaces the old popup) =====
+function openCrmLeadModal() {
+  State.screen = 'crm-lead-new';
+  State.activeCrmLeadId = null;
+  updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+}
+
+async function renderCrmLeadNewPage() {
+  if (!crmHas('crm.leads')) return crmAccessDenied('crm.leads');
   const members = (await API.members()).members || [];
   const statuses = ['New Lead','Contacted','Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold'];
-  Modal.open({
-    title: 'Add New Lead',
-    body: `<div class="crm-native">
-      <div class="grid grid-2">
-        ${crmInput('crm-contact','Lead name','Contact person or owner')}
-        ${crmInput('crm-company','Company / stable','Organization name')}
-        ${crmInput('crm-email','Email','name@example.com','email')}
-        ${crmInput('crm-phone','Phone','+34 …','tel')}
-        ${crmInput('crm-country','Country','Country')}
-        <div class="form-group"><label class="form-label">Owner</label><select class="form-control" id="crm-assignee">${members.map(m => `<option value="${m.id}" ${m.id === State.user.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
-        <div class="form-group"><label class="form-label">Status</label><select class="form-control" id="crm-status">${statuses.map(x => `<option>${x}</option>`).join('')}</select></div>
-        <div class="form-group"><label class="form-label">Priority</label><select class="form-control" id="crm-priority">${['Medium','High','Urgent','Low'].map(x => `<option>${x}</option>`).join('')}</select></div>
+  const sel = (id, label, options, selected) => `<div class="form-group"><label class="form-label" for="${id}">${esc(label)}</label>
+    <select class="form-control" id="${id}">${options.map(o => `<option${o === selected ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></div>`;
+
+  return `<div class="crm-native fade-in">
+    ${crmModHead('Add New Lead', 'Create a lead record and assign an owner.',
+      `<button class="btn btn-outline" onclick="nav('crm-leads')">${CRM_ICONS.back} Cancel</button>
+       <button class="btn btn-primary" onclick="saveCrmLead()">Save Lead</button>`)}
+    <div class="card" style="max-width:960px">
+      <div class="card-header"><h3 class="card-title">Contact</h3></div>
+      <div class="card-body">
+        <div class="grid grid-2">
+          ${crmInput('crm-contact','Lead name','Contact person or owner')}
+          ${crmInput('crm-company','Company / stable','Organization name')}
+          ${crmInput('crm-email','Email','name@example.com','email')}
+          ${crmPhoneField('crm-phone','Phone','')}
+          ${crmPhoneField('crm-mobile','Mobile / WhatsApp','')}
+          ${crmCountryField('crm-country','Country','', { phoneIds: ['crm-phone','crm-mobile'] })}
+          ${crmInput('crm-city','City','City')}
+        </div>
       </div>
-      <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="crm-notes" rows="4" placeholder="Background, goals, or context"></textarea></div>
-      ${crmErrorBox('crm-form-error')}
-    </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button><button class="btn-primary" onclick="saveCrmLead()">Save Lead</button>`,
-  });
+    </div>
+    <div class="card" style="max-width:960px;margin-top:16px">
+      <div class="card-header"><h3 class="card-title">Ownership &amp; pipeline</h3></div>
+      <div class="card-body">
+        <div class="grid grid-2">
+          <div class="form-group"><label class="form-label" for="crm-assignee">Owner</label>
+            <select class="form-control" id="crm-assignee">${members.map(m => `<option value="${m.id}"${m.id === State.user.id ? ' selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
+          ${sel('crm-status','Status', statuses, 'New Lead')}
+          ${sel('crm-priority','Priority', ['Low','Medium','High','Urgent'], 'Medium')}
+          ${sel('crm-type','Lead type', ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'], 'Stable')}
+        </div>
+        <div class="form-group"><label class="form-label" for="crm-notes">Notes</label>
+          <textarea class="form-control" id="crm-notes" rows="4" placeholder="Background, goals, or context"></textarea></div>
+        ${crmErrorBox('crm-form-error')}
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin:16px 0 40px;max-width:960px">
+      <button class="btn btn-primary" onclick="saveCrmLead()">Save Lead</button>
+      <button class="btn btn-outline" onclick="nav('crm-leads')">Cancel</button>
+    </div>
+  </div>`;
 }
 
 async function saveCrmLead() {
   const err = document.getElementById('crm-form-error');
+  const g = id => (document.getElementById(id)?.value || '').trim();
+  const phone = g('crm-phone'), mobile = g('crm-mobile');
+  const bad = [['Phone', phone], ['Mobile', mobile]].find(([, v]) => v && typeof crmIsPhone === 'function' && !crmIsPhone(v));
+  if (bad) {
+    if (err) { err.textContent = bad[0] + ' is not a valid phone number. Use full international format, e.g. +34600123456.'; err.style.display = 'block'; }
+    return;
+  }
+  const country = g('crm-country');
   try {
-    await API.createCrmLead({
-      contact_person: document.getElementById('crm-contact').value,
-      company_name: document.getElementById('crm-company').value,
-      email: document.getElementById('crm-email').value,
-      phone: document.getElementById('crm-phone').value,
-      country: document.getElementById('crm-country').value,
-      assigned_to: Number(document.getElementById('crm-assignee').value),
-      status: document.getElementById('crm-status').value,
-      priority: document.getElementById('crm-priority').value,
-      notes: document.getElementById('crm-notes').value,
+    const res = await API.createCrmLead({
+      contact_person: g('crm-contact'),
+      company_name: g('crm-company'),
+      email: g('crm-email'),
+      phone, mobile, city: g('crm-city'),
+      country,
+      // Region is derived from the country so the "By Region" report stops
+      // depending on hand-typed values. The server recomputes it too.
+      region: (typeof regionForCountry === 'function') ? regionForCountry(country) : '',
+      assigned_to: Number(g('crm-assignee')),
+      status: g('crm-status'),
+      priority: g('crm-priority'),
+      lead_type: g('crm-type'),
+      notes: g('crm-notes'),
     });
     State.crmDashboard = null;
-    Modal.close();
+    State.crmLeads = null;
     toast('Lead added', 'success');
-    render();
-  } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
+    if (res && res.id) goCrmLead(res.id); else nav('crm-leads');
+  } catch (e) { if (err) { err.textContent = e.message; err.style.display = 'block'; } }
 }
 
+// Outcome values accepted by crm_interactions.outcome. Keep in sync with the
+// enum — anything outside it is silently dropped by MySQL.
+const CRM_INTERACTION_OUTCOMES = ['Positive', 'Neutral', 'Negative', 'No Response', 'No Answer', 'Voicemail', 'Callback Requested', 'Wrong Number', 'Not Interested'];
+
+/**
+ * Log an interaction.
+ *
+ * Opened from a lead page (leadId given) the lead is fixed — there is nothing to
+ * choose, so we show it as a static line instead of a 2,000-row <select>.
+ * Opened from the Interactions screen (no leadId) we show a type-to-search
+ * picker that queries the server, because the full list is far too long to scroll.
+ */
 async function openCrmInteractionModal(leadId = null, presetType = null) {
-  const leads = (await API.crmLeadOptions()).leads || [];
-  if (!leads.length) { toast('Add a lead before logging an interaction', 'error'); return; }
+  let fixedLead = null;
+  if (leadId) {
+    const cached = crmActiveLead(leadId);
+    if (cached) {
+      fixedLead = { id: Number(leadId), name: cached.contact_person || cached.company_name || ('Lead #' + leadId), company: cached.company_name || '' };
+    } else {
+      try {
+        const d = await API.crmLeadDetail(leadId);
+        const l = d.lead || {};
+        fixedLead = { id: Number(leadId), name: l.contact_person || l.company_name || ('Lead #' + leadId), company: l.company_name || '' };
+      } catch (e) { fixedLead = { id: Number(leadId), name: 'Lead #' + leadId, company: '' }; }
+    }
+  }
+
   const now = new Date();
   const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0,16);
+  const leadField = fixedLead
+    ? `<div class="form-group">
+         <label class="form-label">Lead</label>
+         <div class="crm-fixed-lead">
+           <span class="crm-fixed-lead-name">${esc(fixedLead.name)}</span>
+           ${fixedLead.company && fixedLead.company !== fixedLead.name ? `<span class="crm-fixed-lead-co">${esc(fixedLead.company)}</span>` : ''}
+         </div>
+         <input type="hidden" id="crm-ix-lead" value="${fixedLead.id}">
+       </div>`
+    : `<div class="form-group crm-leadpick" id="crm-ix-leadpick">
+         <label class="form-label" for="crm-ix-leadsearch">Select lead</label>
+         <input class="form-control" id="crm-ix-leadsearch" autocomplete="off" placeholder="Type a name, company, email or phone…"
+                oninput="crmLeadSearchInput()" onfocus="crmLeadSearchInput()" onkeydown="crmLeadSearchKey(event)">
+         <input type="hidden" id="crm-ix-lead" value="">
+         <div class="crm-leadpick-results" id="crm-ix-leadresults" style="display:none"></div>
+         <div class="form-hint" id="crm-ix-leadhint">Start typing to search all leads.</div>
+       </div>`;
+
   Modal.open({
     title: presetType === 'Meeting' ? 'Schedule Meeting' : 'Log New Interaction',
     body: `<div class="crm-native">
-      <div class="form-group"><label class="form-label">Select Lead</label><select class="form-control" id="crm-ix-lead">${leads.map(l => `<option value="${l.id}" ${l.id === leadId ? 'selected' : ''}>${esc(l.name)}${l.company && l.company !== l.name ? ' — ' + esc(l.company) : ''}</option>`).join('')}</select></div>
+      ${leadField}
       <div class="grid grid-2">
         <div class="form-group"><label class="form-label">Interaction Type</label><select class="form-control" id="crm-ix-type" onchange="crmToggleFollowUpFields()">${['Call','Email','Meeting','Demo','Follow-up','Note','WhatsApp','SMS'].map(x => `<option ${x === presetType ? 'selected' : ''}>${x}</option>`).join('')}</select></div>
         ${crmInput('crm-ix-date','Date & time','', 'datetime-local', local)}
       </div>
       ${crmInput('crm-ix-subject','Subject','What happened or what is needed?')}
       <div class="form-group"><label class="form-label">Notes</label><textarea class="form-control" id="crm-ix-notes" rows="4" placeholder="Conversation details and useful context"></textarea></div>
-      <div class="form-group"><label class="form-label">Outcome</label><select class="form-control" id="crm-ix-outcome"><option value="">No outcome</option>${['Positive','Neutral','Negative','No Response'].map(x => `<option>${x}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Outcome</label><select class="form-control" id="crm-ix-outcome"><option value="">No outcome</option>${CRM_INTERACTION_OUTCOMES.map(x => `<option>${x}</option>`).join('')}</select></div>
       <div class="card" style="margin:4px 0 0;background:var(--color-bg);">
         <div class="card-body">
           <div class="sidebar-label" style="margin-bottom:2px;">Workflow bridge</div>
@@ -672,14 +838,73 @@ async function openCrmInteractionModal(leadId = null, presetType = null) {
       ${crmErrorBox('crm-ix-error')}
     </div>`,
     footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button><button class="btn-primary" onclick="saveCrmInteraction()">Log Interaction</button>`,
+    onMount: () => {
+      if (!fixedLead) setTimeout(() => document.getElementById('crm-ix-leadsearch')?.focus(), 80);
+    },
   });
+}
+
+// ---- searchable lead picker (Interactions screen only) ------------------
+let _crmLeadSearchTimer = null;
+let _crmLeadSearchSeq = 0;
+function crmLeadSearchInput() {
+  clearTimeout(_crmLeadSearchTimer);
+  _crmLeadSearchTimer = setTimeout(crmLeadSearchRun, 180);
+}
+async function crmLeadSearchRun() {
+  const box = document.getElementById('crm-ix-leadresults');
+  const input = document.getElementById('crm-ix-leadsearch');
+  if (!box || !input) return;
+  const q = input.value.trim();
+  const seq = ++_crmLeadSearchSeq;
+  try {
+    const res = await API.crmLeadOptions(q);
+    if (seq !== _crmLeadSearchSeq) return;   // a newer keystroke superseded this
+    const leads = res.leads || [];
+    if (!leads.length) {
+      box.innerHTML = `<div class="crm-leadpick-empty">No leads match “${esc(q)}”.</div>`;
+    } else {
+      box.innerHTML = leads.map(l => `
+        <button type="button" class="crm-leadpick-item" onclick="crmLeadSearchPick(${l.id}, '${esc(l.name).replace(/'/g, "\\'")}')">
+          <span class="crm-leadpick-name">${esc(l.name)}</span>
+          <span class="crm-leadpick-meta">${esc([l.company && l.company !== l.name ? l.company : '', l.country || '', l.status || ''].filter(Boolean).join(' · '))}</span>
+        </button>`).join('');
+    }
+    box.style.display = 'block';
+  } catch (e) {
+    box.innerHTML = `<div class="crm-leadpick-empty">${esc(e.message || 'Search failed.')}</div>`;
+    box.style.display = 'block';
+  }
+}
+function crmLeadSearchPick(id, name) {
+  const hidden = document.getElementById('crm-ix-lead');
+  const input = document.getElementById('crm-ix-leadsearch');
+  const box = document.getElementById('crm-ix-leadresults');
+  const hint = document.getElementById('crm-ix-leadhint');
+  if (hidden) hidden.value = String(id);
+  if (input) input.value = name;
+  if (box) { box.style.display = 'none'; box.innerHTML = ''; }
+  if (hint) { hint.textContent = 'Selected: ' + name; hint.className = 'form-hint ok'; }
+}
+function crmLeadSearchKey(e) {
+  const box = document.getElementById('crm-ix-leadresults');
+  if (e.key === 'Escape' && box) { box.style.display = 'none'; return; }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    box?.querySelector('.crm-leadpick-item')?.click();
+  }
 }
 
 async function saveCrmInteraction() {
   const err = document.getElementById('crm-ix-error');
+  const leadId = Number(document.getElementById('crm-ix-lead')?.value || 0);
+  if (!leadId) {
+    if (err) { err.textContent = 'Pick a lead first — search for it by name, company, email or phone.'; err.style.display = 'block'; }
+    return;
+  }
   try {
     const result = await API.createCrmInteraction({
-      lead_id: Number(document.getElementById('crm-ix-lead').value),
+      lead_id: leadId,
       type: document.getElementById('crm-ix-type').value,
       occurred_at: document.getElementById('crm-ix-date').value,
       subject: document.getElementById('crm-ix-subject').value,
@@ -883,12 +1108,12 @@ async function openCrmLeadEditModal(id) {
         ${crmInput('cl-company','Company / Stable','Organization','text', val(lead.company_name))}
         ${crmInput('cl-title','Title / Position','','text', val(lead.title_position))}
         ${crmInput('cl-email','Email','name@example.com','email', val(lead.email))}
-        ${crmInput('cl-phone','Phone','','tel', val(lead.phone))}
-        ${crmInput('cl-mobile','Mobile','','tel', val(lead.mobile))}
+        ${crmPhoneField('cl-phone','Phone', val(lead.phone))}
+        ${crmPhoneField('cl-mobile','Mobile / WhatsApp', val(lead.mobile))}
         ${crmInput('cl-website','Website','https://','text', val(lead.website))}
-        ${crmInput('cl-country','Country','','text', val(lead.country))}
+        ${crmCountryField('cl-country','Country', val(lead.country), { phoneIds: ['cl-phone','cl-mobile'] })}
         ${crmInput('cl-city','City','','text', val(lead.city))}
-        ${sel('cl-region','Region', lead.region, ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other'])}
+        ${sel('cl-region','Region (auto-set from country)', lead.region, ['North America','Latin America','Europe','Middle East','Africa','Asia Pacific','Other'])}
         <div class="form-group"><label class="form-label">Owner</label><select class="form-control" id="cl-assignee"><option value="">Unassigned</option>${members.map(m => `<option value="${m.id}" ${m.id === lead.assigned_to ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></div>
         ${sel('cl-type','Lead Type', lead.lead_type, ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'])}
         ${sel('cl-status','Status', lead.status, ['New Lead','Contacted','Interested','Not Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold'])}
@@ -913,7 +1138,9 @@ async function saveCrmLeadEdit(id) {
     await API.updateCrmLead(id, {
       contact_person: g('cl-contact'), company_name: g('cl-company'), title_position: g('cl-title'),
       email: g('cl-email'), phone: g('cl-phone'), mobile: g('cl-mobile'), website: g('cl-website'),
-      country: g('cl-country'), city: g('cl-city'), region: g('cl-region'), address: g('cl-address'),
+      country: g('cl-country'), city: g('cl-city'),
+      region: (typeof regionForCountry === 'function' && regionForCountry(g('cl-country'))) || g('cl-region'),
+      address: g('cl-address'),
       assigned_to: g('cl-assignee') ? Number(g('cl-assignee')) : '',
       lead_type: g('cl-type'), status: g('cl-status'), priority: g('cl-priority'),
       lead_source: g('cl-source'), facility_type: g('cl-facility'),
@@ -1055,10 +1282,10 @@ async function renderCrmLeadEditPage(id) {
           <div class="grid grid-2">
             ${crmInput('cle-contact', 'Contact Person', 'Contact person', 'text', val(lead.contact_person))}
             ${crmInput('cle-title', 'Title / Position', '', 'text', val(lead.title_position))}
-            ${crmInput('cle-country', 'Country', '', 'text', val(lead.country))}
+            ${crmCountryField('cle-country', 'Country', val(lead.country), { phoneIds: ['cle-phone','cle-mobile'] })}
             ${crmInput('cle-horses', 'Number of Horses', '', 'number', val(lead.number_of_horses))}
-            ${crmInput('cle-phone', 'Phone', '', 'tel', val(lead.phone))}
-            ${crmInput('cle-mobile', 'Mobile', '', 'tel', val(lead.mobile))}
+            ${crmPhoneField('cle-phone', 'Phone', val(lead.phone))}
+            ${crmPhoneField('cle-mobile', 'Mobile / WhatsApp', val(lead.mobile))}
           </div>
           ${crmInput('cle-email', 'Email', 'email@example.com', 'text', val(lead.email))}
         </div>
@@ -1143,6 +1370,7 @@ async function saveCrmLeadEditPage(id) {
       contact_person: g('cle-contact'), title_position: g('cle-title'), company_name: g('cle-company'),
       email: g('cle-email'), phone: g('cle-phone'), mobile: g('cle-mobile'), website: g('cle-website'),
       country: g('cle-country'), city: g('cle-city'), address: g('cle-address'),
+      region: (typeof regionForCountry === 'function') ? regionForCountry(g('cle-country')) : '',
       lead_type: g('cle-type'), facility_type: g('cle-facility'),
       number_of_horses: g('cle-horses'), specialization: g('cle-spec'),
       horse_breed: g('cle-breed'), horse_sex: g('cle-sex'),

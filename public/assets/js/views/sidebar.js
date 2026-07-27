@@ -56,6 +56,7 @@ function renderSidebar() {
       'acc-account': 'acc-banking',
       'acc-reconciliation': 'acc-banking',
       'crm-lead': 'crm-leads',
+      'crm-lead-new': 'crm-leads',
     };
     const activeId = parents[State.screen] || State.screen;
     return `<button class="nav-btn ${activeId === n.id ? 'active' : ''}" onclick="nav('${n.id}')">${n.icon || I.grid}<span>${n.label}</span>${badge}</button>`;

@@ -3,7 +3,9 @@
 // C2 — collapsible conversation sections. Closed by default so lower categories
 // (like Comments under Quick access) are no longer pushed off-screen. The unread
 // count stays visible on the collapsed header so users know where to look.
-let _msgSectionOpen = { channels: false, dms: false, quick: false };
+let _msgSectionOpen = { channels: true, dms: true, quick: false };
+// Sections holding unread messages are force-opened on each render (below) so a
+// count on a collapsed header is never the only clue that something is waiting.
 
 // Build one collapsible section. The header is always visible with its label and
 // an unread pill (when there are unread messages); the body only renders when the
@@ -81,6 +83,12 @@ async function renderMessages() {
   const channelsUnread = (channels.channels || []).reduce((s, c) => s + (c.count || 0), 0);
   const dmsUnread = (channels.dms || []).reduce((s, c) => s + (c.count || 0), 0);
   const quickUnread = (mentionCount || 0) + (commentsCount || 0);
+
+  // Any section with unread opens itself, so the red nav badge always has a
+  // visible destination.
+  if (channelsUnread > 0) _msgSectionOpen.channels = true;
+  if (dmsUnread > 0) _msgSectionOpen.dms = true;
+  if (quickUnread > 0) _msgSectionOpen.quick = true;
 
   // C2 — auto-expand the section that contains whatever is currently active so
   // the open conversation/view is never hidden inside a collapsed toggle.

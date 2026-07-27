@@ -70,6 +70,7 @@ echo '<!DOCTYPE html>
 <div id="modal-root"></div>
 
 <script src="/assets/js/icons.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/countries.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/api.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/toast.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/modal.js?v=' . ASSET_VERSION . '"></script>

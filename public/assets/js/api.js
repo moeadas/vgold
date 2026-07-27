@@ -143,7 +143,7 @@ const API = {
   createCrmLead: (data) => API.req('/crm/leads', { method: 'POST', body: JSON.stringify(data) }),
   crmLeadDetail: (id) => API.req('/crm/leads/' + id),
   updateCrmLead: (id, data) => API.req('/crm/leads/' + id, { method: 'PUT', body: JSON.stringify(data) }),
-  crmLeadOptions: () => API.req('/crm/lead-options'),
+  crmLeadOptions: (q) => API.req('/crm/lead-options' + (q ? '?q=' + encodeURIComponent(q) : '')),
   crmBulkAssign: (leadIds, assignedTo) => API.req('/crm/leads/bulk-assign', { method: 'POST', body: JSON.stringify({ lead_ids: leadIds, assigned_to: assignedTo }) }),
   crmBulkDelete: (leadIds) => API.req('/crm/leads/bulk-delete', { method: 'POST', body: JSON.stringify({ lead_ids: leadIds }) }),
   crmImportLeads: (leads, dedupe) => API.req('/crm/leads/import', { method: 'POST', body: JSON.stringify({ leads, dedupe }) }),

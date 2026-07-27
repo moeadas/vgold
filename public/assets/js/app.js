@@ -202,6 +202,7 @@ async function render() {
       case 'crm-dashboard': mainContent = await renderCrmDashboard(); break;
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
       case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
+      case 'crm-lead-new': mainContent = await renderCrmLeadNewPage(); break;
       case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
       case 'crm-proposals':
       case 'crm-email':
@@ -402,6 +403,11 @@ function routeFromHash() {
       State.screen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
     }
   }
+  else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2] === 'new') {
+    State.screen = 'crm-lead-new';
+    State.activeCrmLeadId = null;
+    State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
+  }
   else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2]) {
     State.screen = 'crm-lead';
     State.activeCrmLeadId = parseInt(parts[2]) || null;
@@ -448,7 +454,9 @@ function updateHash() {
     };
     if (accDetailIds[State.screen]) hash += '/' + accDetailIds[State.screen];
   }
-  if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
+  if (State.screen === 'crm-lead-new') {
+    hash = 'crm/lead/new';
+  } else if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
     hash = 'crm/lead/' + State.activeCrmLeadId;
   } else if (State.screen === 'task' && State.activeTaskId) {
     hash = 'task/' + State.activeTaskId;
@@ -747,12 +755,15 @@ async function loadNotifCount() {
 async function loadMsgUnread() {
   if (!State.user) return;
   try {
-    let dm = 0, comments = 0, mentions = 0;
-    // DM/group-DM unread total (channels endpoint returns dm_unread_total)
+    let dm = 0, comments = 0, mentions = 0, channels = 0;
+    // DM/group-DM unread total (channels endpoint returns dm_unread_total) plus
+    // team-channel unread — without the latter a channel-only unread showed no
+    // badge on the Messages nav item at all.
     try {
       const ch = await API.channels();
       State.channels = ch;
       dm = ch.dm_unread_total || 0;
+      channels = (ch.channels || []).reduce((sum, c) => sum + (Number(c.count) || 0), 0);
     } catch(e) {}
     // Comments feed unread
     try {
@@ -769,7 +780,7 @@ async function loadMsgUnread() {
       State.mentions = ms;
       mentions = ms.filter(n => !n.is_read).length;
     } catch(e) {}
-    State.msgUnreadTotal = dm + comments + mentions;
+    State.msgUnreadTotal = dm + channels + comments + mentions;
     updateMsgBadge();
   } catch(e) {}
 }
