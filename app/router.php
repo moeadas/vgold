@@ -299,16 +299,35 @@ foreach ($routes as $pattern => $handler) {
         }
 
         // Time-based automation heartbeat. Runs AFTER the response is flushed
-        // and only once per interval (claimed atomically in the DB), so no user
-        // ever waits for it. This makes scheduled rules work even with no server
-        // cron configured; a real cron just makes them punctual on quiet days.
+        // and only once per interval, so no user ever waits for it. This makes
+        // scheduled rules work with no server cron configured at all; a real
+        // cron just makes them punctual on days nobody opens the app.
+        //
+        // The due-ness check is a single indexed SELECT through the VGold DB
+        // helper — the legacy CRM bridge and the rules engine are only loaded
+        // once the interval has actually elapsed, so the common case costs one
+        // cheap query rather than several file includes on every API call.
         if ($requiresAuth) {
             try {
-                $schedPath = dirname(__DIR__) . '/crm/includes/automation-scheduler.php';
-                if (is_file($schedPath)) {
-                    require_once dirname(__DIR__) . '/crm/includes/vgold_bridge.php';
-                    require_once $schedPath;
-                    automationHeartbeat(15);
+                $lastRun = DB::fetch("SELECT setting_value v FROM crm_settings WHERE setting_key = 'automation_last_run_ts'");
+                $lastTs = (int)($lastRun['v'] ?? 0);
+                if (!$lastTs || (time() - $lastTs) >= 900) {
+                    register_shutdown_function(function () {
+                        if (function_exists('fastcgi_finish_request')) @fastcgi_finish_request();
+                        try {
+                            $schedPath = dirname(__DIR__) . '/crm/includes/automation-scheduler.php';
+                            if (!is_file($schedPath)) return;
+                            require_once dirname(__DIR__) . '/crm/includes/vgold_bridge.php';
+                            require_once $schedPath;
+                            // Re-check inside the shutdown handler: this claims
+                            // the slot atomically, so concurrent requests that
+                            // all saw a stale timestamp cannot double-run.
+                            $pdo = Database::getInstance()->getConnection();
+                            if (automationScheduleDue($pdo, 15)) runAutomationSchedule();
+                        } catch (\Throwable $e) {
+                            error_log('automation heartbeat run: ' . $e->getMessage());
+                        }
+                    });
                 }
             } catch (\Throwable $e) {
                 error_log('automation heartbeat hook: ' . $e->getMessage());
