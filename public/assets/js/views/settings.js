@@ -38,6 +38,12 @@ async function renderSettings() {
     try { const res = await crmApiGet('crm-settings.php'); crmIntegrations = res.data || null; State.crmIntegrations = crmIntegrations; }
     catch(e) { crmIntegrations = null; State.crmIntegrations = null; }
   }
+  // Automation scheduler status (admins only) — comes from the automation meta.
+  let autoSched = State.autoScheduler;
+  if (user.role === 'admin' && autoSched === undefined) {
+    try { const res = await crmApiGet('automation.php?action=meta'); autoSched = (res.data || {}).scheduler || null; State.autoScheduler = autoSched; }
+    catch(e) { autoSched = null; State.autoScheduler = null; }
+  }
 
   const notifPref = settings.email_notify_pref || 'all';
   const notifRadio = `
@@ -198,6 +204,7 @@ async function renderSettings() {
         <h4>Calls, WhatsApp &amp; Email delivery</h4>
         <div class="desc">Configure Twilio/VoIP, WhatsApp, and SMTP so the softphone, WhatsApp inbox, and email campaigns can send. These are the credentials the CRM uses at runtime.</div>
         ${renderIntegrationSettings(crmIntegrations)}
+        ${renderSchedulerSettings(autoSched)}
       </div>
     </div>` : '';
 
@@ -814,6 +821,54 @@ async function masterReset() {
 }
 
 // ===== Native CRM integration settings (Twilio/VoIP, WhatsApp, SMTP) =====
+/**
+ * Automation scheduler panel. Time-based rules are driven by a heartbeat that
+ * piggybacks on app traffic, so they work with no server cron at all — but a
+ * real cron keeps them punctual on days nobody opens the app, so the exact
+ * command is offered here.
+ */
+function renderSchedulerSettings(sched) {
+  if (!sched) return '';
+  const healthy = !!sched.healthy;
+  const last = sched.last_run_human ? `Last ran ${esc(sched.last_run_human)}` : 'Has not run yet';
+  const rules = sched.time_rule_count || 0;
+  const url = sched.cron_url || '';
+  return `
+  <div class="settings-subsection" style="margin-top:14px">
+    <h4>Automation scheduler</h4>
+    <div class="desc">Drives the time-based rules — “lead has gone quiet”, “never contacted”, “follow-up overdue”.</div>
+
+    <div class="sched-status ${healthy ? 'ok' : 'warn'}">
+      <span class="sched-dot"></span>
+      <div style="flex:1;min-width:0">
+        <strong>${last}</strong>
+        <div class="desc" style="margin:2px 0 0">${rules} active time-based rule${rules === 1 ? '' : 's'} · checked every 15 minutes while the app is in use</div>
+      </div>
+      <button class="btn" onclick="settingsRunScheduler()">Run now</button>
+    </div>
+
+    <div class="desc" style="margin-top:14px">
+      For a heartbeat that keeps running even when nobody opens the app, add this in
+      <strong>SiteGround → Site Tools → Devs → Cron Jobs</strong> on a 15-minute schedule:
+    </div>
+    <div class="form-field" style="margin-top:8px">
+      <input class="form-input sched-cron-url" id="sched-cron-url" readonly value="${esc(url ? 'curl -s "' + url + '&_t=$(date +%s)"' : 'Unavailable')}" onclick="this.select()">
+      <div class="desc" style="margin-top:6px">Keep this URL private — the secret in it is what authorises the job. The <code>&amp;_t=</code> cache-buster is required, or LiteSpeed will serve a cached response and the job will look like it ran when it did not.</div>
+    </div>
+  </div>`;
+}
+
+async function settingsRunScheduler() {
+  try {
+    toast('Running scheduler…', 'info');
+    const r = await crmApiPost('automation.php?action=run_scheduler', {});
+    const res = r.data || {};
+    State.autoScheduler = undefined;
+    toast(`Scheduler done — ${res.matched || 0} matched, ${res.fired || 0} fired, ${res.skipped || 0} already handled`, 'success');
+    render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 function renderIntegrationSettings(integ) {
   if (!integ) return `<div class="desc" style="padding:12px 0;color:var(--muted)">Integration settings are unavailable right now. Reload the page to try again.</div>`;
   const s = integ.settings || {};

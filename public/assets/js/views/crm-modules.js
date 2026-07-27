@@ -597,6 +597,13 @@ async function renderCrmAutomation() {
   const meta = await autoMeta();
   const head = crmModHead('Automations', 'Lead and follow-up actions from one shared rules engine.',
     tab === 'rules' ? `<button class="btn btn-primary" onclick="autoOpenForm()">+ New Rule</button>` : '');
+  const sched = meta.scheduler || null;
+  const schedBar = (tab === 'rules' && sched) ? `
+    <div class="ct-sched-bar">
+      <span class="ct-sched-dot ${sched.healthy ? 'ok' : 'warn'}"></span>
+      <span><strong>Scheduler</strong> — ${sched.last_run_human ? 'last ran ' + esc(sched.last_run_human) : 'has not run yet'}${sched.time_rule_count ? ` · ${sched.time_rule_count} time-based rule${sched.time_rule_count === 1 ? '' : 's'}` : ' · no time-based rules yet'}</span>
+      <button class="btn btn-outline btn-sm" style="margin-left:auto" onclick="autoRunSchedulerNow()">Run now</button>
+    </div>` : '';
   const tabBar = crmTabBar([['rules', 'Rules'], ['logs', 'Run history']], tab, 'autoSetTab');
   let inner;
   if (tab === 'logs') {
@@ -633,9 +640,21 @@ async function renderCrmAutomation() {
     }).join('');
     inner = stats + crmTable(['Rule', 'WHEN → IF → THEN', 'Runs', 'Last success', 'Active', ''], rows, 'No automation rules yet. Create your first rule.');
   }
-  return `<div class="crm-native fade-in">${head}${tabBar}${inner}</div>`;
+  return `<div class="crm-native fade-in">${head}${schedBar}${tabBar}${inner}</div>`;
 }
 function autoSetTab(t) { CrmMod.tab.automation = t; render(); }
+
+/** Fire the time-based scheduler immediately instead of waiting for the heartbeat. */
+async function autoRunSchedulerNow() {
+  try {
+    toast('Running scheduler…', 'info');
+    const r = await crmApiPost('automation.php?action=run_scheduler', {});
+    const res = r.data || {};
+    crmModInvalidate('automation'); crmModInvalidate('autoLogs'); crmModInvalidate('autoMeta');
+    toast(`Scheduler done — ${res.matched || 0} matched, ${res.fired || 0} fired, ${res.skipped || 0} already handled`, 'success');
+    render();
+  } catch (e) { toast(e.message, 'error'); }
+}
 async function autoToggle(id) {
   try { await crmApiPost('automation.php?action=toggle', { rule_id: id }); crmModInvalidate('automation'); toast('Rule updated', 'success'); }
   catch (e) { toast(e.message, 'error'); render(); }
@@ -718,6 +737,33 @@ function autoTriggerChange(saved) {
   } else if (trig === 'call_completed') {
     c.innerHTML = `<div class="ct-cfgbox"><div class="form-group" style="margin:0"><label class="form-label">Call outcome <span class="ct-secline">(optional)</span></label>
       <select class="form-control" id="tc-outcome"><option value="">Any</option>${(meta.outcomes || []).map(o => `<option ${cfg.outcome === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>`;
+  } else if ((meta.time_triggers || []).includes(trig)) {
+    const days = cfg.days != null ? cfg.days : (trig === 'followup_overdue' ? 0 : 7);
+    const dayLabel = {
+      lead_idle: 'Days with no interaction',
+      no_contact_after_created: 'Days since the lead was created',
+      lead_stale_in_status: 'Days without any change',
+      followup_overdue: 'Grace period after the due date (days)',
+    }[trig] || 'Days';
+    c.innerHTML = `<div class="ct-cfgbox">
+      <div class="ct-sched-note">Checked by the scheduler, not by a page view. Each rule fires at most once per lead per day.</div>
+      <div class="ct-two">
+        <div class="form-group"><label class="form-label">${dayLabel}</label>
+          <input class="form-control" id="tc-days" type="number" min="${trig === 'followup_overdue' ? 0 : 1}" value="${esc(String(days))}"></div>
+        <div class="form-group"><label class="form-label">Only this status <span class="ct-secline">(optional)</span></label>
+          <select class="form-control" id="tc-status"><option value="">Any open status</option>${(meta.lead_statuses || []).map(st => `<option ${cfg.lead_status === st ? 'selected' : ''}>${st}</option>`).join('')}</select></div>
+      </div>
+      <div class="ct-two">
+        <div class="form-group" style="margin:0"><label class="form-label">Max leads per run</label>
+          <input class="form-control" id="tc-max" type="number" min="1" max="500" value="${esc(String(cfg.max_per_run || 200))}"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Repeat</label>
+          <select class="form-control" id="tc-once">
+            <option value="" ${!cfg.once_per_lead ? 'selected' : ''}>Once per lead per day</option>
+            <option value="1" ${cfg.once_per_lead ? 'selected' : ''}>Once per lead, ever</option>
+          </select></div>
+      </div>
+      <div class="form-hint">Leads that are Won, Lost, Not Interested or already Customers are skipped unless you pick a specific status.</div>
+    </div>`;
   } else if (trig === 'whatsapp_received') {
     c.innerHTML = `<div class="ct-cfgbox"><div class="form-group" style="margin:0"><label class="form-label">Message contains <span class="ct-secline">(optional)</span></label>
       <input class="form-control" id="tc-keyword" value="${esc(cfg.keyword || '')}" placeholder="e.g. price"></div></div>`;
@@ -844,6 +890,15 @@ async function autoSave() {
   if (triggerType === 'call_completed') {
     const o = document.getElementById('tc-outcome')?.value;
     if (o) triggerConfig.outcome = o;
+  }
+  if ((meta.time_triggers || []).includes(triggerType)) {
+    const d = document.getElementById('tc-days')?.value;
+    if (d !== '' && d != null) triggerConfig[triggerType === 'followup_overdue' ? 'grace_days' : 'days'] = Number(d);
+    const st = document.getElementById('tc-status')?.value;
+    if (st) triggerConfig.lead_status = st;
+    const mx = document.getElementById('tc-max')?.value;
+    if (mx) triggerConfig.max_per_run = Number(mx);
+    if (document.getElementById('tc-once')?.value === '1') triggerConfig.once_per_lead = true;
   }
   if (triggerType === 'whatsapp_received') {
     const kw = document.getElementById('tc-keyword')?.value.trim();

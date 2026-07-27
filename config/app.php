@@ -25,12 +25,12 @@ if ($isSiteGround) {
 }
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.28.1');
+define('ASSET_VERSION', '2026.07.28.2');
 
 // Human-readable build number, shown at the top of Settings so you can confirm
 // which build is actually live. Bump alongside ASSET_VERSION on every deploy.
-define('APP_VERSION', '1.4.0');
-define('APP_BUILD', '2026.07.28.1');
+define('APP_VERSION', '1.5.0');
+define('APP_BUILD', '2026.07.28.2');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

@@ -297,6 +297,24 @@ foreach ($routes as $pattern => $handler) {
         } else {
             $callback(...$params);
         }
+
+        // Time-based automation heartbeat. Runs AFTER the response is flushed
+        // and only once per interval (claimed atomically in the DB), so no user
+        // ever waits for it. This makes scheduled rules work even with no server
+        // cron configured; a real cron just makes them punctual on quiet days.
+        if ($requiresAuth) {
+            try {
+                $schedPath = dirname(__DIR__) . '/crm/includes/automation-scheduler.php';
+                if (is_file($schedPath)) {
+                    require_once dirname(__DIR__) . '/crm/includes/vgold_bridge.php';
+                    require_once $schedPath;
+                    automationHeartbeat(15);
+                }
+            } catch (\Throwable $e) {
+                error_log('automation heartbeat hook: ' . $e->getMessage());
+            }
+        }
+
         $matched = true;
         break;
     }

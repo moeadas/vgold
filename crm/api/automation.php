@@ -57,6 +57,7 @@ try {
             case 'update': updateRule($pdo, $input); break;
             case 'toggle': toggleRule($pdo, $input); break;
             case 'delete': deleteRule($pdo, $input); break;
+            case 'run_scheduler': runSchedulerNow($pdo); break;
             default:
                 echo json_encode(['success' => false, 'message' => 'Unknown action']);
         }
@@ -251,7 +252,39 @@ function getMeta($pdo) {
         ['tag' => '{{user_name}}',     'label' => 'Agent Name',    'desc' => 'Current user / agent name'],
     ];
 
+    // ── Scheduler status for the Automations screen ──────────
+    $scheduler = ['healthy' => false, 'last_run_ts' => null, 'last_run_human' => null, 'time_rule_count' => 0];
+    try {
+        require_once __DIR__ . '/../includes/automation-scheduler.php';
+        $lastTs = (int)automationSetting($pdo, 'automation_last_run_ts', 0);
+        $types = automationTimeTriggers();
+        $in = implode(',', array_fill(0, count($types), '?'));
+        $cnt = $pdo->prepare("SELECT COUNT(*) FROM automation_rules WHERE is_active = 1 AND trigger_type IN ($in)");
+        $cnt->execute($types);
+        $scheduler['time_rule_count'] = (int)$cnt->fetchColumn();
+        if ($lastTs) {
+            $scheduler['last_run_ts'] = $lastTs;
+            $mins = max(0, (int)round((time() - $lastTs) / 60));
+            $scheduler['last_run_human'] = $mins < 1 ? 'just now'
+                : ($mins < 60 ? "$mins min ago"
+                : ($mins < 1440 ? floor($mins / 60) . ' h ago' : floor($mins / 1440) . ' d ago'));
+            // The heartbeat targets 15 minutes; allow generous slack for quiet periods.
+            $scheduler['healthy'] = ($scheduler['time_rule_count'] === 0) || ($mins <= 180);
+        }
+        // Make sure a cron secret exists so Settings can show the URL.
+        $secret = automationSetting($pdo, 'automation_cron_secret', '');
+        if (!$secret) {
+            $secret = bin2hex(random_bytes(16));
+            automationSettingSet($pdo, 'automation_cron_secret', $secret);
+        }
+        $scheduler['cron_url'] = rtrim(TwilioHelper::getInstance()->getAppUrl(), '/')
+            . '/api/cron-automation.php?secret=' . $secret;
+    } catch (\Exception $e) {
+        error_log('automation meta scheduler: ' . $e->getMessage());
+    }
+
     echo json_encode(['success' => true, 'data' => [
+        'scheduler' => $scheduler,
         'triggers' => [
             ['value' => 'lead_created',             'label' => 'New lead created'],
             ['value' => 'lead_status_changed',      'label' => 'Lead status changed'],
@@ -263,7 +296,12 @@ function getMeta($pdo) {
             ['value' => 'interaction_logged',        'label' => 'Interaction logged'],
             ['value' => 'call_completed',            'label' => 'Call completed'],
             ['value' => 'whatsapp_received',         'label' => 'WhatsApp reply received'],
+            ['value' => 'lead_idle',                 'label' => '⏱ Lead has gone quiet (no interaction for N days)'],
+            ['value' => 'no_contact_after_created',  'label' => '⏱ Never contacted after N days'],
+            ['value' => 'lead_stale_in_status',      'label' => '⏱ Stuck in the same status for N days'],
+            ['value' => 'followup_overdue',          'label' => '⏱ Promised follow-up is overdue'],
         ],
+        'time_triggers' => ['lead_idle', 'no_contact_after_created', 'lead_stale_in_status', 'followup_overdue'],
         'condition_fields' => [
             ['value' => 'country',      'label' => 'Country',       'type' => 'text'],
             ['value' => 'region',       'label' => 'Region',        'type' => 'enum', 'options' => ['North America','Latin America','Europe','Middle East','Africa','Asia Pacific','Other']],
@@ -324,6 +362,19 @@ function getMeta($pdo) {
 // ══════════════════════════════════════════════════════════
 //  POST handlers
 // ══════════════════════════════════════════════════════════
+
+/** Run the time-based scheduler on demand from the Automations screen. */
+function runSchedulerNow($pdo) {
+    require_once __DIR__ . '/../includes/automation-scheduler.php';
+    set_time_limit(300);
+    try {
+        $res = runAutomationSchedule();
+        echo json_encode(['success' => true, 'data' => $res]);
+    } catch (\Throwable $e) {
+        error_log('runSchedulerNow: ' . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+}
 
 function createRule($pdo, $input, $currentUser) {
     $name        = trim($input['name'] ?? '');

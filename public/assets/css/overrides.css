@@ -357,3 +357,30 @@
   width: 7px; height: 7px; border-radius: 99px; background: #6B8E5A; flex: none;
 }
 .app-version-build { font-weight: 400; color: var(--muted); }
+
+/* ============================================================
+   12) Automation scheduler — status bar and Settings panel.
+   ------------------------------------------------------------ */
+.crm-native .ct-sched-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px; margin-bottom: 16px;
+  border: 1px solid var(--color-border); border-radius: 10px;
+  background: var(--color-surface); font-size: 13px;
+}
+.crm-native .ct-sched-dot { width: 9px; height: 9px; border-radius: 99px; flex: none; background: #6B8E5A; }
+.crm-native .ct-sched-dot.warn { background: #C99520; }
+.crm-native .ct-sched-note {
+  font-size: 12px; color: var(--color-text-secondary);
+  margin-bottom: 10px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.sched-status {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface);
+}
+.sched-status .sched-dot { width: 10px; height: 10px; border-radius: 99px; flex: none; background: #6B8E5A; }
+.sched-status.warn .sched-dot { background: #C99520; }
+.sched-cron-url { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
