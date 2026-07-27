@@ -46,6 +46,19 @@ function ensureAutomationScheduleTables($pdo): void {
     } catch (\Exception $e) {
         error_log('ensureAutomationScheduleTables: ' . $e->getMessage());
     }
+    // Make sure the cron secret exists as soon as the scheduler is touched, so
+    // Settings can always show a working cron URL.
+    try {
+        $st = $pdo->query("SELECT setting_value FROM settings WHERE setting_key = 'automation_cron_secret'");
+        $cur = $st ? $st->fetchColumn() : '';
+        if (!$cur) {
+            $ins = $pdo->prepare("INSERT INTO settings (setting_key, setting_value) VALUES ('automation_cron_secret', ?)
+                                  ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+            $ins->execute([bin2hex(random_bytes(16))]);
+        }
+    } catch (\Exception $e) {
+        error_log('ensureAutomationScheduleTables secret: ' . $e->getMessage());
+    }
 }
 
 /** Read a scheduler setting from the CRM settings table. */
