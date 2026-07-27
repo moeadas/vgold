@@ -11,6 +11,7 @@ function linkifyText(str) {
 }
 
 async function renderProject() {
+  if (typeof ensureFavorites === 'function') await ensureFavorites();
   let p = State.activeProject;
   if (!p || p.id != State.activeProjectId) {
     try {
@@ -52,7 +53,12 @@ async function renderProject() {
     ? `<nav class="breadcrumbs">${crumbs.join('<span class="crumb-sep">/</span>')}<span class="crumb-sep">/</span><span class="crumb-current">${esc(p.name)}</span></nav>`
     : '';
 
-  // C3 — sub-projects grid on the project page (mirrors the category page).
+  // Project Areas grid on the project page (mirrors the workspace page).
+  // Nesting is capped at Workspace → Project → Project Area, so a project area
+  // (depth 2) shows tasks only — no child grid, no "add" button.
+  const depth = Number(p.depth ?? (p.breadcrumb || []).length);
+  const maxDepth = Number(p.max_depth ?? 2);
+  const canNest = depth < maxDepth;
   const subs = p.subprojects || [];
   const subGrid = subs.length ? subs.map(sp => {
     const memberAvatars = (sp.members || []).slice(0, 5).map(m =>
@@ -60,7 +66,11 @@ async function renderProject() {
     ).join('');
     return `
       <div class="project-card" onclick="goProject(${sp.id})">
-        ${State.user?.role === 'admin' ? `<button class="cat-delete-btn" onclick="event.stopPropagation();deleteProject(${sp.id})" title="Delete sub-project">${I.trash}</button>` : ''}
+        <div class="card-actions">
+          ${typeof favBtnHTML === 'function' ? favBtnHTML(sp.id, sp.name) : ''}
+          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${sp.id},'${esc(sp.name).replace(/'/g, "\\'")}','project area')" title="Rename project area" aria-label="Rename project area">${I.pencil}</button>
+          ${State.user?.role === 'admin' ? `<button class="card-icon-btn danger" onclick="event.stopPropagation();deleteProject(${sp.id})" title="Delete project area" aria-label="Delete project area">${I.trash}</button>` : ''}
+        </div>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
           ${unreadKPI(State.unreadCounts, sp.id)}<div class="pc-title">${esc(sp.name)}</div>
           <span class="health-pill" style="color:${sp.health_color};background:${sp.healthBg || '#E5E6D2'};flex:none"><span class="dot" style="background:${sp.health_color}"></span>${sp.health_label}</span>
@@ -80,13 +90,13 @@ async function renderProject() {
     `;
   }).join('') : '';
 
-  const subprojectsSection = `
+  const subprojectsSection = (!canNest && !subs.length) ? '' : `
     <div style="margin-top:30px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
-        <h3 style="font-size:24px;font-weight:700;color:var(--gold)">Sub-projects${subs.length ? ` <span style="font-size:14px;font-weight:600;color:var(--muted)">(${subs.length})</span>` : ''}</h3>
-        <button class="btn" onclick="openNewProjectModal(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')">${I.plus}Add sub-project</button>
+        <h3 style="font-size:24px;font-weight:700;color:var(--gold)">Project Areas${subs.length ? ` <span style="font-size:14px;font-weight:600;color:var(--muted)">(${subs.length})</span>` : ''}</h3>
+        ${canNest ? `<button class="btn" onclick="openNewProjectModal(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')">${I.plus}Add project area</button>` : ''}
       </div>
-      ${subs.length ? `<div class="project-grid">${subGrid}</div>` : `<div class="empty-state" style="padding:22px"><div class="desc">No sub-projects yet. Break this project into sub-projects for complex work.</div></div>`}
+      ${subs.length ? `<div class="project-grid">${subGrid}</div>` : `<div class="empty-state" style="padding:22px"><div class="desc">No project areas yet. Break this project into areas for complex work.</div></div>`}
     </div>`;
 
   const chat = (p.chat || []).map(m => `
@@ -101,15 +111,17 @@ async function renderProject() {
 
   return `
     <div class="fade-in">
-      <button class="back-link" onclick="${p.parent_id ? `goCategory(${p.parent_id})` : `nav('projects')`}">${I.arrowL}${esc(p.category_name || 'All Projects')}</button>
+      <button class="back-link" onclick="${p.parent_id ? `goCategory(${p.parent_id})` : `nav('projects')`}">${I.arrowL}${esc(p.category_name || 'All Workspaces')}</button>
       ${breadcrumbHTML}
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;flex-wrap:wrap">
         <h1 class="page-title-sm" id="proj-name" data-value="${esc(p.name)}" onclick="editProjectName(${p.id},this)" title="Click to edit" style="cursor:text;border-radius:8px;padding:2px 8px;margin:-2px -8px">${esc(p.name)}</h1>
+        ${typeof favBtnHTML === 'function' ? favBtnHTML(p.id, p.name) : ''}
+        <button class="card-icon-btn" onclick="renameProjectPrompt(${p.id},'${esc(p.name).replace(/'/g,"\\'")}','${depth >= 2 ? 'project area' : 'project'}')" title="Rename" aria-label="Rename">${I.pencil}</button>
         <span class="health-pill" style="color:${p.health_color};background:${p.healthBg || '#E8F0E4'}"><span class="dot" style="background:${p.health_color}"></span>${p.health_label}</span>
         <div style="position:relative;flex:none">
-          <button onclick="event.stopPropagation();toggleAgendaAddMenu('proj-${p.id}', this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
+          <button onclick="event.stopPropagation();toggleAgendaAddMenu('proj-${p.id}', this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots">${I.plus}</button>
           <div class="task-quick-menu" id="agenda-add-menu-proj-${p.id}" style="left:0;right:auto">
-            <button onclick="event.stopPropagation();addToAgendaFromProject(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')">Add to Agenda</button>
+            <button onclick="event.stopPropagation();addToAgendaFromProject(${p.id},'${esc(p.name).replace(/'/g,"\\'")}')">Add to Priorities</button>
           </div>
         </div>
       </div>
@@ -180,9 +192,9 @@ function taskRow(t, projectId) {
     <div class="task-row-right" style="display:flex;align-items:center;gap:8px;margin-left:auto;flex:none">
       ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'}">${esc(t.deadline_label)}</span>` : ''}
       <div class="task-row-agenda" style="position:relative;flex:none">
-        <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
+        <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots">${I.plus}</button>
         <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
-          <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
+          <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Priorities</button>
         </div>
       </div>
       <div class="task-avatars-wrap" style="display:flex;align-items:center">${assigneeHTML}</div>

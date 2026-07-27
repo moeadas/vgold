@@ -740,31 +740,109 @@ class TaskController {
              WHERE ma.id = ?",
             [(int)$id]
         );
-        $item = $a ? [
+        $item = $a ? self::formatAgendaItem($a) : null;
+        
+        jsonResponse(['ok' => true, 'id' => (int)$id, 'item' => $item]);
+    }
+    
+    // Walk a project's parent chain to its root workspace row.
+    // Returns null when $projectId is empty or the row is missing.
+    private static function rootWorkspaceOf($projectId) {
+        $cursor = (int)$projectId;
+        $guard = 0;
+        $row = null;
+        while ($cursor && $guard < 20) {
+            $row = DB::fetch("SELECT id, name, color, parent_id FROM projects WHERE id = ?", [$cursor]);
+            if (!$row) return null;
+            if (empty($row['parent_id'])) break;
+            $cursor = (int)$row['parent_id'];
+            $guard++;
+        }
+        return $row ?: null;
+    }
+
+    // Everyone shown on a Priorities card: the task's assignees when the item is
+    // linked to a task, otherwise the agenda item's own assignee, otherwise the
+    // linked project's members.
+    private static function agendaAssignees($a) {
+        $people = [];
+        $seen = [];
+        $push = function ($id, $name, $color) use (&$people, &$seen) {
+            $id = (int)$id;
+            if (!$id || !$name || isset($seen[$id])) return;
+            $seen[$id] = true;
+            $people[] = ['id' => $id, 'name' => $name, 'initials' => initials($name), 'avatar_color' => $color];
+        };
+
+        if (!empty($a['related_task_id'])) {
+            $rows = DB::fetchAll(
+                "SELECT u.id, u.name, u.avatar_color FROM task_assignees ta
+                 JOIN users u ON u.id = ta.user_id WHERE ta.task_id = ?",
+                [(int)$a['related_task_id']]
+            );
+            foreach ($rows as $r) $push($r['id'], $r['name'], $r['avatar_color']);
+            if (!$people) {
+                $t = DB::fetch(
+                    "SELECT u.id, u.name, u.avatar_color FROM tasks t
+                     JOIN users u ON u.id = t.assigned_to WHERE t.id = ?",
+                    [(int)$a['related_task_id']]
+                );
+                if ($t) $push($t['id'], $t['name'], $t['avatar_color']);
+            }
+        }
+        if (!empty($a['assigned_to'])) {
+            $push($a['assigned_to'], $a['assignee_name'] ?? null, $a['assignee_color'] ?? null);
+        }
+        if (!$people && !empty($a['related_project_id'])) {
+            $rows = DB::fetchAll(
+                "SELECT u.id, u.name, u.avatar_color FROM project_members pm
+                 JOIN users u ON u.id = pm.user_id WHERE pm.project_id = ? LIMIT 6",
+                [(int)$a['related_project_id']]
+            );
+            foreach ($rows as $r) $push($r['id'], $r['name'], $r['avatar_color']);
+        }
+        return $people;
+    }
+
+    // Shared shape for list + create so the client can render either in place.
+    private static function formatAgendaItem($a) {
+        $ws = null;
+        if (!empty($a['related_project_id'])) {
+            $ws = self::rootWorkspaceOf((int)$a['related_project_id']);
+        } elseif (!empty($a['related_task_id'])) {
+            $t = DB::fetch("SELECT project_id FROM tasks WHERE id = ?", [(int)$a['related_task_id']]);
+            if ($t) $ws = self::rootWorkspaceOf((int)$t['project_id']);
+        }
+
+        return [
             'id' => (int)$a['id'],
             'title' => $a['title'],
             'description' => $a['description'],
             'assigned_to' => $a['assigned_to'] ? (int)$a['assigned_to'] : null,
             'assignee_name' => $a['assignee_name'] ?? null,
-            'assignee_initials' => $a['assignee_name'] ? initials($a['assignee_name']) : null,
+            'assignee_initials' => !empty($a['assignee_name']) ? initials($a['assignee_name']) : null,
             'assignee_color' => $a['assignee_color'] ?? null,
+            'assignees' => self::agendaAssignees($a),
             'related_task_id' => $a['related_task_id'] ? (int)$a['related_task_id'] : null,
             'related_task_title' => $a['related_task_title'] ?? null,
             'related_project_id' => $a['related_project_id'] ? (int)$a['related_project_id'] : null,
             'related_project_name' => $a['related_project_name'] ?? null,
             'related_project_color' => $a['related_project_color'] ?? null,
+            // Root workspace the item belongs to — Priorities groups its columns by this.
+            'workspace_project_id' => $ws ? (int)$ws['id'] : null,
+            'workspace_name' => $ws['name'] ?? null,
+            'workspace_color' => $ws['color'] ?? null,
+            'kind' => !empty($a['related_task_id']) ? 'task' : (!empty($a['related_project_id']) ? 'project' : 'note'),
             'sort_order' => (int)$a['sort_order'],
             'created_at' => $a['created_at'],
             'completed_at' => $a['completed_at'],
             'is_completed' => $a['completed_at'] !== null,
-        ] : null;
-        
-        jsonResponse(['ok' => true, 'id' => (int)$id, 'item' => $item]);
+        ];
     }
-    
+
     public static function listAgenda() {
         $wsId = Auth::workspaceId();
-        
+
         $items = DB::fetchAll(
             "SELECT ma.*, u.name as assignee_name, u.avatar_color as assignee_color,
                     t.title as related_task_title, p.name as related_project_name, p.color as related_project_color
@@ -776,26 +854,9 @@ class TaskController {
              ORDER BY ma.sort_order ASC, ma.created_at ASC",
             [$wsId]
         );
-        
-        $result = array_map(fn($a) => [
-            'id' => (int)$a['id'],
-            'title' => $a['title'],
-            'description' => $a['description'],
-            'assigned_to' => $a['assigned_to'] ? (int)$a['assigned_to'] : null,
-            'assignee_name' => $a['assignee_name'] ?? null,
-            'assignee_initials' => $a['assignee_name'] ? initials($a['assignee_name']) : null,
-            'assignee_color' => $a['assignee_color'] ?? null,
-            'related_task_id' => $a['related_task_id'] ? (int)$a['related_task_id'] : null,
-            'related_task_title' => $a['related_task_title'] ?? null,
-            'related_project_id' => $a['related_project_id'] ? (int)$a['related_project_id'] : null,
-            'related_project_name' => $a['related_project_name'] ?? null,
-            'related_project_color' => $a['related_project_color'] ?? null,
-            'sort_order' => (int)$a['sort_order'],
-            'created_at' => $a['created_at'],
-            'completed_at' => $a['completed_at'],
-            'is_completed' => $a['completed_at'] !== null,
-        ], $items);
-        
+
+        $result = array_map(fn($a) => self::formatAgendaItem($a), $items);
+
         jsonResponse(['agenda' => $result]);
     }
     

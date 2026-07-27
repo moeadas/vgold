@@ -1,9 +1,11 @@
-// VGo — Task Overview: All Tasks + User Cards + Unified Meeting Agenda
+// VGo — Task Overview: Company Tasks + User Cards.
+// The meeting agenda that used to live here as a sub-view is now its own
+// screen, "Priorities" (see views/priorities.js). The agenda *actions* below
+// are still shared by that view and by the + buttons on tasks/projects.
 let _allTasksData = null;
 let _taskOverviewFilter = null; // null = all users, or user id
 
 async function renderTaskOverview() {
-  if (!State.taskOverviewSubView) State.taskOverviewSubView = 'tasks';
   // Fetch all tasks data
   if (!_allTasksData) {
     try {
@@ -13,14 +15,6 @@ async function renderTaskOverview() {
       return `<div class="fade-in"><p style="color:var(--barn)">Failed to load tasks.</p></div>`;
     }
   }
-
-  // Fetch agenda
-  let agendaItems = [];
-  try {
-    const aRes = await API.getAgenda();
-    agendaItems = aRes.agenda || aRes.items || [];
-    State.agendaItems = agendaItems;
-  } catch(e) { State.agendaItems = []; }
 
   const tasks = _allTasksData.tasks || [];
   const users = _allTasksData.users || [];
@@ -59,41 +53,17 @@ async function renderTaskOverview() {
     </div>
   `).join('') || '<div class="empty-state"><div class="title">No tasks</div><div class="desc">No tasks match the current filter.</div></div>';
 
-  // Agenda section (only rendered in agenda sub-view or inline in tasks sub-view)
-  const agendaHTML = renderUnifiedAgenda(agendaItems);
+  return `
+    <div class="fade-in">
+      <div class="section-label">Task Overview</div>
+      <h1 class="page-title-sm" style="margin-bottom:20px">Company Tasks</h1>
 
-  // View toggle
-  const toggleHTML = `
-    <div class="view-toggle" style="margin-bottom:20px">
-      <button class="view-toggle-btn ${State.taskOverviewSubView === 'tasks' ? 'active' : ''}" onclick="setTaskOverviewSubView('tasks')">All Tasks</button>
-      <button class="view-toggle-btn ${State.taskOverviewSubView === 'agenda' ? 'active' : ''}" onclick="setTaskOverviewSubView('agenda')">Agenda</button>
-    </div>
-  `;
-
-  let contentHTML;
-  if (State.taskOverviewSubView === 'agenda') {
-    // Agenda-only full page view
-    contentHTML = agendaHTML;
-  } else {
-    // Tasks view (no agenda at bottom)
-    contentHTML = `
       <!-- User filter cards -->
       ${userCardsHTML}
 
       <!-- All Tasks -->
       <div style="font-size:18px;font-weight:700;color:var(--gold);margin-bottom:14px">All Tasks</div>
       ${groupsHTML}
-    `;
-  }
-
-  return `
-    <div class="fade-in">
-      <div class="section-label">Task Overview</div>
-      <h1 class="page-title-sm" style="margin-bottom:20px">Workspace task overview</h1>
-
-      ${toggleHTML}
-
-      ${contentHTML}
     </div>
   `;
 }
@@ -166,9 +136,9 @@ function overviewTaskRowHTML(t) {
         <span class="meeting-status" style="background:${t.status_color};color:#FFF;font-size:10px;padding:2px 7px">${esc(t.status_label)}</span>
         <div class="task-avatars-wrap" style="display:flex;align-items:center">${assigneeHTML}</div>
         <div class="task-row-agenda" style="position:relative;flex:none">
-          <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots">${I.plus}</button>
+          <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots">${I.plus}</button>
           <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
-            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})">Add to Agenda</button>
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})">Add to Priorities</button>
           </div>
         </div>
       </div>
@@ -204,68 +174,10 @@ async function toggleOverviewTask(id, el) {
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ===== UNIFIED MEETING AGENDA =====
-function renderUnifiedAgenda(agendaItems) {
-  const pending = agendaItems.filter(a => !a.is_completed);
-  const completed = agendaItems.filter(a => a.is_completed);
+// ===== PRIORITIES (formerly "Meeting Agenda") ACTIONS =====
+// The board itself now renders in views/priorities.js; these mutators are
+// shared by that view and by the + buttons on task rows / project pages.
 
-  return `
-    <div class="agenda-list-container">
-      <div class="agenda-list-header">
-        <div style="display:flex;align-items:center;gap:10px">
-          <h3>Team Meeting Agenda</h3>
-          <span class="agenda-count-badge">${agendaItems.length}</span>
-        </div>
-        <span style="font-size:13px;color:var(--muted)">${pending.length} pending · ${completed.length} done</span>
-      </div>
-
-      <!-- Inline add input -->
-      <div class="agenda-add-row">
-        <input class="agenda-add-input" id="agenda-quick-add" placeholder="Add agenda point…" onkeydown="if(event.key==='Enter'){event.preventDefault();quickAddAgenda()}">
-        <button class="btn-primary" style="padding:8px 16px;font-size:13px;flex:none" onclick="quickAddAgenda()">${I.plus}Add</button>
-      </div>
-
-      <!-- Agenda list -->
-      <div id="agenda-list-body">
-        ${agendaItems.length ? agendaItems.map(agendaRow).join('') : '<div class="agenda-empty">No agenda points yet. Add one above or use the + button on any task.</div>'}
-      </div>
-    </div>
-  `;
-}
-
-function agendaRow(a) {
-  const projLink = a.related_project_id
-    ? ` onclick="event.stopPropagation();meetingGoProject(${a.related_project_id})" style="cursor:pointer"`
-    : '';
-  const taskLink = (a.related_task_id && a.related_project_id)
-    ? ` onclick="event.stopPropagation();meetingOpenTask(${a.related_task_id},${a.related_project_id})" style="cursor:pointer;text-decoration:underline;text-underline-offset:2px;color:var(--gold)"`
-    : '';
-
-  return `
-    <div class="agenda-list-item ${a.is_completed ? 'completed' : ''}" id="agenda-item-${a.id}">
-      <button class="agenda-check" onclick="event.stopPropagation();toggleAgendaComplete(${a.id}, ${a.is_completed ? 'true' : 'false'})" title="${a.is_completed ? 'Mark incomplete' : 'Mark complete'}">
-        ${a.is_completed ? I.check : '<span class="agenda-check-empty"></span>'}
-      </button>
-      <div class="agenda-item-content">
-        <div class="agenda-item-title" id="agenda-title-${a.id}" data-value="${esc(a.title)}">${a.is_completed ? '✓ ' : ''}${esc(a.title)}</div>
-        ${a.description ? `<div class="agenda-item-desc">${linkifyText(a.description)}</div>` : ''}
-        ${a.related_project_name && !a.related_task_title ? `<div class="agenda-item-link"${projLink}><span style="width:8px;height:8px;border-radius:99px;background:${a.related_project_color || 'var(--gold)'};display:inline-block;margin-right:6px"></span>${esc(a.related_project_name)}</div>` : ''}
-        ${a.related_task_title ? `<div class="agenda-item-link"${taskLink}>→ ${esc(a.related_task_title)}</div>` : ''}
-        ${a.assignee_name ? `<div class="agenda-item-assignee"><div class="avatar avatar-sm" style="background:${a.assignee_color || '#9A8A78'}">${a.assignee_initials || '?'}</div><span>${esc(a.assignee_name)}</span></div>` : ''}
-      </div>
-      <div class="agenda-item-actions" onclick="event.stopPropagation()">
-        <button class="agenda-item-dots" onclick="toggleAgendaMenu(${a.id}, this)">${I.dots}</button>
-        <div class="task-quick-menu agenda-menu" id="agenda-menu-${a.id}">
-          <button onclick="editAgendaInline(${a.id})">Edit</button>
-          <button onclick="toggleAgendaComplete(${a.id}, ${a.is_completed ? 'true' : 'false'})">${a.is_completed ? 'Mark incomplete' : 'Mark complete'}</button>
-          <button onclick="deleteAgendaItem(${a.id})" style="color:var(--red)">Delete</button>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-// ===== AGENDA ACTIONS =====
 async function quickAddAgenda() {
   const input = document.getElementById('agenda-quick-add');
   const title = input?.value.trim();
@@ -279,7 +191,7 @@ async function quickAddAgenda() {
       try { const a = await API.getAgenda(); State.agendaItems = a.agenda || a.items || []; } catch(e) {}
     }
     input.value = '';
-    toast('Agenda point added', 'success');
+    toast('Added to Priorities', 'success');
     render();
   } catch(e) { toast(e.message, 'error'); }
 }
@@ -321,7 +233,7 @@ function editAgendaInline(id) {
         await API.updateAgenda(id, { title: newVal });
         titleEl.dataset.value = newVal;
         titleEl.innerHTML = esc(newVal);
-        toast('Agenda updated', 'success');
+        toast('Renamed', 'success');
         // Update local state
         const items = State.agendaItems || [];
         const it = items.find(x => x.id === id);
@@ -339,11 +251,11 @@ function editAgendaInline(id) {
 
 async function deleteAgendaItem(id) {
   closeAllTaskMenus();
-  appConfirm('Delete this agenda point?', async () => {
+  appConfirm('Remove this item from Priorities?', async () => {
     try {
       await API.deleteAgenda(id);
       State.agendaItems = (State.agendaItems || []).filter(x => x.id !== id);
-      toast('Agenda point deleted', 'success');
+      toast('Removed from Priorities', 'success');
       render();
     } catch(e) { toast(e.message, 'error'); }
   });
@@ -371,15 +283,17 @@ async function addToAgendaFromTask(taskId, taskTitle, projectId) {
       related_project_id: projectId,
       assigned_to: assigneeId
     });
-    toast('Added to meeting agenda', 'success');
+    State.agendaItems = null; // Priorities board must refetch
+    toast('Added to Priorities', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
 
 async function addToAgendaFromProject(projectId, projectName) {
   closeAllTaskMenus();
   try {
-    await API.createAgenda({ title: 'Discuss: ' + projectName, related_project_id: projectId });
-    toast('Added to meeting agenda', 'success');
+    await API.createAgenda({ title: projectName, related_project_id: projectId });
+    State.agendaItems = null; // Priorities board must refetch
+    toast('Added to Priorities', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
 

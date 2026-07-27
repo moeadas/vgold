@@ -161,6 +161,7 @@ class TwilioHelper {
         if (!$this->voipEnabled) {
             throw new \Exception('VoIP is disabled. Enable it in Settings > VoIP & WhatsApp.');
         }
+        self::assertValidPhone($toNumber, 'destination');
 
         // Use the public-facing URL for TwiML — Twilio needs an externally reachable URL
         $appUrl = $this->appUrl;
@@ -280,6 +281,7 @@ class TwilioHelper {
         if (!$this->client) {
             throw new \Exception('Twilio client not initialized');
         }
+        self::assertValidPhone($toNumber, 'recipient');
 
         $from = $this->whatsappFromNumber ?: $this->phoneNumber;
         $fromWA = 'whatsapp:' . $from;
@@ -365,6 +367,31 @@ class TwilioHelper {
     /**
      * Normalize phone number to E.164 format
      */
+    /**
+     * True when $phone holds a genuinely dialable number.
+     *
+     * Imported lead rows frequently carry placeholders ("NA", "N/A", "-", "none")
+     * in phone/mobile. Those normalise to a bare "+", which Twilio rejects with
+     * `The 'To' number whatsapp:+ is not a valid phone number` (HTTP 400).
+     * Callers should validate BEFORE handing anything to the Twilio API so the
+     * user sees a clear message instead of a raw API error.
+     */
+    public static function isValidPhone($phone) {
+        $raw = trim((string)$phone);
+        if ($raw === '') return false;
+        if (preg_match('/^(na|n\/a|none|null|nil|tbd|unknown|-+)$/i', $raw)) return false;
+        $digits = preg_replace('/[^0-9]/', '', $raw);
+        $len = strlen($digits);
+        return $len >= 7 && $len <= 15;
+    }
+
+    /** Throw a user-facing exception when $phone is not dialable. */
+    public static function assertValidPhone($phone, $label = 'destination') {
+        if (!self::isValidPhone($phone)) {
+            throw new \Exception('The ' . $label . ' phone number is missing or invalid ("' . trim((string)$phone) . '"). Add a full international number, e.g. +34600123456.');
+        }
+    }
+
     public static function normalizePhone($phone) {
         $phone = preg_replace('/[^0-9+]/', '', $phone);
         if (strpos($phone, '+') !== 0) {

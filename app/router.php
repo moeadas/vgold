@@ -73,6 +73,10 @@ $routes = [
     'GET state-version' => ['ProjectController::stateVersion', true],
     'GET card-order' => ['ProjectController::cardOrder', true],
     'POST card-order' => ['ProjectController::saveCardOrder', true],
+
+    // Per-user project favourites (shown at the top of My Tasks)
+    'GET favorites' => ['ProjectController::listFavorites', true],
+    'POST favorites' => ['ProjectController::toggleFavorite', true],
     'GET comments-feed' => ['ProjectController::commentsFeed', true],
     'POST comments-feed/read' => ['ProjectController::markCommentsFeedRead', true],
     'GET files/{id}/download' => ['MessageController::downloadFile', true],

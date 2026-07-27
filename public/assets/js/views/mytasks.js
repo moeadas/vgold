@@ -12,6 +12,10 @@ async function renderMyTasks() {
     try { const res = await API.myTasks(); data = res.tasks; State.myTasksData = data; } catch(e) { data = []; }
   }
 
+  // Favourited projects/workspaces, pinned to the top of this page.
+  if (typeof ensureFavorites === 'function') await ensureFavorites();
+  const favorites = State.favorites || [];
+
   // Active filter
   const filter = State.myTasksFilter || 'all';
 
@@ -95,10 +99,31 @@ async function renderMyTasks() {
       </div>
     </div>` : '';
 
+  const favoritesHTML = favorites.length ? `
+    <section class="fav-strip" aria-label="Favourites">
+      <div class="fav-strip-head">
+        <span class="fav-strip-title">${I.starFill}<span>Favourites</span></span>
+        <span class="fav-strip-count">${favorites.length}</span>
+      </div>
+      <div class="fav-strip-row">
+        ${favorites.map(f => `
+          <button class="fav-card" onclick="${f.is_category ? `goCategory(${f.id})` : `goProject(${f.id})`}">
+            <span class="fav-card-dot" style="background:${f.color || 'var(--gold)'}"></span>
+            <span class="fav-card-body">
+              <span class="fav-card-name">${esc(f.name)}</span>
+              <span class="fav-card-meta">${f.is_category ? 'Workspace' : (esc(f.context || 'Project'))}${f.total_tasks ? ` · ${f.completed_tasks}/${f.total_tasks} done` : ''}</span>
+            </span>
+            <span class="fav-card-star" title="Remove from favourites" onclick="event.stopPropagation();toggleFavoriteProject(${f.id},'${esc(f.name).replace(/'/g, "\\'")}')">${I.starFill}</span>
+          </button>
+        `).join('')}
+      </div>
+    </section>` : '';
+
   return `
     <div class="fade-in">
       <div class="section-label">My Tasks</div>
       <h1 class="page-title-sm" style="margin-bottom:20px">All your tasks in one place</h1>
+      ${favoritesHTML}
       ${planCardHTML}
       <div class="status-chips">
         ${chip('all', total, 'Total', '', filter === 'all')}

@@ -65,17 +65,47 @@ function initCardDragging(gridSelector, scopeId) {
   });
 }
 
-// VGo — Projects view: Simple category cards → click to see projects grid
+// ===== FAVOURITES =====
+// Per-user favourites are cached in State.favorites (an array of project ids)
+// and surfaced as a strip at the top of My Tasks.
+async function ensureFavorites() {
+  if (State.favorites) return State.favorites;
+  try { const res = await API.favorites(); State.favorites = res.favorites || []; }
+  catch (e) { State.favorites = []; }
+  return State.favorites;
+}
+function isFavorite(id) {
+  return (State.favorites || []).some(f => Number(f.id) === Number(id));
+}
+function favBtnHTML(id, name) {
+  const on = isFavorite(id);
+  return `<button class="fav-btn ${on ? 'on' : ''}" title="${on ? 'Remove from favourites' : 'Add to favourites'}"
+    aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" aria-pressed="${on}"
+    onclick="event.stopPropagation();toggleFavoriteProject(${id},'${esc(name).replace(/'/g, "\\'")}')">${on ? I.starFill : I.star}</button>`;
+}
+async function toggleFavoriteProject(id, name) {
+  try {
+    const res = await API.toggleFavorite(id);
+    State.favorites = null;          // refetch so ordering + metadata stay right
+    State.myTasksData = State.myTasksData; // untouched; favourites render separately
+    await ensureFavorites();
+    toast(res.is_favorite ? `${name} added to favourites` : `${name} removed from favourites`, 'success');
+    render();
+  } catch (e) { toast(e.message, 'error'); }
+}
+
+// VGo — Workspaces view: workspace cards → click to see the projects inside
 async function renderProjects() {
   let projects = State.projects;
   if (!projects) {
     try { const res = await API.projects(); projects = res.projects; State.projects = projects; } catch(e) { projects = []; }
   }
-  
+
   // Fetch unread chat counts
   if (!State.unreadCounts) {
     try { const res = await API.unreadChatCounts(); State.unreadCounts = res.unread || {}; } catch(e) { State.unreadCounts = {}; }
   }
+  await ensureFavorites();
 
   // B6: apply the user's saved card order for the top-level grid (scope 0).
   await ensureCardOrders();
@@ -93,7 +123,11 @@ async function renderProjects() {
     return `
       <div class="project-card category-card" data-card-id="${p.id}" onclick="goCategory(${p.id})">
         <span class="card-drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">${I.grip || '⠿'}</span>
-        ${State.user?.role === 'admin' ? `<button class="cat-delete-btn" onclick="event.stopPropagation();deleteCategory(${p.id})" title="Delete category">${I.trash}</button>` : ''}
+        <div class="card-actions">
+          ${favBtnHTML(p.id, p.name)}
+          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${esc(p.name).replace(/'/g, "\\'")}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
+          ${State.user?.role === 'admin' ? `<button class="card-icon-btn danger" onclick="event.stopPropagation();deleteCategory(${p.id})" title="Delete workspace" aria-label="Delete workspace">${I.trash}</button>` : ''}
+        </div>
         ${unreadKPI(State.unreadCounts, p.id)}<div class="pc-title">${esc(p.name)}</div>
         <div class="cat-stats">
           <div class="cat-stat">
@@ -118,22 +152,64 @@ async function renderProjects() {
       </div>
     `;
   }).join('') : `<div style="grid-column:1/-1" class="empty-state">
-    <div class="title">No categories yet</div>
-    <div class="desc">Create your first category to get started.</div>
+    <div class="title">No workspaces yet</div>
+    <div class="desc">Create your first workspace to get started.</div>
   </div>`;
 
   return `
     <div class="fade-in">
       <div style="display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:18px">
         <div>
-          <div class="section-label">Your workspace</div>
+          <div class="section-label">Workspaces</div>
           <h1 class="page-title-sm">${greeting}</h1>
         </div>
-        <button class="btn-primary" onclick="openNewProjectModal()">${I.plus}<span>New category</span></button>
+        <button class="btn-primary" onclick="openNewProjectModal()">${I.plus}<span>New workspace</span></button>
       </div>
       <div class="project-grid">${grid}</div>
     </div>
   `;
+}
+
+// Rename a workspace / project / project area from anywhere.
+// `kind` only affects the wording of the dialog.
+function renameProjectPrompt(id, currentName, kind) {
+  const label = kind || 'project';
+  const Label = label.charAt(0).toUpperCase() + label.slice(1);
+  closeAllTaskMenus();
+  Modal.open({
+    title: `Rename ${label}`,
+    body: `
+      <div class="form-field">
+        <label class="form-label">${Label} name</label>
+        <input class="form-input" id="rename-input" value="${esc(currentName)}" onkeydown="if(event.key==='Enter')submitRenameProject(${id})">
+      </div>`,
+    footer: `
+      <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+      <button class="btn-primary" onclick="submitRenameProject(${id})">Save</button>`,
+    onMount: () => setTimeout(() => {
+      const el = document.getElementById('rename-input');
+      if (el) { el.focus(); el.select(); }
+    }, 60),
+  });
+}
+
+async function submitRenameProject(id) {
+  const name = document.getElementById('rename-input')?.value.trim();
+  if (!name) { toast('Please enter a name', 'error'); return; }
+  try {
+    await API.updateProject(id, { name });
+    Modal.close();
+    // Every cached view can show this name — drop them all.
+    State.projects = null;
+    State.activeCategory = null;
+    State.activeProject = null;
+    State.favorites = null;
+    State.myTasksData = null;
+    State.agendaItems = null;
+    if (typeof _allTasksData !== 'undefined') _allTasksData = null;
+    toast('Renamed', 'success');
+    render();
+  } catch (e) { toast(e.message, 'error'); }
 }
 
 // ===== Category detail page: shows grid of projects under a category =====
@@ -148,6 +224,7 @@ async function renderCategory() {
   }
 
   await ensureCardOrders();
+  await ensureFavorites();
   const projects = applyCardOrder(cat.projects || [], cat.id);
 
   const grid = projects.length ? projects.map(p => {
@@ -158,7 +235,11 @@ async function renderCategory() {
     return `
       <div class="project-card" data-card-id="${p.id}" onclick="goProject(${p.id})">
         <span class="card-drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">${I.grip || '⠿'}</span>
-        ${State.user?.role === 'admin' ? `<button class="cat-delete-btn" onclick="event.stopPropagation();deleteProject(${p.id})" title="Delete project">${I.trash}</button>` : ''}
+        <div class="card-actions">
+          ${favBtnHTML(p.id, p.name)}
+          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${esc(p.name).replace(/'/g, "\\'")}','project')" title="Rename project" aria-label="Rename project">${I.pencil}</button>
+          ${State.user?.role === 'admin' ? `<button class="card-icon-btn danger" onclick="event.stopPropagation();deleteProject(${p.id})" title="Delete project" aria-label="Delete project">${I.trash}</button>` : ''}
+        </div>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
           ${unreadKPI(State.unreadCounts, p.id)}<div class="pc-title">${esc(p.name)}</div>
           <span class="health-pill" style="color:${p.health_color};background:${p.healthBg || '#E5E6D2'};flex:none"><span class="dot" style="background:${p.health_color}"></span>${p.health_label}</span>
@@ -181,18 +262,22 @@ async function renderCategory() {
     `;
   }).join('') : `<div style="grid-column:1/-1" class="empty-state">
     <div class="title">No projects yet</div>
-    <div class="desc">Add a project to this category.</div>
+    <div class="desc">Add a project to this workspace.</div>
   </div>`;
 
   return `
     <div class="fade-in">
-      <button class="back-link" onclick="nav('projects')">${I.arrowL}All Projects</button>
+      <button class="back-link" onclick="nav('projects')">${I.arrowL}All Workspaces</button>
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px">
         <div style="min-width:0">
-          <h1 class="page-title-sm">${esc(cat.name)}</h1>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <h1 class="page-title-sm" style="margin:0">${esc(cat.name)}</h1>
+            ${favBtnHTML(cat.id, cat.name)}
+            <button class="card-icon-btn" onclick="renameProjectPrompt(${cat.id},'${esc(cat.name).replace(/'/g, "\\'")}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
+          </div>
           ${cat.description ? `<p class="page-desc">${esc(cat.description)}</p>` : ''}
         </div>
-        <button class="btn-primary" style="flex:none" onclick="openNewProjectModal(${cat.id},'${esc(cat.name)}')">${I.plus}<span>Add project</span></button>
+        <button class="btn-primary" style="flex:none" onclick="openNewProjectModal(${cat.id},'${esc(cat.name).replace(/'/g, "\\'")}')">${I.plus}<span>Add project</span></button>
       </div>
       <div class="project-grid">${grid}</div>
       
@@ -612,11 +697,16 @@ function goCategory(id) {
 
 function openNewProjectModal(parentId, parentName) {
   const isSub = !!parentId;
-  // C3 — when the create modal is opened from an individual project page, the new
-  // item is a *sub-project*; from a category page it's a *project*. This only
-  // affects wording — the payload is identical (parent_id = the parent's id).
-  const childWord = (isSub && State.screen === 'project') ? 'sub-project' : 'project';
-  const childWordCap = childWord.charAt(0).toUpperCase() + childWord.slice(1);
+  // Hierarchy: Workspace → Project → Project Area, then tasks only. Opened from
+  // a workspace page the new item is a *project*; from a project page it's a
+  // *project area*. Wording only — the payload is identical (parent_id).
+  const childWord = (isSub && State.screen === 'project') ? 'project area' : 'project';
+  const childWordCap = childWord.replace(/\b\w/g, c => c.toUpperCase());
+  // Guard the client side too, so the button is never a dead end.
+  if (isSub && State.screen === 'project' && Number(State.activeProject?.depth || 0) >= 2) {
+    toast('Project areas cannot contain more projects. Add tasks here instead.', 'error');
+    return;
+  }
   // Fetch members for the selector
   API.members().then(res => {
     const members = res.members || [];
@@ -630,15 +720,15 @@ function openNewProjectModal(parentId, parentName) {
     `).join('');
     
     Modal.open({
-      title: isSub ? `Add ${childWord} to ${parentName}` : 'New Category',
+      title: isSub ? `Add ${childWord} to ${parentName}` : 'New Workspace',
       body: `
         <div class="form-field">
-          <label class="form-label">${isSub ? childWordCap + ' name' : 'Category name'}</label>
-          <input class="form-input" id="np-name" placeholder="${isSub ? 'e.g. Summer Campaign' : 'e.g. Marketing'}" onkeydown="if(event.key==='Enter')submitNewProject(${parentId || 'null'})">
+          <label class="form-label">${isSub ? childWordCap + ' name' : 'Workspace name'}</label>
+          <input class="form-input" id="np-name" placeholder="${isSub ? 'e.g. Bioinformatics' : 'e.g. Business Development'}" onkeydown="if(event.key==='Enter')submitNewProject(${parentId || 'null'})">
         </div>
         <div class="form-field">
           <label class="form-label">Description</label>
-          <textarea class="form-textarea" id="np-desc" placeholder="What is this ${isSub ? childWord : 'category'} about?"></textarea>
+          <textarea class="form-textarea" id="np-desc" placeholder="What is this ${isSub ? childWord : 'workspace'} about?"></textarea>
         </div>
         ${isSub ? `
         <div class="form-field">
@@ -651,22 +741,22 @@ function openNewProjectModal(parentId, parentName) {
           <div style="display:flex;flex-direction:column;gap:2px;max-height:200px;overflow-y:auto;border:1px solid var(--border);border-radius:10px;padding:8px 12px">
             ${memberCheckboxes}
           </div>
-          <p style="font-size:12px;color:var(--muted);margin-top:6px">${isSub ? 'Only members you select will see this ' + childWord + '. Members of the parent will also see it.' : 'Only members you select will see this category.'}</p>
+          <p style="font-size:12px;color:var(--muted);margin-top:6px">${isSub ? 'Only members you select will see this ' + childWord + '. Members of the parent will also see it.' : 'Only members you select will see this workspace.'}</p>
         </div>
       `,
       footer: `
         <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-        <button class="btn-primary" onclick="submitNewProject(${parentId || 'null'})">${isSub ? 'Create ' + childWord : 'Create category'}</button>
+        <button class="btn-primary" onclick="submitNewProject(${parentId || 'null'})">${isSub ? 'Create ' + childWord : 'Create workspace'}</button>
       `,
       onMount: () => setTimeout(() => document.getElementById('np-name')?.focus(), 100),
     });
   }).catch(() => {
     // Fallback without members
     Modal.open({
-      title: isSub ? `Add project to ${parentName}` : 'New Category',
+      title: isSub ? `Add project to ${parentName}` : 'New Workspace',
       body: `
         <div class="form-field">
-          <label class="form-label">${isSub ? 'Project name' : 'Category name'}</label>
+          <label class="form-label">${isSub ? 'Project name' : 'Workspace name'}</label>
           <input class="form-input" id="np-name" onkeydown="if(event.key==='Enter')submitNewProject(${parentId || 'null'})">
         </div>
         <div class="form-field">
@@ -705,10 +795,10 @@ async function submitNewProject(parentId) {
     State.activeProject = null;
     State.unreadCounts = null;
     // Distinguish messaging: creating inside a sub-project reads as a sub-project.
-    let msg = 'Category created';
+    let msg = 'Workspace created';
     if (parentId) {
       const onProjectPage = State.screen === 'project';
-      msg = onProjectPage ? 'Sub-project created' : 'Project created';
+      msg = onProjectPage ? 'Project area created' : 'Project created';
     }
     toast(msg, 'success');
     render();
@@ -725,12 +815,13 @@ async function editFileFromId(id) {
 
 // ===== DELETE FUNCTIONS =====
 async function deleteCategory(id) {
-  appConfirm('Delete this category and all projects inside it?', async () => {
+  appConfirm('Delete this workspace and everything inside it?', async () => {
     try {
       await API.deleteProject(id);
       State.projects = null;
       State.unreadCounts = null;
-      toast('Category deleted', 'success');
+      State.favorites = null;
+      toast('Workspace deleted', 'success');
       render();
     } catch(e) { toast(e.message, 'error'); }
   });
@@ -740,14 +831,15 @@ async function deleteProject(id) {
   // C3 — if we're on a project page and deleting one of its *sub-projects*
   // (not the project itself), stay on the page and just refresh its grid.
   const deletingChild = State.screen === 'project' && State.activeProjectId && id != State.activeProjectId;
-  appConfirm(deletingChild ? 'Delete this sub-project?' : 'Delete this project?', async () => {
+  appConfirm(deletingChild ? 'Delete this project area?' : 'Delete this project?', async () => {
     try {
       await API.deleteProject(id);
       State.activeCategory = null;
       State.unreadCounts = null;
+      State.favorites = null;
       if (deletingChild) {
-        State.activeProject = null; // force re-fetch so the sub-project grid updates
-        toast('Sub-project deleted', 'success');
+        State.activeProject = null; // force re-fetch so the project-area grid updates
+        toast('Project area deleted', 'success');
         render();
         return;
       }

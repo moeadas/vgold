@@ -104,6 +104,10 @@ function sendMessage() {
         echo json_encode(['success' => false, 'message' => 'Phone number and message are required']);
         return;
     }
+    if (!TwilioHelper::isValidPhone($toNumber)) {
+        echo json_encode(['success' => false, 'message' => 'This contact has no valid phone number ("' . trim((string)$toNumber) . '"). Add a full international number, e.g. +34600123456.']);
+        return;
+    }
 
     try {
         $twilio = TwilioHelper::getInstance();
@@ -174,6 +178,10 @@ function sendTemplate() {
 
     if (!$templateId || empty($toNumber)) {
         echo json_encode(['success' => false, 'message' => 'Template ID and phone number are required']);
+        return;
+    }
+    if (!TwilioHelper::isValidPhone($toNumber)) {
+        echo json_encode(['success' => false, 'message' => 'This contact has no valid phone number ("' . trim((string)$toNumber) . '"). Add a full international number, e.g. +34600123456.']);
         return;
     }
 
@@ -698,6 +706,10 @@ function sendContentTemplate() {
 
     if (empty($contentSid) || empty($toNumber)) {
         echo json_encode(['success' => false, 'message' => 'Content SID and phone number are required']);
+        return;
+    }
+    if (!TwilioHelper::isValidPhone($toNumber)) {
+        echo json_encode(['success' => false, 'message' => 'This contact has no valid phone number ("' . trim((string)$toNumber) . '"). Add a full international number, e.g. +34600123456.']);
         return;
     }
 

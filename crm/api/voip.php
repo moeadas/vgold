@@ -105,6 +105,12 @@ function initiateCall() {
         echo json_encode(['success' => false, 'message' => 'Phone number is required']);
         return;
     }
+    // Reject placeholders ("NA", "-", "N/A") before a call row is written and
+    // before Twilio is contacted — otherwise the SDK returns a raw HTTP 400.
+    if (!TwilioHelper::isValidPhone($toNumber)) {
+        echo json_encode(['success' => false, 'message' => 'That is not a valid phone number. Use full international format, e.g. +34600123456.']);
+        return;
+    }
 
     try {
         $twilio = TwilioHelper::getInstance();

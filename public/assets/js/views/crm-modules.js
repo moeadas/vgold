@@ -103,7 +103,36 @@ function crmWidenModal(px) {
   const box = Modal.current && Modal.current.querySelector('.modal');
   if (box) { box.style.width = px + 'px'; box.style.maxWidth = '96vw'; }
 }
-function crmModalBody(html) { return `<div class="crm-native">${html}</div>`; }
+function crmModalBody(html) {
+  // Every CRM modal body must carry the scoped design-system styles. Modals can
+  // be opened from OUTSIDE the CRM module screens (e.g. the lead detail page's
+  // Call / WhatsApp quick actions), where renderCrmModule() never ran — so inject
+  // here too instead of relying on the dispatcher.
+  ensureCrmModStyles();
+  return `<div class="crm-native">${html}</div>`;
+}
+
+// ---- phone helpers -----------------------------------------------------
+// Imported lead data frequently carries placeholders ("NA", "N/A", "-", "none")
+// in the phone/mobile columns. Sending those to Twilio produced
+// `The 'To' number whatsapp:+ is not a valid phone number` (HTTP 400).
+// crmDigits/crmIsPhone gate every dial + message path, and crmLeadPhone picks
+// the first field that actually holds a dialable number.
+function crmDigits(v) { return String(v == null ? '' : v).replace(/[^0-9]/g, ''); }
+function crmIsPhone(v) {
+  const s = String(v == null ? '' : v).trim();
+  if (!s) return false;
+  if (/^(na|n\/a|none|null|nil|tbd|unknown|-+)$/i.test(s)) return false;
+  const d = crmDigits(s);
+  return d.length >= 7 && d.length <= 15;
+}
+function crmLeadPhone(lead) {
+  if (!lead) return '';
+  const candidates = [lead.mobile, lead.phone, lead.whatsapp, lead.phone_number, lead.contact_number];
+  for (const c of candidates) { if (crmIsPhone(c)) return String(c).trim(); }
+  return '';
+}
+window.crmDigits = crmDigits; window.crmIsPhone = crmIsPhone; window.crmLeadPhone = crmLeadPhone;
 
 function ensureCrmModStyles() {
   if (typeof ensureCrmDetailStyles === 'function') ensureCrmDetailStyles();
@@ -223,6 +252,11 @@ function ensureCrmModStyles() {
 .crm-native .wa-info-card.orange{border-left-color:#ff9500}
 @media(max-width:820px){.crm-native .ct-two{grid-template-columns:1fr}.crm-native .ct-li-grid1{grid-template-columns:1fr}.crm-native .ct-cond{grid-template-columns:1fr}}`;
   document.head.appendChild(s);
+}
+// Inject on load so CRM modals opened from non-CRM screens are styled too.
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => ensureCrmModStyles());
+  else ensureCrmModStyles();
 }
 
 // ---- override the dispatcher ------------------------------------------
@@ -1587,22 +1621,25 @@ async function waSendQuick() {
 
 // --- Chat panel (per-lead / per-number thread) ---
 async function waOpenChat(leadId, toNumber, name) {
+  ensureCrmModStyles();
   const ch = leadId ? (CrmMod.cache.waChats?.data || []).find(x => Number(x.lead_id) === Number(leadId)) : null;
-  const num = toNumber || (ch ? (ch.phone || ch.mobile || '') : '');
+  // Pick the first field that actually holds a dialable number — imported rows
+  // often store "NA"/"-" in phone, with the real number in mobile (or vice versa).
+  const num = crmIsPhone(toNumber) ? String(toNumber).trim() : (ch ? crmLeadPhone(ch) : '');
   const nm = name || (ch ? (ch.contact_person || ch.company_name || ('Lead #' + leadId)) : (num || 'Contact'));
   CrmMod.wa = { leadId: leadId || 0, toNumber: num, name: nm, insideWindow: null, contentTemplates: (CrmMod.cache.waContentTemplates?.data) || [] };
   Modal.open({
     title: 'WhatsApp — ' + nm,
     body: crmModalBody(`
-      <div class="wa-chat-sub">${esc(num || 'No number on file')}</div>
+      <div class="wa-chat-sub">${num ? esc(num) : '<span style="color:var(--color-danger)">No valid phone number on file — add one on the lead before messaging.</span>'}</div>
       <div id="wa-window-banner" class="wa-window-banner" style="display:none"></div>
       <div class="ct-wa-thread" id="wa-thread"><div class="empty-state"><p>Loading messages…</p></div></div>
       <div id="wa-tpl-panel" class="wa-tpl-panel" style="display:none"></div>
       <div id="wa-fill-panel" class="wa-tpl-panel" style="display:none"></div>
       <div class="ct-compose">
-        <button class="btn btn-outline" title="Send a template" onclick="waShowTemplatePicker()">Templates</button>
-        <input class="form-control" id="wa-input" placeholder="Type a message…" onkeydown="if(event.key==='Enter')waSendMessage()">
-        <button class="btn btn-primary wa-green-btn" onclick="waSendMessage()">Send</button>
+        <button class="btn btn-outline" title="Send a template" onclick="waShowTemplatePicker()" ${num ? '' : 'disabled'}>Templates</button>
+        <input class="form-control" id="wa-input" placeholder="${num ? 'Type a message…' : 'No phone number on this lead'}" ${num ? '' : 'disabled'} onkeydown="if(event.key==='Enter')waSendMessage()">
+        <button class="btn btn-primary wa-green-btn" onclick="waSendMessage()" ${num ? '' : 'disabled'}>Send</button>
       </div>`),
     footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button>`,
     onMount: async () => {
@@ -1657,7 +1694,7 @@ async function waSendMessage() {
   const body = (inp ? inp.value : '').trim();
   if (!body) return;
   const w = CrmMod.wa;
-  if (!w.toNumber) { toast('No phone number on this lead to message.', 'error'); return; }
+  if (!crmIsPhone(w.toNumber)) { toast('This lead has no valid phone number. Add one on the lead record first.', 'error'); return; }
   inp.value = '';
   try {
     await crmApiPost('whatsapp.php?action=send', { to_number: w.toNumber, body, lead_id: w.leadId || 0 });
@@ -1729,6 +1766,7 @@ async function waSendContentTemplate(sid) {
   });
   if (!ok) { toast('Please fill in all template variables', 'error'); return; }
   const w = CrmMod.wa;
+  if (!crmIsPhone(w.toNumber)) { toast('This lead has no valid phone number. Add one on the lead record first.', 'error'); return; }
   try {
     await crmApiPost('whatsapp.php?action=send_content_template', { content_sid: sid, to_number: w.toNumber, lead_id: w.leadId || 0, variables });
     document.getElementById('wa-fill-panel').style.display = 'none';
@@ -2005,13 +2043,16 @@ async function voipEnsureDevice() {
   await device.register();
   return device;
 }
-function voipOpenSoftphone() {
+function voipOpenSoftphone(prefill, leadId) {
+  ensureCrmModStyles();
+  const startNum = crmIsPhone(prefill) ? String(prefill).trim() : '';
+  CrmMod.voip.leadId = Number(leadId) || 0;
   Modal.open({
     title: 'Softphone',
     body: crmModalBody(`
       <div class="ct-sp-status" id="sp-status">${crmBadge('Initializing…', 'badge-gray')}</div>
       <div id="sp-idle">
-        <input class="form-control ct-sp-num" id="sp-number" placeholder="+1 858 358 5260" onkeydown="if(event.key==='Enter')voipDial()">
+        <input class="form-control ct-sp-num" id="sp-number" value="${esc(startNum)}" placeholder="+1 858 358 5260" onkeydown="if(event.key==='Enter')voipDial()">
         <div class="form-hint" style="text-align:center">Enter a phone number with country code (e.g. +1 for US)</div>
         <div class="ct-dialpad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'].map(k => `<button class="ct-key" onclick="voipKey('${k}')">${k}</button>`).join('')}</div>
         <div style="text-align:center;margin-top:6px"><button class="ct-round call" onclick="voipDial()">${CT_IC.phone}</button></div>
@@ -2033,6 +2074,8 @@ function voipOpenSoftphone() {
       </div>`),
     footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button><button class="btn-primary" id="sp-savelog" style="display:none" onclick="voipSaveLog()">Save Log</button>`,
     onMount: async () => {
+      const n = document.getElementById('sp-number');
+      if (n && startNum) { n.focus(); try { n.setSelectionRange(n.value.length, n.value.length); } catch (e) {} }
       try { voipStatus('Connecting to Twilio…', 'badge-yellow'); await voipEnsureDevice(); }
       catch (e) { voipStatus(e.message, 'badge-red'); }
     },
@@ -2046,10 +2089,15 @@ function voipKey(k) {
 async function voipDial() {
   const num = document.getElementById('sp-number')?.value.trim();
   if (!num) { toast('Enter a number', 'error'); return; }
+  if (!crmIsPhone(num)) {
+    voipStatus('Invalid number', 'badge-red');
+    toast('That is not a valid phone number. Enter it in full international format, e.g. +34 600 123 456.', 'error');
+    return;
+  }
   try {
     voipStatus('Connecting…', 'badge-yellow');
     await voipEnsureDevice();
-    const r = await crmApiPost('voip.php?action=call', { to_number: num, lead_id: 0 });
+    const r = await crmApiPost('voip.php?action=call', { to_number: num, lead_id: CrmMod.voip.leadId || 0 });
     CrmMod.voip.callId = r.call_id;
     const to = r.to_number || num;
     const call = await CrmMod.voip.device.connect({ params: { To: to, call_id: String(r.call_id) } });

@@ -2,7 +2,29 @@
 require_once __DIR__ . '/../lib/Authz.php';
 
 class ProjectController {
-    
+
+    // ===== HIERARCHY DEPTH =====
+    // The tree is capped at three levels:
+    //   0 = Workspace (parent_id IS NULL)
+    //   1 = Project
+    //   2 = Project Area  ← deepest; only tasks live below this
+    const MAX_DEPTH = 2;
+
+    /** Depth of a project row: 0 for a workspace, +1 per ancestor. */
+    public static function projectDepth($id) {
+        $depth = 0;
+        $cursor = (int)$id;
+        $guard = 0;
+        while ($cursor && $guard < 20) {
+            $row = DB::fetch("SELECT parent_id FROM projects WHERE id = ?", [$cursor]);
+            if (!$row || empty($row['parent_id'])) break;
+            $depth++;
+            $cursor = (int)$row['parent_id'];
+            $guard++;
+        }
+        return $depth;
+    }
+
     public static function index() {
         $userId = Auth::userId();
         $wsId = Auth::workspaceId();
@@ -323,6 +345,10 @@ class ProjectController {
                 'parent_id' => $project['parent_id'] ? (int)$project['parent_id'] : null,
                 'category_name' => $categoryName,
                 'breadcrumb' => $breadcrumb,
+                // 0 = Workspace, 1 = Project, 2 = Project Area (deepest).
+                'depth' => count($breadcrumb),
+                'max_depth' => self::MAX_DEPTH,
+                'is_favorite' => self::isFavorite((int)$project['id']),
                 'subprojects' => $subprojects,
                 'health' => $health,
                 'health_label' => healthLabel($health),
@@ -472,8 +498,13 @@ class ProjectController {
             // workspace AND that the caller (if not admin) belongs to its tree; it
             // sends a 403/404 and exits otherwise.
             Authz::requireProjectOrCategoryAccess((int)$parentId);
+
+            // Nesting cap: Workspace → Project → Project Area, then tasks only.
+            if (self::projectDepth((int)$parentId) >= self::MAX_DEPTH) {
+                jsonError('Project areas cannot contain more projects. Add tasks here instead.', 422);
+            }
         }
-        
+
         $id = DB::insert('projects', [
             'workspace_id' => Auth::workspaceId(),
             'parent_id' => $parentId,
@@ -1052,6 +1083,87 @@ class ProjectController {
             DB::insert('card_orders', ['user_id' => Auth::userId(), 'scope_id' => $scopeId, 'order_json' => $json]);
         }
         jsonResponse(['ok' => true]);
+    }
+
+    // ===== PROJECT FAVOURITES (per user) =====
+    // Favourites are personal, so they live in their own join table rather than
+    // on `projects`. Created on demand like chat_reads so no migration step is
+    // needed on deploy.
+    public static function ensureFavoritesTable() {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        try {
+            DB::query("CREATE TABLE IF NOT EXISTS `project_favorites` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `project_id` INT NOT NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `user_project_fav` (`user_id`, `project_id`),
+                FOREIGN KEY (`user_id`) REFERENCES `users`(`id`) ON DELETE CASCADE,
+                FOREIGN KEY (`project_id`) REFERENCES `projects`(`id`) ON DELETE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        } catch (\Exception $e) {}
+    }
+
+    public static function isFavorite($projectId) {
+        self::ensureFavoritesTable();
+        try {
+            $r = DB::fetch("SELECT id FROM project_favorites WHERE user_id = ? AND project_id = ?", [Auth::userId(), (int)$projectId]);
+            return (bool)$r;
+        } catch (\Exception $e) { return false; }
+    }
+
+    // GET /api/favorites — the user's favourited projects, newest first.
+    public static function listFavorites() {
+        self::ensureFavoritesTable();
+        $rows = DB::fetchAll(
+            "SELECT p.id, p.name, p.color, p.parent_id, p.progress, p.health,
+                    parent.name AS parent_name, root.name AS root_name
+             FROM project_favorites f
+             JOIN projects p ON p.id = f.project_id
+             LEFT JOIN projects parent ON parent.id = p.parent_id
+             LEFT JOIN projects root ON root.id = COALESCE(parent.parent_id, parent.id)
+             WHERE f.user_id = ? AND p.workspace_id = ?
+             ORDER BY f.created_at DESC",
+            [Auth::userId(), Auth::workspaceId()]
+        );
+        $out = array_map(function ($p) {
+            $ts = DB::fetch(
+                "SELECT COUNT(*) AS total, SUM(CASE WHEN status='completed' THEN 1 ELSE 0 END) AS completed
+                 FROM tasks WHERE project_id = ?",
+                [$p['id']]
+            );
+            return [
+                'id' => (int)$p['id'],
+                'name' => $p['name'],
+                'color' => $p['color'],
+                'parent_id' => $p['parent_id'] ? (int)$p['parent_id'] : null,
+                'is_category' => empty($p['parent_id']),
+                'context' => $p['root_name'] ?: ($p['parent_name'] ?: ''),
+                'progress' => (int)$p['progress'],
+                'total_tasks' => (int)($ts['total'] ?? 0),
+                'completed_tasks' => (int)($ts['completed'] ?? 0),
+            ];
+        }, $rows);
+        jsonResponse(['favorites' => $out]);
+    }
+
+    // POST /api/favorites { project_id } — toggles and returns the new state.
+    public static function toggleFavorite() {
+        self::ensureFavoritesTable();
+        $data = input();
+        $pid = isset($data['project_id']) ? (int)$data['project_id'] : 0;
+        if (!$pid) jsonError('project_id is required');
+        Authz::requireProjectOrCategoryAccess($pid);
+
+        $existing = DB::fetch("SELECT id FROM project_favorites WHERE user_id = ? AND project_id = ?", [Auth::userId(), $pid]);
+        if ($existing) {
+            DB::delete('project_favorites', 'user_id = ? AND project_id = ?', [Auth::userId(), $pid]);
+            jsonResponse(['ok' => true, 'is_favorite' => false]);
+        }
+        DB::insert('project_favorites', ['user_id' => Auth::userId(), 'project_id' => $pid]);
+        jsonResponse(['ok' => true, 'is_favorite' => true]);
     }
 
     // ===== REAL-TIME STATE VERSION (B3) =====

@@ -940,12 +940,12 @@ function crmActiveLead(leadId) {
 // not require the Communications screen to be mounted. We prefill the lead's number.
 function crmLeadVoipCall(leadId) {
   const lead = crmActiveLead(leadId);
-  const number = lead ? (lead.phone || lead.mobile || '') : '';
-  if (!number) { toast('No phone number on this lead.', 'error'); return; }
+  // crmLeadPhone skips placeholder values ("NA", "-", "N/A") that imported rows
+  // carry in phone/mobile and returns the first genuinely dialable field.
+  const number = (typeof crmLeadPhone === 'function') ? crmLeadPhone(lead) : (lead ? (lead.phone || lead.mobile || '') : '');
+  if (!number) { toast('No valid phone number on this lead. Add one first.', 'error'); return; }
   if (typeof voipOpenSoftphone !== 'function') { toast('Softphone is unavailable.', 'error'); return; }
-  voipOpenSoftphone();
-  // The softphone modal renders synchronously; prefill on the next tick.
-  setTimeout(() => { const n = document.getElementById('sp-number'); if (n) { n.value = number; n.focus(); } }, 0);
+  voipOpenSoftphone(number, leadId);
 }
 
 // WhatsApp — reuse the native chat modal (waOpenChat) from crm-modules.js. We seed
@@ -953,8 +953,8 @@ function crmLeadVoipCall(leadId) {
 // even when the Communications screen was never visited.
 function crmLeadWhatsApp(leadId) {
   const lead = crmActiveLead(leadId);
-  const number = lead ? (lead.phone || lead.mobile || '') : '';
-  if (!number) { toast('No phone number on this lead.', 'error'); return; }
+  const number = (typeof crmLeadPhone === 'function') ? crmLeadPhone(lead) : (lead ? (lead.phone || lead.mobile || '') : '');
+  if (!number) { toast('No valid phone number on this lead. Add one first.', 'error'); return; }
   if (typeof waOpenChat !== 'function' || typeof CrmMod === 'undefined') { toast('WhatsApp is unavailable.', 'error'); return; }
   const name = lead.contact_person || lead.company_name || lead.display_name || ('Lead #' + leadId);
   CrmMod.cache.waChats = CrmMod.cache.waChats || { data: [] };
@@ -965,7 +965,9 @@ function crmLeadWhatsApp(leadId) {
   entry.company_name = lead.company_name || entry.company_name;
   entry.mobile = lead.mobile || number;
   entry.phone = lead.phone || number;
-  waOpenChat(leadId);
+  // Pass the resolved number explicitly so the modal never falls back to a
+  // placeholder like "NA" (which produced `whatsapp:+` → Twilio HTTP 400).
+  waOpenChat(leadId, number, name);
 }
 
 // Send Email — native compose modal posting to the legacy send-email.php endpoint

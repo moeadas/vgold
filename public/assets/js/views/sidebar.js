@@ -7,8 +7,9 @@ function renderSidebar() {
   
   const workflowItems = [
     { id: 'mytasks', label: 'My Tasks', icon: I.check },
+    { id: 'priorities', label: 'Priorities', icon: I.star || I.sparkle },
     { id: 'taskoverview', label: 'Task Overview', icon: I.grid },
-    { id: 'projects', label: 'Projects', icon: I.folder },
+    { id: 'projects', label: 'Workspaces', icon: I.folder },
     { id: 'messages', label: 'Messages', icon: I.msg },
   ];
   const granted = new Set(u.modules || []);
@@ -63,7 +64,9 @@ function renderSidebar() {
   return `
     <aside class="sidebar">
       <div class="sidebar-logo">
-        <img src="/assets/img/vgo-logo.png" alt="VGold">
+        <a href="#mytasks" class="sidebar-logo-link" onclick="event.preventDefault();goHome()" title="Go to home" aria-label="VGold — go to home">
+          <img src="/assets/img/vgo-logo.png" alt="VGold">
+        </a>
       </div>
       <nav class="nav-section" aria-label="VGold modules">
         <div class="module-nav-group">
@@ -113,6 +116,12 @@ function toggleNavGroup(group) {
   toggle?.setAttribute('aria-expanded', String(!collapsed));
   toggle?.querySelector('.module-nav-chevron')?.classList.toggle('open', !collapsed);
 }
+
+// Clicking the logo always returns to the app home (My Tasks).
+function goHome() {
+  if (typeof nav === 'function') nav('mytasks');
+}
+window.goHome = goHome;
 
 async function logout() {
   try {

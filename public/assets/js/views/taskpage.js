@@ -82,9 +82,9 @@ async function renderTaskPage(taskId) {
         ${statusHTML}
         <button class="btn ${isCompleted ? '' : 'btn-primary'}" id="task-complete-btn" onclick="toggleTaskPageStatus(${t.id})" style="display:inline-flex;align-items:center;gap:6px">${isCompleted ? '↩ Reopen task' : '✓ Mark as complete'}</button>
         <div style="position:relative;display:inline-flex">
-          <button onclick="event.stopPropagation();toggleAgendaAddMenu('task-${t.id}', this)" title="Add to agenda" aria-label="Add to agenda" class="task-row-dots" style="display:inline-flex;align-items:center;justify-content:center">${I.plus}</button>
+          <button onclick="event.stopPropagation();toggleAgendaAddMenu('task-${t.id}', this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots" style="display:inline-flex;align-items:center;justify-content:center">${I.plus}</button>
           <div class="task-quick-menu" id="agenda-add-menu-task-${t.id}" style="top:100%;left:0;right:auto">
-            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Agenda</button>
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Priorities</button>
           </div>
         </div>
         <span style="font-size:13px;color:var(--muted)">·</span>

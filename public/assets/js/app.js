@@ -36,6 +36,8 @@ const State = {
   crmLeads: null,
   crmInteractions: null,
   activeCrmModule: null,
+  agendaItems: null,
+  favorites: null,
 };
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
@@ -189,6 +191,7 @@ async function render() {
   try {
     switch (State.screen) {
       case 'taskoverview': mainContent = await renderTaskOverview(); break;
+      case 'priorities': mainContent = await renderPriorities(); break;
       case 'mytasks': mainContent = await renderMyTasks(); break;
       case 'projects': mainContent = await renderProjects(); break;
       case 'category': mainContent = await renderCategory(); break;
@@ -280,9 +283,9 @@ async function render() {
           </div>
           <div style="display:flex;gap:10px;align-items:center">
             <div style="display:flex;align-items:center;gap:6px;position:relative">
-            <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-panel" style="background:none;border:none;cursor:pointer;position:relative;padding:7px;border-radius:10px;color:var(--text-2);display:flex;align-items:center;justify-content:center;transition:background .15s">
+            <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-panel" style="background:none;border:none;cursor:pointer;position:relative;padding:8px;border-radius:10px;color:var(--text-2);display:flex;align-items:center;justify-content:center;transition:background .15s">
               ${I.bell}
-              <span id="notif-badge" style="display:none;position:absolute;top:2px;right:2px;background:#B0432B;color:#FFF;font-size:10px;font-weight:700;border-radius:99px;min-width:16px;height:16px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1">${State.notifCount}</span>
+              <span id="notif-badge" style="display:none;position:absolute;top:0;right:0;background:#B0432B;color:#FFF;font-size:10px;font-weight:700;border-radius:99px;min-width:17px;height:17px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1">${State.notifCount}</span>
             </button>
             <div class="notif-panel" id="notif-panel" role="menu" aria-label="Notifications" style="display:none">
               <div class="notif-panel-header">
@@ -292,7 +295,6 @@ async function render() {
               <div class="notif-list" id="notif-list"></div>
             </div>
           </div>
-            <button class="ask-btn" onclick="openAsk()" aria-label="Ask VGold AI assistant">${I.sparkle}<span>Ask VGold</span><span class="kbd" aria-hidden="true">⌘K</span></button>
           </div>
         </div>
         <div class="content" id="main-content" role="main" tabindex="-1">${mainContent}</div>
@@ -305,7 +307,7 @@ async function render() {
       </button>
       <button class="mobile-nav-btn ${State.screen === 'projects' || State.screen === 'category' || State.screen === 'project' ? 'active' : ''}" data-nav="projects">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h16a1 1 0 0 0 1-1V8a1 1 0 0 0-1-1h-7.93a1 1 0 0 1-.84-.46l-.7-1.08A1 1 0 0 0 8.79 5H4a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1Z"/></svg>
-        <span>Projects</span>
+        <span>Workspaces</span>
       </button>
       <button class="mobile-nav-btn ${State.screen === 'messages' ? 'active' : ''}" data-nav="messages">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg>
@@ -384,6 +386,7 @@ function routeFromHash() {
   if (!hash) { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null; }
   else if (hash === 'projects') { State.screen = 'projects'; State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null; }
   else if (hash === 'taskoverview' || hash === 'alltasks') { State.screen = 'taskoverview'; State.activeProjectId = null; State.activeProject = null; }
+  else if (hash === 'priorities' || hash === 'agenda') { State.screen = 'priorities'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'settings' || hash.startsWith('settings-')) { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
@@ -559,9 +562,10 @@ function applyRealtimeRefresh() {
   const s = State.screen;
   if (s === 'project') State.activeProject = null;
   if (s === 'category') State.activeCategory = null;
+  if (s === 'priorities') State.agendaItems = null;
   // Keep the Messages nav badge fresh too.
   loadMsgUnread();
-  if (['projects', 'category', 'project', 'mytasks', 'taskoverview'].includes(s)) {
+  if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities'].includes(s)) {
     render();
   }
 }
