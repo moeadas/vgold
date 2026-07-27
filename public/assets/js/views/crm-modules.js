@@ -709,6 +709,18 @@ function autoTriggerChange(saved) {
     const opts = (meta.condition_fields || []).find(f => f.value === 'lead_source')?.options || [];
     c.innerHTML = `<div class="ct-cfgbox"><div class="form-group"><label class="form-label">Lead Source</label>
       <select class="form-control" id="tc-source">${opts.map(s => `<option ${cfg.lead_source === s ? 'selected' : ''}>${s}</option>`).join('')}</select></div></div>`;
+  } else if (trig === 'interaction_logged') {
+    c.innerHTML = `<div class="ct-cfgbox">
+      <div class="form-group"><label class="form-label">Interaction type <span class="ct-secline">(optional)</span></label>
+        <select class="form-control" id="tc-ixtype"><option value="">Any</option>${(meta.interaction_types || []).map(t => `<option ${cfg.interaction_type === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Outcome <span class="ct-secline">(optional)</span></label>
+        <select class="form-control" id="tc-outcome"><option value="">Any</option>${(meta.outcomes || []).map(o => `<option ${cfg.outcome === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>`;
+  } else if (trig === 'call_completed') {
+    c.innerHTML = `<div class="ct-cfgbox"><div class="form-group" style="margin:0"><label class="form-label">Call outcome <span class="ct-secline">(optional)</span></label>
+      <select class="form-control" id="tc-outcome"><option value="">Any</option>${(meta.outcomes || []).map(o => `<option ${cfg.outcome === o ? 'selected' : ''}>${o}</option>`).join('')}</select></div></div>`;
+  } else if (trig === 'whatsapp_received') {
+    c.innerHTML = `<div class="ct-cfgbox"><div class="form-group" style="margin:0"><label class="form-label">Message contains <span class="ct-secline">(optional)</span></label>
+      <input class="form-control" id="tc-keyword" value="${esc(cfg.keyword || '')}" placeholder="e.g. price"></div></div>`;
   } else { c.innerHTML = ''; }
 }
 function autoActionChange(saved) {
@@ -740,6 +752,36 @@ function autoActionChange(saved) {
     c.innerHTML = box(`<div class="form-group" style="margin:0"><label class="form-label">New Priority</label><select class="form-control" id="ac-priority">${(meta.priorities || []).map(p => `<option ${cfg.priority === p ? 'selected' : ''}>${p}</option>`).join('')}</select></div>`);
   } else if (act === 'log_interaction') {
     c.innerHTML = box(`<div class="form-group" style="margin:0"><label class="form-label">Note Text</label><textarea class="form-control" id="ac-note" rows="3" placeholder="Use {{contact_name}}, {{company_name}}, etc.">${esc(cfg.note || '')}</textarea></div>`);
+  } else if (act === 'assign_round_robin') {
+    const chosen = String(cfg.user_ids || '').split(',').filter(Boolean);
+    c.innerHTML = box(`<div class="form-group" style="margin:0"><label class="form-label">Team pool</label>
+      <div class="ct-rr-pool">${(meta.users || []).map(u => `<label class="ct-rr-item"><input type="checkbox" class="ac-rr" value="${u.user_id}" ${chosen.includes(String(u.user_id)) ? 'checked' : ''}> ${esc(u.full_name)} <span class="ct-secline">${esc(u.role)}</span></label>`).join('')}</div>
+      <div class="form-hint">Leads are handed out in rotation across everyone ticked.</div></div>`);
+  } else if (act === 'send_whatsapp_message') {
+    c.innerHTML = box(`<div class="form-group" style="margin:0"><label class="form-label">Message</label>
+      <textarea class="form-control" id="ac-wabody" rows="3" placeholder="Use {{contact_name}}, {{company_name}}, etc.">${esc(cfg.body || '')}</textarea>
+      <div class="form-hint">Free-form messages only reach contacts who replied within the last 24 hours. Outside that window use a template action instead.</div></div>`);
+  } else if (act === 'notify_in_app') {
+    c.innerHTML = box(`<div class="form-group"><label class="form-label">Notify</label>
+        <select class="form-control" id="ac-nuser"><option value="">The lead's assigned owner</option>${(meta.users || []).map(u => `<option value="${u.user_id}" ${cfg.user_id == u.user_id ? 'selected' : ''}>${esc(u.full_name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-control" id="ac-ntitle" value="${esc(cfg.title || '')}" placeholder="e.g. {{contact_name}} needs a follow-up"></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Body</label><textarea class="form-control" id="ac-nbody" rows="2">${esc(cfg.body || '')}</textarea></div>`);
+  } else if (act === 'set_field') {
+    c.innerHTML = box(`<div class="form-group"><label class="form-label">Field</label>
+        <select class="form-control" id="ac-field">${(meta.settable_fields || []).map(f => `<option value="${f.value}" ${cfg.field === f.value ? 'selected' : ''}>${esc(f.label)}</option>`).join('')}</select></div>
+      <div class="form-group" style="margin:0"><label class="form-label">Value</label><input class="form-control" id="ac-fieldval" value="${esc(cfg.value || '')}"></div>`);
+  } else if (act === 'create_task') {
+    c.innerHTML = box(`<div class="form-group"><label class="form-label">Project</label>
+        <select class="form-control" id="ac-project"><option value="">Select a project…</option>${(meta.workflow_projects || []).map(pr => `<option value="${pr.id}" ${cfg.project_id == pr.id ? 'selected' : ''}>${esc(pr.parent_name ? pr.parent_name + ' › ' + pr.name : pr.name)}</option>`).join('')}</select></div>
+      <div class="form-group"><label class="form-label">Task title</label><input class="form-control" id="ac-tasktitle" value="${esc(cfg.title || '')}" placeholder="e.g. Follow up with {{contact_name}}"></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-control" id="ac-taskdesc" rows="2">${esc(cfg.description || '')}</textarea></div>
+      <div class="ct-two">
+        <div class="form-group" style="margin:0"><label class="form-label">Due in (days)</label><input class="form-control" id="ac-taskdue" type="number" min="0" value="${esc(cfg.due_in_days || 3)}"></div>
+        <div class="form-group" style="margin:0"><label class="form-label">Priority</label><select class="form-control" id="ac-taskprio">${['low','medium','high','urgent'].map(x => `<option value="${x}" ${cfg.priority === x ? 'selected' : ''}>${crmTitleCase(x)}</option>`).join('')}</select></div>
+      </div>`);
+  } else if (act === 'add_to_email_list') {
+    c.innerHTML = box(`<div class="form-group" style="margin:0"><label class="form-label">Email list</label>
+      <select class="form-control" id="ac-list"><option value="">Select a list…</option>${(meta.email_lists || []).map(l => `<option value="${l.list_id}" ${cfg.list_id == l.list_id ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></div>`);
   } else { c.innerHTML = ''; }
 }
 function autoToggleSpecificEmail() {
@@ -794,6 +836,19 @@ async function autoSave() {
   } else if (triggerType === 'lead_source_match') {
     const ls = document.getElementById('tc-source')?.value; if (ls) triggerConfig.lead_source = ls;
   }
+  if (triggerType === 'interaction_logged') {
+    const t = document.getElementById('tc-ixtype')?.value, o = document.getElementById('tc-outcome')?.value;
+    if (t) triggerConfig.interaction_type = t;
+    if (o) triggerConfig.outcome = o;
+  }
+  if (triggerType === 'call_completed') {
+    const o = document.getElementById('tc-outcome')?.value;
+    if (o) triggerConfig.outcome = o;
+  }
+  if (triggerType === 'whatsapp_received') {
+    const kw = document.getElementById('tc-keyword')?.value.trim();
+    if (kw) triggerConfig.keyword = kw;
+  }
   const conditions = [];
   document.querySelectorAll('#ar-conditions .ct-cond').forEach(row => {
     const field = row.querySelector('.cond-field')?.value, op = row.querySelector('.cond-op')?.value, val = row.querySelector('.cond-value')?.value;
@@ -819,6 +874,40 @@ async function autoSave() {
     case 'change_lead_status': actionConfig.status = document.getElementById('ac-status')?.value; break;
     case 'change_priority': actionConfig.priority = document.getElementById('ac-priority')?.value; break;
     case 'log_interaction': actionConfig.note = document.getElementById('ac-note')?.value || 'Automation triggered'; break;
+    case 'assign_round_robin': {
+      const ids = Array.from(document.querySelectorAll('.ac-rr:checked')).map(i => i.value);
+      if (ids.length < 2) return showErr('Pick at least two people for a round-robin pool.');
+      actionConfig.user_ids = ids.join(',');
+      break;
+    }
+    case 'send_whatsapp_message':
+      actionConfig.body = document.getElementById('ac-wabody')?.value.trim();
+      if (!actionConfig.body) return showErr('Enter the WhatsApp message to send.');
+      break;
+    case 'notify_in_app':
+      actionConfig.user_id = document.getElementById('ac-nuser')?.value || '';
+      actionConfig.title = document.getElementById('ac-ntitle')?.value.trim();
+      actionConfig.body = document.getElementById('ac-nbody')?.value || '';
+      if (!actionConfig.title) return showErr('Enter a notification title.');
+      break;
+    case 'set_field':
+      actionConfig.field = document.getElementById('ac-field')?.value;
+      actionConfig.value = document.getElementById('ac-fieldval')?.value;
+      if (!actionConfig.field) return showErr('Pick the field to set.');
+      break;
+    case 'create_task':
+      actionConfig.project_id = document.getElementById('ac-project')?.value;
+      actionConfig.title = document.getElementById('ac-tasktitle')?.value.trim();
+      actionConfig.description = document.getElementById('ac-taskdesc')?.value || '';
+      actionConfig.due_in_days = document.getElementById('ac-taskdue')?.value || 0;
+      actionConfig.priority = document.getElementById('ac-taskprio')?.value || 'medium';
+      if (!actionConfig.project_id) return showErr('Pick the project the task should be created in.');
+      if (!actionConfig.title) return showErr('Enter a task title.');
+      break;
+    case 'add_to_email_list':
+      actionConfig.list_id = document.getElementById('ac-list')?.value;
+      if (!actionConfig.list_id) return showErr('Pick an email list.');
+      break;
   }
   try {
     const payload = { name, description, trigger_type: triggerType, trigger_config: triggerConfig, conditions, action_type: actionType, action_config: actionConfig };
@@ -1014,74 +1103,150 @@ async function listRunPopulate(id) {
   } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
 }
 
-// --- campaigns (native compose builder) ---
-async function campaignForm(id = null) {
+// --- campaigns: the composer is a full SCREEN, not a modal ---
+// The visual builder needs real width; inside a 860px modal it was unusable,
+// which is why it looked "gone". campaignForm() now navigates to
+// #crm/email-builder[/id] and renderEmailBuilderPage() draws the same controls
+// full-width. All the block-builder helpers below are unchanged — they address
+// elements by id, so they work identically on a page.
+function campaignForm(id = null) {
+  State.emailCampaignId = id ? Number(id) : null;
+  State.screen = 'crm-email-builder';
+  if (typeof updateHash === 'function') updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+}
+
+function emailBuilderClose() {
+  State.emailCampaignId = null;
+  CrmMod.tab.email = 'campaigns';
+  nav('crm-email');
+}
+
+async function renderEmailBuilderPage() {
+  if (typeof crmHas === 'function' && !crmHas('crm.email')) return crmAccessDenied('crm.email');
+  ensureCrmModStyles();
+  const id = State.emailCampaignId || null;
+
   let lists = CrmMod.cache.emailLists;
   if (!lists) { lists = await crmApiGet('email.php?action=lists_list'); CrmMod.cache.emailLists = lists; }
   let templates = CrmMod.cache.emailTemplates;
   if (!templates) { templates = await crmApiGet('email.php?action=templates_list'); CrmMod.cache.emailTemplates = templates; }
+
   let c = {};
-  if (id) { const r = await crmApiGet('email.php?action=campaign_get&id=' + id); if (!r.success) { toast(r.message, 'error'); return; } c = r.data || {}; }
+  if (id) {
+    const r = await crmApiGet('email.php?action=campaign_get&id=' + id);
+    if (!r.success) return crmModError('Campaign', r.message || 'Campaign not found.');
+    c = r.data || {};
+  }
   CrmMod.campaignEdit = id || 0;
   CrmMod.emailBlocks = [];
   CrmMod.emailMode = (c.content_html && c.content_html.trim()) ? 'html' : 'blocks';
+
   const listOpts = (lists.data || []).map(l => `<option value="${l.list_id}" ${c.list_id == l.list_id ? 'selected' : ''}>${esc(l.name)} (${Number(l.active_members || l.member_count || 0)} members)</option>`).join('');
   const tplOpts = (templates.data || []).map(t => `<option value="${t.template_id}" ${c.template_id == t.template_id ? 'selected' : ''}>${esc(t.name)}</option>`).join('');
   const sched = c.scheduled_at ? String(c.scheduled_at).replace(' ', 'T').slice(0, 16) : '';
-  const canSend = id && (String(c.status).toLowerCase() === 'draft' || String(c.status).toLowerCase() === 'scheduled');
-  Modal.open({
-    title: id ? 'Edit Campaign' : 'Create Campaign',
-    body: crmModalBody(`
-      <div class="ct-two">
-        <div class="form-group"><label class="form-label">Campaign Name <span style="color:var(--color-danger)">*</span></label><input class="form-control" id="cf-name" value="${esc(c.name || '')}" placeholder="e.g., January Newsletter"></div>
-        <div class="form-group"><label class="form-label">Subject Line <span style="color:var(--color-danger)">*</span></label><input class="form-control" id="cf-subject" value="${esc(c.subject || '')}" placeholder="e.g., Exciting news!"></div>
-      </div>
-      <div class="ct-two">
-        <div class="form-group"><label class="form-label">From Name</label><input class="form-control" id="cf-fromname" value="${esc(c.from_name || '')}" placeholder="Victory Genomics"></div>
-        <div class="form-group"><label class="form-label">From Email</label><input type="email" class="form-control" id="cf-fromemail" value="${esc(c.from_email || '')}" placeholder="marketing@victorygenomics.com"></div>
-      </div>
-      <div class="ct-two">
-        <div class="form-group"><label class="form-label">Reply-To Email</label><input type="email" class="form-control" id="cf-replyto" value="${esc(c.reply_to || '')}"></div>
-        <div class="form-group"><label class="form-label">Audience List <span style="color:var(--color-danger)">*</span> <span class="ct-secline">(required to send)</span></label>
-          <select class="form-control" id="cf-list"><option value="">— Select a list —</option>${listOpts}</select></div>
-      </div>
-      <div class="ct-two">
-        <div class="form-group"><label class="form-label">Start from Template</label>
-          <div style="display:flex;gap:8px"><select class="form-control" id="cf-template"><option value="">— Blank —</option>${tplOpts}</select>
-          <button class="btn btn-outline btn-sm" type="button" onclick="campaignLoadTemplate()">Load</button></div></div>
-        <div class="form-group"><label class="form-label">Schedule (optional)</label><input type="datetime-local" class="form-control" id="cf-scheduled" value="${sched}"><div class="form-hint">Leave blank to send manually</div></div>
-      </div>
-      <div class="form-group"><label class="form-label">Email Body</label>
-        <div class="ct-tabs" style="margin-bottom:8px;">
-          <button type="button" class="ct-tab active" id="eb-tab-blocks" onclick="emailEditorMode('blocks')">Visual builder</button>
-          <button type="button" class="ct-tab" id="eb-tab-html" onclick="emailEditorMode('html')">HTML</button>
-        </div>
-        <div id="eb-blocks-pane">
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('heading')">+ Heading</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('text')">+ Text</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('button')">+ Button</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('image')">+ Image</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('divider')">+ Divider</button>
-            <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('spacer')">+ Spacer</button>
+  const status = String(c.status || 'Draft').toLowerCase();
+  const canSend = id && (status === 'draft' || status === 'scheduled');
+
+  // Re-render the canvas once the DOM exists.
+  setTimeout(() => { emailEditorMode(CrmMod.emailMode || 'blocks'); emailCanvasRender(); }, 0);
+
+  const actions = `
+    <button class="btn btn-outline" onclick="emailBuilderClose()">${CRM_ICONS && CRM_ICONS.back ? CRM_ICONS.back : ''} Back</button>
+    <button class="btn btn-outline" type="button" onclick="campaignPreview()">Preview</button>
+    ${canSend ? `<button class="btn btn-primary" style="background:var(--green,#34c759);border-color:var(--green,#34c759)" onclick="campaignSaveThenSend(${id})">Save &amp; send now</button>` : ''}
+    <button class="btn btn-primary" onclick="campaignSave()">${id ? 'Save campaign' : 'Create campaign'}</button>`;
+
+  return `<div class="crm-native fade-in eb-page">
+    ${crmModHead(id ? 'Edit campaign' : 'New campaign',
+      id ? `${esc(c.name || '')}${c.status ? ' · ' + esc(c.status) : ''}` : 'Compose the email, pick an audience, then send or schedule.',
+      actions)}
+
+    <div class="eb-layout">
+      <div class="eb-main">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Email body</h3>
+            <div class="ct-tabs" style="margin:0">
+              <button type="button" class="ct-tab active" id="eb-tab-blocks" onclick="emailEditorMode('blocks')">Visual builder</button>
+              <button type="button" class="ct-tab" id="eb-tab-html" onclick="emailEditorMode('html')">HTML</button>
+            </div>
           </div>
-          <div id="eb-canvas" class="eb-canvas"></div>
+          <div class="card-body">
+            <div id="eb-blocks-pane">
+              <div class="eb-palette">
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('heading')">+ Heading</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('text')">+ Text</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('button')">+ Button</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('image')">+ Image</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('divider')">+ Divider</button>
+                <button type="button" class="btn btn-sm btn-outline" onclick="emailAddBlock('spacer')">+ Spacer</button>
+              </div>
+              <div id="eb-canvas" class="eb-canvas"></div>
+            </div>
+            <div id="eb-html-pane" style="display:none">
+              <textarea class="form-control ct-mono" id="cf-html" rows="22" placeholder="<html>…</html>" oninput="emailHtmlEdited()">${esc(c.content_html || '')}</textarea>
+            </div>
+            <div class="form-hint" style="margin-top:10px">Merge tags resolved on send: {{company_name}}, {{contact_person}}, {{email}}, {{unsubscribe_url}}. Include an unsubscribe link, e.g. &lt;a href="{{unsubscribe_url}}"&gt;Unsubscribe&lt;/a&gt;.</div>
+          </div>
         </div>
-        <div id="eb-html-pane" style="display:none;">
-          <textarea class="form-control ct-mono" id="cf-html" rows="12" placeholder="<html>…</html>" oninput="emailHtmlEdited()">${esc(c.content_html || '')}</textarea>
-        </div>
-        <div class="form-hint">Merge tags resolved on send: {{company_name}}, {{contact_person}}, {{email}}, {{unsubscribe_url}}. Include an unsubscribe link, e.g. &lt;a href="{{unsubscribe_url}}"&gt;Unsubscribe&lt;/a&gt;.</div></div>
-      <div class="ct-two">
-        <div class="form-group"><label class="form-label">Send Test To</label><input type="email" class="form-control" id="cf-test" placeholder="you@example.com"><div class="form-hint">Sends the current body (no merge tags) to one address.</div></div>
-        <div class="form-group" style="display:flex;align-items:flex-start"><button class="btn btn-outline" type="button" style="margin-top:26px" onclick="campaignSendTest()">Send Test Email</button></div>
       </div>
-      <div class="form-error" id="cf-error" style="display:none"></div>`),
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-      <button class="btn-secondary" type="button" onclick="campaignPreview()">Preview</button>
-      ${canSend ? `<button class="btn-primary" style="background:var(--green,#34c759)" onclick="campaignSaveThenSend(${id})">Save & Send Now</button>` : ''}
-      <button class="btn-primary" onclick="campaignSave()">${id ? 'Save Campaign' : 'Create Campaign'}</button>`,
-    onMount: () => { crmWidenModal(860); emailEditorMode(CrmMod.emailMode || 'blocks'); emailCanvasRender(); },
-  });
+
+      <aside class="eb-side">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title">Campaign</h3></div>
+          <div class="card-body">
+            <div class="form-group"><label class="form-label">Campaign name <span style="color:var(--color-danger)">*</span></label>
+              <input class="form-control" id="cf-name" value="${esc(c.name || '')}" placeholder="e.g. January Newsletter"></div>
+            <div class="form-group"><label class="form-label">Subject line <span style="color:var(--color-danger)">*</span></label>
+              <input class="form-control" id="cf-subject" value="${esc(c.subject || '')}" placeholder="e.g. Exciting news!"></div>
+            <div class="form-group"><label class="form-label">Audience list <span style="color:var(--color-danger)">*</span></label>
+              <select class="form-control" id="cf-list"><option value="">— Select a list —</option>${listOpts}</select>
+              <div class="form-hint">Required before the campaign can send.</div></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Schedule</label>
+              <input type="datetime-local" class="form-control" id="cf-scheduled" value="${sched}">
+              <div class="form-hint">Leave blank to send manually.</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-header"><h3 class="card-title">Sender</h3></div>
+          <div class="card-body">
+            <div class="form-group"><label class="form-label">From name</label>
+              <input class="form-control" id="cf-fromname" value="${esc(c.from_name || '')}" placeholder="Victory Genomics"></div>
+            <div class="form-group"><label class="form-label">From email</label>
+              <input type="email" class="form-control" id="cf-fromemail" value="${esc(c.from_email || '')}" placeholder="marketing@victorygenomics.com"></div>
+            <div class="form-group" style="margin:0"><label class="form-label">Reply-to</label>
+              <input type="email" class="form-control" id="cf-replyto" value="${esc(c.reply_to || '')}"></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-header"><h3 class="card-title">Start from template</h3></div>
+          <div class="card-body">
+            <div style="display:flex;gap:8px">
+              <select class="form-control" id="cf-template"><option value="">— Blank —</option>${tplOpts}</select>
+              <button class="btn btn-outline btn-sm" type="button" onclick="campaignLoadTemplate()">Load</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:14px">
+          <div class="card-header"><h3 class="card-title">Send a test</h3></div>
+          <div class="card-body">
+            <div class="form-group"><label class="form-label">Test address</label>
+              <input type="email" class="form-control" id="cf-test" placeholder="you@example.com">
+              <div class="form-hint">Sends the current body without merge tags.</div></div>
+            <button class="btn btn-outline" type="button" onclick="campaignSendTest()">Send test email</button>
+          </div>
+        </div>
+
+        <div class="form-error" id="cf-error" style="display:none;margin-top:12px"></div>
+      </aside>
+    </div>
+
+    <div class="eb-footer">${actions}</div>
+  </div>`;
 }
 
 // ===== Email visual block builder =====
@@ -1294,7 +1459,9 @@ async function campaignSave() {
   const err = document.getElementById('cf-error');
   try {
     const r = await crmApiPost('email.php?action=campaign_save', campaignCollect());
-    crmModInvalidate('emailCampaigns'); Modal.close(); toast('Campaign saved', 'success'); render();
+    crmModInvalidate('emailCampaigns');
+    toast('Campaign saved', 'success');
+    if (State.screen === 'crm-email-builder') emailBuilderClose(); else render();
     return r.data ? r.data.campaign_id : null;
   } catch (e) { err.textContent = e.message; err.style.display = 'block'; return null; }
 }
@@ -1305,8 +1472,10 @@ async function campaignSaveThenSend(id) {
     if (!payload.list_id) throw new Error('Select an audience list before sending.');
     if (!payload.content_html.trim()) throw new Error('Add email content before sending.');
     await crmApiPost('email.php?action=campaign_save', payload);
-    Modal.close();
-    appConfirm('Send this campaign to the selected audience now?', () => campaignSendLoop(id));
+    appConfirm('Send this campaign to the selected audience now?', () => {
+      emailBuilderClose();
+      campaignSendLoop(id);
+    });
   } catch (e) { err.textContent = e.message; err.style.display = 'block'; }
 }
 async function campaignSendLoop(id) {

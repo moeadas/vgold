@@ -355,6 +355,22 @@ function logCallOutcome() {
             }
         }
 
+        // Let the rules engine react to the finished call.
+        try {
+            require_once __DIR__ . '/../includes/automation-engine.php';
+            $callRow = $db->query("SELECT lead_id, to_number, duration_seconds FROM voip_calls WHERE call_id = ?", [$callId])->fetch(PDO::FETCH_ASSOC);
+            if ($callRow && !empty($callRow['lead_id'])) {
+                fireAutomationTrigger('call_completed', [
+                    'lead_id'  => (int)$callRow['lead_id'],
+                    'call_id'  => $callId,
+                    'outcome'  => $outcome ?: null,
+                    'duration' => (int)($callRow['duration_seconds'] ?? 0),
+                ]);
+            }
+        } catch (\Exception $ae) {
+            error_log("Automation call_completed failed: " . $ae->getMessage());
+        }
+
         echo json_encode(['success' => true, 'message' => 'Call logged']);
     } catch (Exception $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);

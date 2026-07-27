@@ -315,6 +315,33 @@ class CRMController {
         return '';
     }
 
+// ══════════════════════════════════════════════════════════════════════
+    //  AUTOMATION BRIDGE
+    //
+    //  The rules engine lives in the legacy CRM (crm/includes/automation-engine.php)
+    //  and was only ever called from crm/api/leads.php. The SPA writes through
+    //  THIS controller, so no rule had ever fired from the live UI. Every lead
+    //  and interaction write now goes through fireAutomation().
+    //
+    //  Deliberately swallow every failure: an automation must never be able to
+    //  stop a lead being saved.
+    // ══════════════════════════════════════════════════════════════════════
+    public static function fireAutomation($trigger, array $context = []) {
+        try {
+            $root = dirname(__DIR__, 2);
+            require_once $root . '/crm/includes/vgold_bridge.php';
+            require_once $root . '/crm/includes/automation-engine.php';
+            if (!function_exists('fireAutomationTrigger')) return;
+            if (!isset($context['current_user'])) {
+                $crmId = Auth::crmUserId();
+                if ($crmId) $context['current_user'] = ['user_id' => $crmId];
+            }
+            fireAutomationTrigger($trigger, $context);
+        } catch (\Throwable $e) {
+            error_log('Automation bridge failed for ' . $trigger . ': ' . $e->getMessage());
+        }
+    }
+
     /**
      * Lead picker options. With ?q= this is a server-side search across name,
      * company, email and phone — the list is ~2,400 rows, far too long to ship
@@ -377,7 +404,192 @@ class CRMController {
             'assigned_to' => $assignedCrmId,
             'created_by' => $creatorCrmId,
         ]);
+        $newLead = DB::fetch("SELECT * FROM crm_leads WHERE lead_id = ?", [(int)$id]);
+        $ctx = ['lead_id' => (int)$id, 'lead' => $newLead];
+        self::fireAutomation('lead_created', $ctx);
+        if (!empty($newLead['lead_source'])) self::fireAutomation('lead_source_match', $ctx);
+        if (!empty($newLead['assigned_to'])) {
+            self::fireAutomation('lead_assigned', $ctx + ['new_assigned' => (int)$newLead['assigned_to']]);
+        }
+
         jsonResponse(['ok' => true, 'id' => (int)$id], 201);
+    }
+
+// ══════════════════════════════════════════════════════════════════════
+    //  CUSTOMERS — converted leads
+    //
+    //  A customer IS a lead whose status reached a won/customer state. Keeping
+    //  one record means the whole history (interactions, WhatsApp thread, calls,
+    //  emails) stays attached. Money is NOT duplicated here: purchased items,
+    //  prices and total value are read live from the Accounting tables through
+    //  acc_contacts.crm_lead_id.
+    // ══════════════════════════════════════════════════════════════════════
+
+    /** Lead statuses that mean "this is a customer now". */
+    public const CUSTOMER_STATUSES = ['Won', 'Customer'];
+
+    private static function customerStatusSql($alias = 'l') {
+        $in = implode(',', array_fill(0, count(self::CUSTOMER_STATUSES), '?'));
+        return ["$alias.lead_status IN ($in)", self::CUSTOMER_STATUSES];
+    }
+
+    public static function customers() {
+        Authz::requireModuleAccess('crm.leads');
+        [$statusSql, $statusParams] = self::customerStatusSql();
+        $where = [$statusSql];
+        $params = $statusParams;
+
+        $search = trim((string)($_GET['search'] ?? ''));
+        if ($search !== '') {
+            $like = '%' . $search . '%';
+            $where[] = '(l.contact_person LIKE ? OR l.company_name LIKE ? OR l.email LIKE ? OR l.phone LIKE ? OR l.mobile LIKE ?)';
+            array_push($params, $like, $like, $like, $like, $like);
+        }
+        // Reps see only their own book unless they manage the CRM.
+        if (!self::isCrmManager()) {
+            $crmId = Auth::crmUserId();
+            if ($crmId) { $where[] = '(l.assigned_to = ? OR l.created_by = ?)'; array_push($params, $crmId, $crmId); }
+        }
+        $whereSql = implode(' AND ', $where);
+
+        $rows = DB::fetchAll(
+            "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name
+             FROM crm_leads l LEFT JOIN users u ON u.crm_user_id = l.assigned_to
+             WHERE $whereSql
+             ORDER BY l.updated_at DESC
+             LIMIT 500",
+            $params
+        );
+
+        $out = array_map(function ($row) {
+            $lead = self::formatLead($row);
+            $lead['finance'] = self::customerFinance((int)$row['lead_id']);
+            return $lead;
+        }, $rows);
+
+        $totals = ['customers' => count($out), 'lifetime_value' => 0.0, 'open_balance' => 0.0, 'linked' => 0];
+        foreach ($out as $c) {
+            $totals['lifetime_value'] += (float)$c['finance']['lifetime_value'];
+            $totals['open_balance'] += (float)$c['finance']['open_balance'];
+            if ($c['finance']['contact_id']) $totals['linked']++;
+        }
+
+        jsonResponse(['customers' => $out, 'totals' => $totals]);
+    }
+
+    /**
+     * Live financial summary for a lead, read from Accounting. Returns zeros when
+     * the lead has no linked acc_contacts row yet — never invents numbers.
+     */
+    public static function customerFinance($leadId) {
+        $empty = [
+            'contact_id' => null, 'lifetime_value' => 0.0, 'open_balance' => 0.0,
+            'paid' => 0.0, 'invoice_count' => 0, 'last_invoice_date' => null,
+            'currency' => null, 'items' => [],
+        ];
+        try {
+            $contact = DB::fetch(
+                "SELECT id, name, currency_code FROM acc_contacts WHERE crm_lead_id = ? AND deleted_at IS NULL LIMIT 1",
+                [(int)$leadId]
+            );
+            if (!$contact) return $empty;
+
+            $agg = DB::fetch(
+                "SELECT COUNT(*) AS n,
+                        COALESCE(SUM(amount), 0) AS billed,
+                        COALESCE(SUM(paid_amount), 0) AS paid,
+                        MAX(issued_at) AS last_date
+                   FROM acc_documents
+                  WHERE contact_id = ? AND type = 'invoice' AND deleted_at IS NULL
+                    AND status <> 'cancelled'",
+                [(int)$contact['id']]
+            );
+            $billed = (float)($agg['billed'] ?? 0);
+            $paid   = (float)($agg['paid'] ?? 0);
+
+            // Products bought, newest first — name, quantity and the price actually charged.
+            $items = DB::fetchAll(
+                "SELECT di.name, SUM(di.quantity) AS qty, SUM(di.total) AS total,
+                        MAX(d.issued_at) AS last_date,
+                        MAX(di.price) AS unit_price
+                   FROM acc_document_items di
+                   JOIN acc_documents d ON d.id = di.document_id
+                  WHERE d.contact_id = ? AND d.type = 'invoice' AND d.deleted_at IS NULL
+                    AND d.status <> 'cancelled'
+                  GROUP BY di.name
+                  ORDER BY last_date DESC
+                  LIMIT 25",
+                [(int)$contact['id']]
+            );
+
+            return [
+                'contact_id' => (int)$contact['id'],
+                'lifetime_value' => $billed,
+                'open_balance' => max(0, $billed - $paid),
+                'paid' => $paid,
+                'invoice_count' => (int)($agg['n'] ?? 0),
+                'last_invoice_date' => $agg['last_date'] ?? null,
+                'currency' => $contact['currency_code'] ?? null,
+                'items' => array_map(fn($i) => [
+                    'name' => $i['name'],
+                    'qty' => (float)$i['qty'],
+                    'unit_price' => (float)$i['unit_price'],
+                    'total' => (float)$i['total'],
+                    'last_date' => $i['last_date'],
+                ], $items),
+            ];
+        } catch (\Throwable $e) {
+            // Accounting tables may not be provisioned for this workspace.
+            return $empty;
+        }
+    }
+
+    /**
+     * Convert a lead into a customer: set the status and make sure a matching
+     * acc_contacts row exists and is linked. Idempotent.
+     */
+    public static function convertLead($id) {
+        Authz::requireModuleAccess('crm.leads');
+        $id = (int)$id;
+        $lead = DB::fetch("SELECT * FROM crm_leads WHERE lead_id = ?", [$id]);
+        if (!$lead) jsonError('Lead not found', 404);
+        self::assertLeadAccess($lead);
+
+        $oldStatus = $lead['lead_status'];
+        if (!in_array($oldStatus, self::CUSTOMER_STATUSES, true)) {
+            DB::update('crm_leads', ['lead_status' => 'Won'], 'lead_id = ?', [$id]);
+        }
+
+        $contactId = null;
+        $created = false;
+        try {
+            $existing = DB::fetch("SELECT id FROM acc_contacts WHERE crm_lead_id = ? AND deleted_at IS NULL", [$id]);
+            if ($existing) {
+                $contactId = (int)$existing['id'];
+            } else {
+                $name = $lead['company_name'] ?: $lead['contact_person'] ?: ('Lead #' . $id);
+                $contactId = (int)DB::insert('acc_contacts', [
+                    'type' => 'customer',
+                    'name' => $name,
+                    'email' => $lead['email'] ?: null,
+                    'phone' => $lead['mobile'] ?: ($lead['phone'] ?: null),
+                    'country' => $lead['country'] ?: null,
+                    'crm_lead_id' => $id,
+                ]);
+                $created = true;
+            }
+        } catch (\Throwable $e) {
+            // Converting must still succeed on the CRM side even if Accounting
+            // is not provisioned — the link can be made later.
+            $contactId = null;
+        }
+
+        self::fireAutomation('lead_converted', [
+            'lead_id' => $id, 'lead' => $lead,
+            'old_status' => $oldStatus, 'new_status' => 'Won',
+        ]);
+
+        jsonResponse(['ok' => true, 'lead_id' => $id, 'contact_id' => $contactId, 'contact_created' => $created]);
     }
 
     public static function interactions() {
@@ -486,10 +698,15 @@ class CRMController {
              ORDER BY i.interaction_date DESC, i.interaction_id DESC LIMIT 100",
             [$id]
         );
-        jsonResponse([
+        $payload = [
             'lead' => self::formatLeadDetail($lead),
             'interactions' => array_map([self::class, 'formatInteraction'], $rows),
-        ]);
+        ];
+        // Customers get a live purchases panel read from Accounting.
+        if (in_array($lead['lead_status'], self::CUSTOMER_STATUSES, true)) {
+            $payload['finance'] = self::customerFinance($id);
+        }
+        jsonResponse($payload);
     }
 
     public static function updateLead($id) {
@@ -547,6 +764,24 @@ class CRMController {
         }
 
         DB::update('crm_leads', $fields, 'lead_id = ?', [$id]);
+
+        $after = DB::fetch("SELECT * FROM crm_leads WHERE lead_id = ?", [$id]);
+        $ctx = ['lead_id' => $id, 'lead' => $after];
+
+        if (array_key_exists('lead_status', $fields) && $fields['lead_status'] !== $lead['lead_status']) {
+            self::fireAutomation('lead_status_changed',
+                $ctx + ['old_status' => $lead['lead_status'], 'new_status' => $fields['lead_status']]);
+            if (in_array($fields['lead_status'], self::CUSTOMER_STATUSES, true)) {
+                self::fireAutomation('lead_converted',
+                    $ctx + ['old_status' => $lead['lead_status'], 'new_status' => $fields['lead_status']]);
+            }
+        }
+        if (array_key_exists('assigned_to', $fields) && (int)$fields['assigned_to'] !== (int)$lead['assigned_to']) {
+            $assignCtx = $ctx + ['old_assigned' => $lead['assigned_to'] ? (int)$lead['assigned_to'] : null,
+                                 'new_assigned' => $fields['assigned_to'] ? (int)$fields['assigned_to'] : null];
+            self::fireAutomation(empty($lead['assigned_to']) ? 'lead_assigned' : 'lead_reassigned', $assignCtx);
+        }
+
         jsonResponse(['ok' => true, 'id' => $id]);
     }
 
@@ -647,6 +882,13 @@ class CRMController {
             DB::conn()->rollBack();
             throw $e;
         }
+        self::fireAutomation('interaction_logged', [
+            'lead_id' => (int)$data['lead_id'],
+            'interaction_id' => (int)$id,
+            'interaction_type' => $type,
+            'outcome' => self::nullable($data['outcome'] ?? null),
+        ]);
+
         jsonResponse(['ok' => true, 'id' => (int)$id, 'workflow_task_id' => $taskId], 201);
     }
 

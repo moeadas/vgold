@@ -36,6 +36,12 @@ const State = {
   crmLeads: null,
   crmInteractions: null,
   activeCrmModule: null,
+  crmCustomers: null,
+  crmCustomerSearch: '',
+  appVersion: null,
+  appBuild: null,
+  accContactType: 'customer',
+  emailCampaignId: null,
   agendaItems: null,
   favorites: null,
 };
@@ -175,6 +181,8 @@ async function render() {
     try {
       const res = await API.me();
       State.user = res.user;
+      State.appVersion = res.app_version || null;
+      State.appBuild = res.app_build || null;
       window.__authProvider = res.user.auth_provider || 'password';
     } catch(e) {
       renderLogin();
@@ -203,6 +211,8 @@ async function render() {
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
       case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
       case 'crm-lead-new': mainContent = await renderCrmLeadNewPage(); break;
+      case 'crm-customers': mainContent = await renderCrmCustomers(); break;
+      case 'crm-email-builder': mainContent = await renderEmailBuilderPage(); break;
       case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
       case 'crm-proposals':
       case 'crm-email':
@@ -215,7 +225,8 @@ async function render() {
       case 'acc-invoices': mainContent = await renderAccDocuments('invoice'); break;
       case 'acc-bills': mainContent = await renderAccDocuments('bill'); break;
       case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;
-      case 'acc-contacts': mainContent = await renderAccContacts(); break;
+      case 'acc-customers': mainContent = await renderAccContacts('customer'); break;
+      case 'acc-vendors': mainContent = await renderAccContacts('vendor'); break;
       case 'acc-contact': mainContent = await renderAccContact(State.accContactId); break;
       case 'acc-banking': mainContent = await renderAccBanking(); break;
       case 'acc-account': mainContent = await renderAccAccount(State.accAccountId); break;
@@ -399,9 +410,16 @@ function routeFromHash() {
       State.screen = 'acc-' + parts[1];
       State[detail[parts[1]]] = parseInt(parts[2]) || null;
     } else {
-      const knownAcc = ['dashboard','invoices','bills','contacts','banking','ledger','catalog','recurring','reports','settings'];
-      State.screen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
+      const knownAcc = ['dashboard','invoices','bills','customers','vendors','contacts','banking','ledger','catalog','recurring','reports','settings'];
+      let accScreen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
+      if (accScreen === 'acc-contacts') accScreen = 'acc-customers'; // split into two screens
+      State.screen = accScreen;
     }
+  }
+  else if (parts[0] === 'crm' && parts[1] === 'email-builder') {
+    State.screen = 'crm-email-builder';
+    State.emailCampaignId = parts[2] ? (parseInt(parts[2]) || null) : null;
+    State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
   }
   else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2] === 'new') {
     State.screen = 'crm-lead-new';
@@ -416,7 +434,7 @@ function routeFromHash() {
     State.activeCategoryId = null;
   }
   else if (parts[0] === 'crm' && parts[1]) {
-    const known = ['dashboard','leads','interactions','proposals','email','communications','automation','reports','knowledge'];
+    const known = ['dashboard','leads','customers','interactions','proposals','email','communications','automation','reports','knowledge'];
     State.screen = known.includes(parts[1]) ? 'crm-' + parts[1] : 'crm-dashboard';
     State.activeCrmModule = 'crm.' + parts[1];
     State.activeProjectId = null;
@@ -454,7 +472,9 @@ function updateHash() {
     };
     if (accDetailIds[State.screen]) hash += '/' + accDetailIds[State.screen];
   }
-  if (State.screen === 'crm-lead-new') {
+  if (State.screen === 'crm-email-builder') {
+    hash = 'crm/email-builder' + (State.emailCampaignId ? '/' + State.emailCampaignId : '');
+  } else if (State.screen === 'crm-lead-new') {
     hash = 'crm/lead/new';
   } else if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
     hash = 'crm/lead/' + State.activeCrmLeadId;
@@ -507,6 +527,8 @@ document.addEventListener('DOMContentLoaded', () => {
     throw new Error('not logged in');
   }).then(res => {
     State.user = res.user;
+    State.appVersion = res.app_version || null;
+    State.appBuild = res.app_build || null;
     if (res.csrf_token) API.csrf = res.csrf_token; // CSRF token for state-changing requests (H5)
     window.__authProvider = res.user.auth_provider || 'password';
     // B1: honor the user's preferred default landing screen when no hash is present.

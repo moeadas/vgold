@@ -724,6 +724,11 @@ async function accDocEditor(type, id) {
 
   const isInvoice = type === 'invoice';
   const contacts = isInvoice ? (o.customers || []) : (o.vendors || []);
+  // "Issue invoice" from a CRM customer preselects that contact.
+  if (!id && isInvoice && State.accPrefillContactId) {
+    doc = Object.assign({}, doc || {}, { contact_id: State.accPrefillContactId });
+    State.accPrefillContactId = null;
+  }
   AccState.editor = {
     type, id: id || null,
     lines: items.length
@@ -1211,10 +1216,15 @@ function accDoPrint() {
 
 /* ===================== Contacts ===================== */
 
-async function renderAccContacts() {
+async function renderAccContacts(type) {
   await accBoot();
-  if (!accHas('acc.contacts')) return accDenied('customers and vendors');
-  const tab = AccState.contactTab;
+  // Customers and vendors are separate modules so the sales team can be granted
+  // customers without seeing supplier data.
+  const tab = type || AccState.contactTab || 'customer';
+  const mod = tab === 'vendor' ? 'acc.vendors' : 'acc.customers';
+  if (!accHas(mod)) return accDenied(tab === 'vendor' ? 'vendors' : 'customers');
+  if (AccState.contactTab !== tab) { AccState.contactTab = tab; AccState.contacts = null; }
+  State.accContactType = tab;
   if (!AccState.contacts) {
     AccState.contacts = await API.accContacts({ type: tab, search: AccState.contactSearch, page: 1 });
   }
@@ -1232,15 +1242,12 @@ async function renderAccContacts() {
 
   return `
     <div class="fade-in acc-page">
-      ${accHeader('Customers & vendors', 'Everyone you invoice and everyone who bills you.',
-        `<button class="btn-secondary" onclick="accCrmImportModal()">Import from CRM</button>
+      ${accHeader(isCustomer ? 'Customers' : 'Vendors',
+        isCustomer ? 'Everyone you invoice.' : 'Everyone who bills you.',
+        `${isCustomer ? `<button class="btn-secondary" onclick="accCrmImportModal()">Import from CRM</button>` : ''}
          <button class="btn-primary" onclick="accContactModal('${tab}')">${I.plus} New ${isCustomer ? 'customer' : 'vendor'}</button>`)}
 
       <div class="acc-toolbar">
-        <div class="acc-tabs" style="margin:0">
-          <button class="acc-tab ${isCustomer ? 'active' : ''}" onclick="accContactTab('customer')">Customers</button>
-          <button class="acc-tab ${!isCustomer ? 'active' : ''}" onclick="accContactTab('vendor')">Vendors</button>
-        </div>
         <div class="acc-search">
           <input class="form-input" id="acc-contact-search" placeholder="Search name, email or phone…"
                  value="${esc(AccState.contactSearch)}" onkeydown="if(event.key==='Enter')accContactSearch()">
@@ -1260,7 +1267,10 @@ async function renderAccContacts() {
     </div>`;
 }
 
-function accContactTab(tab) { AccState.contactTab = tab; AccState.contacts = null; render(); }
+function accContactTab(tab) {
+  AccState.contactTab = tab; AccState.contacts = null;
+  if (typeof accNav === 'function') accNav(tab === 'vendor' ? 'acc-vendors' : 'acc-customers'); else render();
+}
 function accContactSearch() { AccState.contactSearch = accVal('acc-contact-search'); AccState.contacts = null; render(); }
 async function accContactPage(p) {
   AccState.contacts = await API.accContacts({ type: AccState.contactTab, search: AccState.contactSearch, page: p });
@@ -1269,7 +1279,8 @@ async function accContactPage(p) {
 
 async function renderAccContact(id) {
   await accBoot();
-  if (!accHas('acc.contacts')) return accDenied('customers and vendors');
+  const wantVendor = State.accContactType === 'vendor';
+  if (!accHas(wantVendor ? 'acc.vendors' : 'acc.customers')) return accDenied(wantVendor ? 'vendors' : 'customers');
   if (!AccState.contact || Number(AccState.contact.contact.id) !== Number(id)) {
     AccState.contact = await API.accContact(id);
   }
@@ -1286,7 +1297,7 @@ async function renderAccContact(id) {
 
   return `
     <div class="fade-in acc-page">
-      <div style="margin-bottom:12px">${accBackLink('Customers & vendors', "accNav('acc-contacts')")}</div>
+      <div style="margin-bottom:12px">${accBackLink(State.accContactType === 'vendor' ? 'Vendors' : 'Customers', "accNav('" + (State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers') + "')")}</div>
       ${accHeader(c.name, `${isCustomer ? 'Customer' : 'Vendor'}${c.category ? ' · ' + c.category : ''}${c.crm_lead_id ? ' · linked to CRM lead #' + c.crm_lead_id : ''}`,
         `${isCustomer && accHas('acc.invoices') ? `<button class="btn-primary" onclick="accDocEditor('invoice')">${I.plus} New invoice</button>` : ''}
          ${!isCustomer && accHas('acc.bills') ? `<button class="btn-primary" onclick="accDocEditor('bill')">${I.plus} New bill</button>` : ''}
@@ -1395,7 +1406,7 @@ async function accDeleteContact(id) {
     AccState.contact = null;
     await accRefreshOptions();
     toast('Contact deleted', 'success');
-    accNav('acc-contacts');
+    accNav(State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers');
   } catch (e) { toast(e.message, 'error'); }
 }
 

@@ -27,7 +27,8 @@ class Authz {
         'acc.dashboard'  => 'Finance overview',
         'acc.invoices'   => 'Invoices',
         'acc.bills'      => 'Bills & expenses',
-        'acc.contacts'   => 'Customers & vendors',
+        'acc.customers'  => 'Customers',
+        'acc.vendors'    => 'Vendors',
         'acc.banking'    => 'Banking & transactions',
         'acc.accounting' => 'Journal & chart of accounts',
         'acc.catalog'    => 'Items, categories & taxes',
@@ -88,6 +89,15 @@ class Authz {
         $acc = self::isAccOwner($userId)
             ? array_keys(self::ACC_MODULES)
             : array_values(array_filter($stored, fn($key) => isset(self::ACC_MODULES[$key])));
+
+        // Back-compat: 'acc.contacts' was one module covering customers AND
+        // vendors before they were split. Anyone still holding the old grant
+        // keeps access to both halves.
+        if (!self::isAccOwner($userId) && in_array('acc.contacts', $stored, true)) {
+            foreach (['acc.customers', 'acc.vendors'] as $k) {
+                if (!in_array($k, $acc, true)) $acc[] = $k;
+            }
+        }
 
         return array_values(array_merge($crm, $acc));
     }

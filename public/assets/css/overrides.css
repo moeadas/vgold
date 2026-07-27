@@ -286,3 +286,74 @@
 .crm-native .crm-leadpick-name { font-size: 13.5px; font-weight: 600; color: var(--color-text); }
 .crm-native .crm-leadpick-meta { font-size: 11.5px; color: var(--color-text-secondary); }
 .crm-native .crm-leadpick-empty { padding: 12px; font-size: 12.5px; color: var(--color-text-secondary); }
+
+/* ============================================================
+   8) Email campaign builder — full screen, not a modal.
+      The visual block builder needs real width; at 860px modal
+      width it was effectively unusable.
+   ------------------------------------------------------------ */
+.crm-native .eb-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 18px;
+  align-items: start;
+}
+.crm-native .eb-main { min-width: 0; }
+.crm-native .eb-side { min-width: 0; }
+.crm-native .eb-palette { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.crm-native .eb-canvas { min-height: 320px; }
+.crm-native .eb-footer {
+  display: flex; justify-content: flex-end; gap: 10px;
+  margin: 18px 0 40px; padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+@media (max-width: 1080px) {
+  .crm-native .eb-layout { grid-template-columns: 1fr; }
+}
+
+/* ============================================================
+   9) Automations — round-robin pool picker.
+   ------------------------------------------------------------ */
+.crm-native .ct-rr-pool {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 4px;
+  max-height: 190px; overflow-y: auto;
+  border: 1px solid var(--color-border); border-radius: 8px; padding: 8px;
+  background: var(--color-surface);
+}
+.crm-native .ct-rr-item {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 13px; padding: 3px 4px; cursor: pointer; border-radius: 6px;
+}
+.crm-native .ct-rr-item:hover { background: var(--color-bg); }
+
+/* ============================================================
+   10) Customer purchases panel (CRM lead detail).
+   ------------------------------------------------------------ */
+.crm-native .ct-cust-kpis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px; margin-bottom: 14px;
+}
+.crm-native .ct-cust-kpis > div {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 10px 12px; border-radius: 10px;
+  background: var(--color-bg); border: 1px solid var(--color-border);
+}
+.crm-native .ct-cust-kpis strong { font-size: 17px; font-weight: 700; }
+
+/* ============================================================
+   11) Build/version pill at the top of Settings.
+   ------------------------------------------------------------ */
+.settings-title-row {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.app-version-pill {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 12px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--border);
+  font-size: 12px; font-weight: 700; color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+.app-version-dot {
+  width: 7px; height: 7px; border-radius: 99px; background: #6B8E5A; flex: none;
+}
+.app-version-build { font-weight: 400; color: var(--muted); }

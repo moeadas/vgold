@@ -8,14 +8,17 @@
  *
  * Trigger types:
  *   lead_created, lead_status_changed, lead_assigned, lead_reassigned,
- *   lead_source_match, proposal_status_changed
+ *   lead_source_match, proposal_status_changed, lead_converted,
+ *   interaction_logged, call_completed, whatsapp_received
  *
  * Condition fields (on leads):
  *   country, region, lead_source, lead_type, priority, lead_status, assigned_to
  *
  * Action types:
- *   assign_user, send_email_template, send_whatsapp_template,
- *   send_notification_email, change_lead_status, change_priority, log_interaction
+ *   assign_user, assign_round_robin, send_email_template,
+ *   send_whatsapp_template, send_whatsapp_message, send_notification_email,
+ *   notify_in_app, change_lead_status, change_priority, set_field,
+ *   log_interaction, create_task, add_to_email_list
  */
 
 require_once __DIR__ . '/../config/database.php';
@@ -133,6 +136,30 @@ function matchesTriggerConfig(array $rule, string $triggerType, array $ctx): boo
             }
             if (!empty($config['to_status']) && ($ctx['new_status'] ?? '') !== $config['to_status']) {
                 return false;
+            }
+            return true;
+
+        case 'interaction_logged':
+            // Optional filters on the kind of interaction and its outcome.
+            if (!empty($config['interaction_type']) && ($ctx['interaction_type'] ?? '') !== $config['interaction_type']) {
+                return false;
+            }
+            if (!empty($config['outcome']) && ($ctx['outcome'] ?? '') !== $config['outcome']) {
+                return false;
+            }
+            return true;
+
+        case 'call_completed':
+            if (!empty($config['outcome']) && ($ctx['outcome'] ?? '') !== $config['outcome']) {
+                return false;
+            }
+            return true;
+
+        case 'whatsapp_received':
+            // Optional keyword filter on the inbound message body.
+            if (!empty($config['keyword'])) {
+                $body = (string)($ctx['message_body'] ?? '');
+                if (stripos($body, $config['keyword']) === false) return false;
             }
             return true;
 
@@ -410,6 +437,99 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
             ]);
 
             return "Logged interaction note on lead #{$leadId}";
+
+        // ── Assign round-robin across a pool of users ───
+        case 'assign_round_robin':
+            $pool = $config['user_ids'] ?? [];
+            if (is_string($pool)) $pool = array_filter(array_map('trim', explode(',', $pool)));
+            $pool = array_values(array_filter(array_map('intval', (array)$pool)));
+            if (!$pool) throw new \Exception('assign_round_robin: no user_ids in config');
+            if (!$leadId) throw new \Exception('assign_round_robin: no lead_id');
+
+            // Rotate on the rule's own run_count so distribution stays even
+            // without needing extra state.
+            $idx = intval($rule['run_count'] ?? 0) % count($pool);
+            $userId = $pool[$idx];
+
+            $pdo->prepare("UPDATE leads SET assigned_to = ? WHERE lead_id = ?")->execute([$userId, $leadId]);
+            try {
+                require_once __DIR__ . '/twilio.php';
+                $leadName = $lead['contact_person'] ?? $lead['company_name'] ?? 'Lead';
+                TwilioHelper::notifyLeadAssignment($userId, $leadName, $leadId, 'Automation');
+            } catch (\Exception $e) {
+                error_log("Automation WA notify failed: " . $e->getMessage());
+            }
+            return "Round-robin assigned lead #{$leadId} to user #{$userId}";
+
+        // ── Free-form WhatsApp (only valid inside the 24h window) ───
+        case 'send_whatsapp_message':
+            $body = trim((string)($config['body'] ?? ''));
+            if ($body === '') throw new \Exception('send_whatsapp_message: no body in config');
+            if (!$lead) throw new \Exception('send_whatsapp_message: no lead');
+
+            require_once __DIR__ . '/twilio.php';
+            $to = $lead['mobile'] ?: $lead['phone'];
+            if (!TwilioHelper::isValidPhone($to)) {
+                throw new \Exception('send_whatsapp_message: lead has no valid phone number');
+            }
+            $twilio = TwilioHelper::getInstance();
+            $twilio->sendWhatsApp(TwilioHelper::normalizePhone($to), processEmailVars($body, $lead), null, null, null,
+                                  $lead['contact_person'] ?? null);
+            return "Sent WhatsApp message to {$to}";
+
+        // ── In-app notification for a CRM user ──────────
+        case 'notify_in_app':
+            $userId = intval($config['user_id'] ?? 0);
+            if (!$userId && $leadId && $lead) $userId = intval($lead['assigned_to'] ?? 0);
+            if (!$userId) throw new \Exception('notify_in_app: no recipient');
+            $title = processEmailVars((string)($config['title'] ?? ('Automation: ' . $rule['name'])), $lead);
+            $text  = processEmailVars((string)($config['body'] ?? ''), $lead);
+
+            require_once __DIR__ . '/notification-helper.php';
+            createNotification($userId, 'automation', $title, $text,
+                               $leadId ? ('/pages/lead-detail.php?id=' . $leadId) : null, $leadId);
+            return "Notified user #{$userId} in app";
+
+        // ── Set an arbitrary allowlisted lead field ─────
+        case 'set_field':
+            $field = (string)($config['field'] ?? '');
+            $allowed = ['lead_type', 'lead_source', 'region', 'facility_type', 'priority', 'lead_status', 'notes'];
+            if (!in_array($field, $allowed, true)) throw new \Exception("set_field: field '{$field}' is not allowed");
+            if (!$leadId) throw new \Exception('set_field: no lead_id');
+            $value = processEmailVars((string)($config['value'] ?? ''), $lead);
+            $pdo->prepare("UPDATE leads SET `{$field}` = ? WHERE lead_id = ?")->execute([$value, $leadId]);
+            return "Set {$field} = \"{$value}\" on lead #{$leadId}";
+
+        // ── Create a Workflow task (the VGold side of the house) ───
+        case 'create_task':
+            $title = processEmailVars((string)($config['title'] ?? ''), $lead);
+            if ($title === '') throw new \Exception('create_task: no title in config');
+            $projectId = intval($config['project_id'] ?? 0);
+            if (!$projectId) throw new \Exception('create_task: no project_id in config');
+            $dueDays = intval($config['due_in_days'] ?? 0);
+            $due = $dueDays > 0 ? date('Y-m-d', strtotime("+{$dueDays} days")) : null;
+
+            // tasks/projects are VGold tables — NOT rewritten by the crm_ bridge.
+            $pdo->prepare("INSERT INTO tasks (project_id, title, description, status, priority, deadline_date, crm_lead_id, source_module, created_at)
+                           VALUES (?, ?, ?, 'in_progress', ?, ?, ?, 'crm.automation', NOW())")
+                ->execute([
+                    $projectId, $title,
+                    processEmailVars((string)($config['description'] ?? ''), $lead),
+                    $config['priority'] ?? 'medium',
+                    $due, $leadId ?: null,
+                ]);
+            return "Created Workflow task \"{$title}\"";
+
+        // ── Add the lead to an email list ───────────────
+        case 'add_to_email_list':
+            $listId = intval($config['list_id'] ?? 0);
+            if (!$listId) throw new \Exception('add_to_email_list: no list_id in config');
+            if (!$lead || empty($lead['email'])) throw new \Exception('add_to_email_list: lead has no email');
+            $pdo->prepare("INSERT IGNORE INTO email_list_members (list_id, lead_id, email, name, subscribed_at)
+                           VALUES (?, ?, ?, ?, NOW())")
+                ->execute([$listId, $leadId, $lead['email'],
+                           $lead['contact_person'] ?: ($lead['company_name'] ?: '')]);
+            return "Added lead #{$leadId} to email list #{$listId}";
 
         default:
             throw new \Exception("Unknown action type: {$rule['action_type']}");

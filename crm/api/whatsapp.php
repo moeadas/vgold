@@ -1068,6 +1068,18 @@ function handleWebhook($action) {
                             error_log("Notification create failed: " . $ne->getMessage());
                         }
                     }
+                    // Let the rules engine react to the reply.
+                    try {
+                        require_once __DIR__ . '/../includes/automation-engine.php';
+                        fireAutomationTrigger('whatsapp_received', [
+                            'lead_id'      => $leadId,
+                            'lead'         => $lead,
+                            'message_body' => $body,
+                            'from_number'  => $fromNumber,
+                        ]);
+                    } catch (\Exception $ae) {
+                        error_log("Automation whatsapp_received failed: " . $ae->getMessage());
+                    }
                 } else {
                     // Log that this is an unmatched message for admin visibility
                     error_log("WhatsApp UNMATCHED: Inbound from $fromNumber — no matching lead. Message: " . substr($body, 0, 100));

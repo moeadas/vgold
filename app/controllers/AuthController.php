@@ -134,7 +134,10 @@ class AuthController {
             'crm_user_id' => $user['crm_user_id'] ?? null,
             'crm_role' => $user['crm_role'] ?? null,
             'modules' => Authz::grantedModules((int)$user['id'], Auth::workspaceId()),
-        ], 'csrf_token' => Csrf::token()]);
+        ], 'csrf_token' => Csrf::token(),
+        'app_version' => defined('APP_VERSION') ? APP_VERSION : null,
+        'app_build' => defined('APP_BUILD') ? APP_BUILD : (defined('ASSET_VERSION') ? ASSET_VERSION : null),
+        ]);
     }
     
     // ===== SIGN IN WITH MICROSOFT (OIDC authorization-code flow) =====

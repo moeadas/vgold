@@ -16,6 +16,7 @@ function renderSidebar() {
   const crmItems = [
     { module: 'crm.dashboard', id: 'crm-dashboard', label: 'Overview', icon: I.grid },
     { module: 'crm.leads', id: 'crm-leads', label: 'Leads', icon: I.user },
+    { module: 'crm.leads', id: 'crm-customers', label: 'Customers', icon: I.people || I.user },
     { module: 'crm.interactions', id: 'crm-interactions', label: 'Interactions', icon: I.msg },
     { module: 'crm.proposals', id: 'crm-proposals', label: 'Proposals', icon: I.file },
     { module: 'crm.email', id: 'crm-email', label: 'Email marketing', icon: I.mail || I.msg },
@@ -32,7 +33,8 @@ function renderSidebar() {
     { module: 'acc.dashboard', id: 'acc-dashboard', label: 'Overview', icon: A.overview || I.grid },
     { module: 'acc.invoices', id: 'acc-invoices', label: 'Invoices', icon: A.invoice || I.file },
     { module: 'acc.bills', id: 'acc-bills', label: 'Bills', icon: A.bill || I.file },
-    { module: 'acc.contacts', id: 'acc-contacts', label: 'Customers & vendors', icon: A.contacts || I.people },
+    { module: 'acc.customers', id: 'acc-customers', label: 'Customers', icon: A.contacts || I.people },
+    { module: 'acc.vendors', id: 'acc-vendors', label: 'Vendors', icon: A.contacts || I.people },
     { module: 'acc.banking', id: 'acc-banking', label: 'Banking', icon: A.bank || I.grid },
     { module: 'acc.accounting', id: 'acc-ledger', label: 'Journal & ledger', icon: A.ledger || I.file },
     { module: 'acc.catalog', id: 'acc-catalog', label: 'Catalog', icon: A.catalog || I.grid },
@@ -52,11 +54,12 @@ function renderSidebar() {
     // Detail screens keep their parent nav item highlighted.
     const parents = {
       'acc-doc': State.accDocType === 'bill' ? 'acc-bills' : 'acc-invoices',
-      'acc-contact': 'acc-contacts',
+      'acc-contact': State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers',
       'acc-account': 'acc-banking',
       'acc-reconciliation': 'acc-banking',
       'crm-lead': 'crm-leads',
       'crm-lead-new': 'crm-leads',
+      'crm-customer': 'crm-customers',
     };
     const activeId = parents[State.screen] || State.screen;
     return `<button class="nav-btn ${activeId === n.id ? 'active' : ''}" onclick="nav('${n.id}')">${n.icon || I.grid}<span>${n.label}</span>${badge}</button>`;

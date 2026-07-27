@@ -146,6 +146,9 @@ const CrmLeads = {
   page: 1, per_page: 50, sort_by: '', sort_dir: 'DESC',
   selected: new Set(), total: 0, pages: 1,
 };
+// Statuses that mean the lead has become a customer. Mirrors
+// CRMController::CUSTOMER_STATUSES.
+const CRM_CUSTOMER_STATUSES = ['Won', 'Customer'];
 const CRM_LEAD_STATUSES = ['New Lead','Contacted','Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold','Not Interested'];
 const CRM_LEAD_TYPES = ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other'];
 const CRM_LEAD_SOURCES = ['Website','Facebook','Instagram','Google Ads','LinkedIn','Referral','Cold Outreach','Event','Import','Other'];
@@ -1004,7 +1007,10 @@ async function renderCrmLeadDetail(id) {
     <button class="btn ${size} btn-danger" onclick="openCrmLeadEmail(${lead.id})" ${disE}>${CRM_ICONS.mail} Send Email</button>
     <button class="btn ${size} btn-info" onclick="openCrmInteractionModal(${lead.id})">Log Interaction</button>
     <button class="btn ${size} btn-success" onclick="openCrmInteractionModal(${lead.id}, 'Meeting')">${CRM_ICONS.calendar} Schedule Meeting</button>
-    <button class="btn ${size} btn-warning" onclick="goCrmLeadEditPage(${lead.id})">${CRM_ICONS.edit} Edit Lead</button>`;
+    <button class="btn ${size} btn-warning" onclick="goCrmLeadEditPage(${lead.id})">${CRM_ICONS.edit} Edit Lead</button>
+    ${CRM_CUSTOMER_STATUSES.includes(lead.status)
+      ? ''
+      : `<button class="btn ${size} btn-outline" onclick="crmConvertLead(${lead.id}, '${esc(lead.display_name || '').replace(/'/g, "\\'")}')">Convert to customer</button>`}`;
 
   return `
     <div class="crm-native fade-in">
@@ -1057,6 +1063,8 @@ async function renderCrmLeadDetail(id) {
             </div></div>
           </div>
 
+          ${CRM_CUSTOMER_STATUSES.includes(lead.status) && typeof crmCustomerFinanceCard === 'function'
+              ? crmCustomerFinanceCard(data.finance, lead.id) : ''}
           ${socialCard}
 
           ${lead.notes ? `<div class="card"><div class="card-header"><h3 class="card-title">Notes</h3></div><div class="card-body"><p style="white-space:pre-wrap;line-height:1.6;">${esc(lead.notes)}</p></div></div>` : ''}

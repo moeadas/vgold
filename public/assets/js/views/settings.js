@@ -205,7 +205,14 @@ async function renderSettings() {
   return `
     <div class="fade-in settings-page">
       <div class="section-label">VGold settings</div>
-      <h1 class="page-title-sm">Account & administration</h1>
+      <div class="settings-title-row">
+        <h1 class="page-title-sm">Account &amp; administration</h1>
+        <span class="app-version-pill" title="Build currently running on this server">
+          <span class="app-version-dot"></span>
+          v${esc(State.appVersion || '—')}
+          <span class="app-version-build">build ${esc(State.appBuild || '—')}</span>
+        </span>
+      </div>
       <p class="page-desc" style="margin-bottom:20px">Manage Workflow, CRM, integrations, and team access from one place.</p>
       <nav class="settings-index" aria-label="Settings sections"><a href="#settings-account">Account</a>${user.role === 'admin' ? '<a href="#settings-crm">CRM</a><a href="#settings-data">Data</a><a href="#settings-integrations">Integrations</a>' : ''}<a href="#settings-team">Team</a></nav>
       

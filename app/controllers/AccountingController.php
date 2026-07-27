@@ -603,9 +603,26 @@ class AccountingController
      * Contacts — customers & vendors
      * ============================================================ */
 
+
+    /**
+     * Guard for contact endpoints now that customers and vendors are separate
+     * modules. Reads the type from the request (or from the stored row for
+     * id-addressed endpoints) and requires only the matching grant, so a sales
+     * user granted acc.customers never sees vendor records.
+     */
+    private static function bootContacts($type = null, $id = null) {
+        if ($id !== null && $type === null) {
+            $row = DB::fetch("SELECT type FROM acc_contacts WHERE id = ?", [(int)$id]);
+            $type = $row['type'] ?? null;
+        }
+        if ($type === null) $type = $_GET['type'] ?? (input()['type'] ?? null);
+        $module = (strtolower((string)$type) === 'vendor') ? 'acc.vendors' : 'acc.customers';
+        self::boot($module);
+    }
+
     public static function contacts()
     {
-        self::boot('acc.contacts');
+        self::bootContacts();
         list($page, $per, $offset) = self::page();
         $type = ($_GET['type'] ?? 'customer') === 'vendor' ? 'vendor' : 'customer';
         $search = trim((string)($_GET['search'] ?? ''));
@@ -649,7 +666,7 @@ class AccountingController
 
     public static function contact($id)
     {
-        self::boot('acc.contacts');
+        self::bootContacts(null, $id);
         $contact = DB::fetch("SELECT * FROM acc_contacts WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$contact) jsonError('Contact not found', 404);
 
@@ -712,7 +729,7 @@ class AccountingController
 
     public static function createContact()
     {
-        self::boot('acc.contacts');
+        self::bootContacts();
         $data = input();
         $fields = self::contactFields($data);
         if (!$fields['name']) jsonError('Name is required');
@@ -737,7 +754,7 @@ class AccountingController
 
     public static function updateContact($id)
     {
-        self::boot('acc.contacts');
+        self::bootContacts(null, $id);
         $existing = DB::fetch("SELECT * FROM acc_contacts WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$existing) jsonError('Contact not found', 404);
 
@@ -755,7 +772,7 @@ class AccountingController
 
     public static function deleteContact($id)
     {
-        self::boot('acc.contacts');
+        self::bootContacts(null, $id);
         $contact = DB::fetch("SELECT * FROM acc_contacts WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$contact) jsonError('Contact not found', 404);
 
@@ -2288,7 +2305,7 @@ class AccountingController
     /** Search CRM leads that are not yet linked to an accounting customer. */
     public static function crmLeadSearch()
     {
-        self::boot('acc.contacts');
+        self::boot('acc.customers');
         $search = trim((string)($_GET['search'] ?? ''));
         if (mb_strlen($search) < 2) jsonResponse(['leads' => []]);
         $like = '%' . $search . '%';
@@ -2313,7 +2330,7 @@ class AccountingController
     /** Convert a CRM lead into an accounting customer, keeping the link. */
     public static function importCrmLead()
     {
-        self::boot('acc.contacts');
+        self::boot('acc.customers');
         $data = input();
         $leadId = (int)($data['lead_id'] ?? 0);
         if (!$leadId) jsonError('Choose a CRM lead');

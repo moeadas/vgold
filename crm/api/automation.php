@@ -217,6 +217,24 @@ function getMeta($pdo) {
         error_log("Automation meta: failed to load Twilio templates: " . $e->getMessage());
     }
 
+    // Email lists (for the add_to_email_list action)
+    $emailLists = [];
+    try {
+        $emailLists = $pdo->query("SELECT list_id, name FROM email_lists ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
+    } catch (\Exception $e) { /* table may not exist */ }
+
+    // Workflow projects (for the create_task action). These are VGold tables, so
+    // they are NOT touched by the crm_ rewriting bridge.
+    $workflowProjects = [];
+    try {
+        $workflowProjects = $pdo->query(
+            "SELECT p.id, p.name, parent.name AS parent_name
+               FROM projects p LEFT JOIN projects parent ON parent.id = p.parent_id
+              WHERE p.parent_id IS NOT NULL
+              ORDER BY parent.name, p.name LIMIT 200"
+        )->fetchAll(PDO::FETCH_ASSOC);
+    } catch (\Exception $e) { /* workflow tables unavailable */ }
+
     // Available template variables (for variable picker in UI)
     $templateVars = [
         ['tag' => '{{contact_name}}',  'label' => 'Contact Name',  'desc' => 'Lead contact person'],
@@ -241,10 +259,14 @@ function getMeta($pdo) {
             ['value' => 'lead_reassigned',           'label' => 'Lead reassigned'],
             ['value' => 'lead_source_match',         'label' => 'Lead from specific source'],
             ['value' => 'proposal_status_changed',   'label' => 'Proposal status changed'],
+            ['value' => 'lead_converted',            'label' => 'Lead converted to customer'],
+            ['value' => 'interaction_logged',        'label' => 'Interaction logged'],
+            ['value' => 'call_completed',            'label' => 'Call completed'],
+            ['value' => 'whatsapp_received',         'label' => 'WhatsApp reply received'],
         ],
         'condition_fields' => [
             ['value' => 'country',      'label' => 'Country',       'type' => 'text'],
-            ['value' => 'region',       'label' => 'Region',        'type' => 'enum', 'options' => ['North America','Europe','Middle East','Asia-Pacific','Latin America','Africa','Other']],
+            ['value' => 'region',       'label' => 'Region',        'type' => 'enum', 'options' => ['North America','Latin America','Europe','Middle East','Africa','Asia Pacific','Other']],
             ['value' => 'lead_source',  'label' => 'Lead Source',   'type' => 'enum', 'options' => ['Website','Facebook','Instagram','Google Ads','LinkedIn','Referral','Cold Outreach','Event','Import','Other']],
             ['value' => 'lead_type',    'label' => 'Lead Type',     'type' => 'enum', 'options' => ['Stable','Owner','Breeder','Trainer','Veterinarian','Consultant','Other']],
             ['value' => 'priority',     'label' => 'Priority',      'type' => 'enum', 'options' => ['Low','Medium','High','Urgent']],
@@ -269,11 +291,30 @@ function getMeta($pdo) {
             ['value' => 'change_lead_status',       'label' => 'Change lead status',        'config' => ['status']],
             ['value' => 'change_priority',          'label' => 'Change priority',           'config' => ['priority']],
             ['value' => 'log_interaction',          'label' => 'Log interaction note',      'config' => ['note']],
+            ['value' => 'assign_round_robin',       'label' => 'Assign round-robin to a team', 'config' => ['user_ids']],
+            ['value' => 'send_whatsapp_message',    'label' => 'Send WhatsApp message (free-form, 24h window)', 'config' => ['body']],
+            ['value' => 'notify_in_app',            'label' => 'Send in-app notification',  'config' => ['user_id','title','body']],
+            ['value' => 'set_field',                'label' => 'Set a lead field',          'config' => ['field','value']],
+            ['value' => 'create_task',              'label' => 'Create a Workflow task',    'config' => ['project_id','title','description','due_in_days','priority']],
+            ['value' => 'add_to_email_list',        'label' => 'Add to email list',         'config' => ['list_id']],
         ],
         'lead_statuses'  => ['New Lead','Contacted','Interested','Not Interested','Schedule Call','Call Scheduled','Demo Scheduled','Proposal Sent','Negotiation','Won','Lost','On Hold'],
         'priorities'     => ['Low','Medium','High','Urgent'],
         'proposal_statuses' => ['Draft','Sent','Accepted','Declined'],
         'users'           => $users,
+        'email_lists'     => $emailLists,
+        'workflow_projects' => $workflowProjects,
+        'interaction_types' => ['Call','Email','Meeting','Demo','Follow-up','Note','WhatsApp','SMS','VoIP Call'],
+        'outcomes'        => ['Positive','Neutral','Negative','No Response','No Answer','Voicemail','Callback Requested','Wrong Number','Not Interested'],
+        'settable_fields' => [
+            ['value' => 'lead_type',     'label' => 'Lead type'],
+            ['value' => 'lead_source',   'label' => 'Lead source'],
+            ['value' => 'region',        'label' => 'Region'],
+            ['value' => 'facility_type', 'label' => 'Facility type'],
+            ['value' => 'priority',      'label' => 'Priority'],
+            ['value' => 'lead_status',   'label' => 'Lead status'],
+            ['value' => 'notes',         'label' => 'Notes'],
+        ],
         'email_templates' => $emailTemplates,
         'wa_templates'    => $waTemplates,
         'template_vars'   => $templateVars,
