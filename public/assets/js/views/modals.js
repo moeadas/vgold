@@ -157,7 +157,7 @@ async function loadFilesModal() {
     const data = await res.json();
     const files = data.files || [];
     if (!files.length) {
-      body.innerHTML = `<div class="empty-state" style="padding:40px 0"><div class="title">No files yet</div><div class="desc">Upload files from any project or category page.</div></div>`;
+      body.innerHTML = `<div class="empty-state" style="padding:40px 0"><div class="title">No files yet</div><div class="desc">Upload files from any workspace or project page.</div></div>`;
       return;
     }
     body.innerHTML = files.map(f => {

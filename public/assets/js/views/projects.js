@@ -220,7 +220,7 @@ async function renderCategory() {
       const res = await API.category(State.activeCategoryId);
       cat = res.category;
       State.activeCategory = cat;
-    } catch(e) { return '<div class="fade-in"><p>Category not found.</p></div>'; }
+    } catch(e) { return '<div class="fade-in"><p>Workspace not found.</p></div>'; }
   }
 
   await ensureCardOrders();
