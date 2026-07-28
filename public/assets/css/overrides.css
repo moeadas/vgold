@@ -421,3 +421,25 @@
   background: transparent; color: var(--color-text-secondary); font-size: 18px;
 }
 .crm-native .crm-attach-x:hover { background: #FDE8E8; color: #B3261E; }
+
+/* ============================================================
+   14) Per-module notification badges — a count on each nav item plus a
+       rollup on the group header, so a collapsed group still says where
+       the unread work is.
+   ------------------------------------------------------------ */
+.module-nav-label { flex: 1 1 auto; min-width: 0; text-align: left; }
+.module-nav-count {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px; margin-right: 2px;
+  border-radius: 99px;
+  background: #B0432B; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0;
+}
+/* Inside a group's own colour block the rollup reads better tinted to match. */
+.crm-group .module-nav-count { background: #8E6B3A; }
+.acc-group .module-nav-count { background: #3F6B32; }
+
+/* The item pill is the established unread red; keep it legible on the
+   gold active row. */
+.nav-btn.active .nav-badge { box-shadow: 0 0 0 1.5px var(--gold-bg, #fff); }

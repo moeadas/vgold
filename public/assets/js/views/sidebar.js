@@ -47,10 +47,22 @@ function renderSidebar() {
   const crmOpen = localStorage.getItem('vgold-nav-crm') !== 'closed';
   const accOpen = localStorage.getItem('vgold-nav-acc') !== 'closed';
 
-  const renderItems = (items) => items.map(n => {
-    const badge = (n.id === 'messages' && State.msgUnreadTotal > 0)
-      ? `<span class="nav-badge" id="nav-msg-badge">${State.msgUnreadTotal > 99 ? '99+' : State.msgUnreadTotal}</span>`
-      : (n.id === 'messages' ? `<span class="nav-badge" id="nav-msg-badge" style="display:none"></span>` : '');
+  // Per-module notification counts. Every item carries a badge node — hidden at
+  // zero — so the poll can fill it in without a re-render, and each declares its
+  // group so the group header can roll its items up.
+  const counts = (typeof navBadgeCounts === 'function') ? navBadgeCounts() : {};
+  const groupTotal = (items) => items.reduce((s, n) => s + (Number(counts[n.id]) || 0), 0);
+  const groupBadge = (key, items) => {
+    const n = groupTotal(items);
+    return `<span class="module-nav-count" data-nav-group-badge="${key}"${n > 0 ? '' : ' style="display:none"'}>${n > 0 ? (n > 99 ? '99+' : n) : ''}</span>`;
+  };
+
+  const renderItems = (items, groupKey) => items.map(n => {
+    const count = Number(counts[n.id]) || 0;
+    const badge = `<span class="nav-badge" data-nav-badge="${n.id}" data-nav-group="${groupKey}"`
+      + (n.id === 'messages' ? ' id="nav-msg-badge"' : '')
+      + (count > 0 ? '' : ' style="display:none"') + '>'
+      + (count > 0 ? (count > 99 ? '99+' : count) : '') + '</span>';
     // Detail screens keep their parent nav item highlighted.
     const parents = {
       'acc-doc': State.accDocType === 'bill' ? 'acc-bills' : 'acc-invoices',
@@ -76,23 +88,23 @@ function renderSidebar() {
       <nav class="nav-section" aria-label="VGold modules">
         <div class="module-nav-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('workflow')" aria-expanded="${workflowOpen}">
-            <span class="module-nav-mark workflow">W</span><span>Workflow</span><span class="module-nav-chevron ${workflowOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark workflow">W</span><span class="module-nav-label">Workflow</span>${groupBadge('workflow', workflowItems)}<span class="module-nav-chevron ${workflowOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${workflowOpen ? '' : 'collapsed'}" id="nav-group-workflow">${renderItems(workflowItems)}</div>
+          <div class="module-nav-items ${workflowOpen ? '' : 'collapsed'}" id="nav-group-workflow">${renderItems(workflowItems, 'workflow')}</div>
         </div>
         ${crmItems.length ? `
         <div class="module-nav-group crm-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('crm')" aria-expanded="${crmOpen}">
-            <span class="module-nav-mark crm">C</span><span>CRM</span><span class="module-nav-chevron ${crmOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark crm">C</span><span class="module-nav-label">CRM</span>${groupBadge('crm', crmItems)}<span class="module-nav-chevron ${crmOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${crmOpen ? '' : 'collapsed'}" id="nav-group-crm">${renderItems(crmItems)}</div>
+          <div class="module-nav-items ${crmOpen ? '' : 'collapsed'}" id="nav-group-crm">${renderItems(crmItems, 'crm')}</div>
         </div>` : ''}
         ${accItems.length ? `
         <div class="module-nav-group acc-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('acc')" aria-expanded="${accOpen}">
-            <span class="module-nav-mark acc">A</span><span>Accounting</span><span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark acc">A</span><span class="module-nav-label">Accounting</span>${groupBadge('acc', accItems)}<span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${accOpen ? '' : 'collapsed'}" id="nav-group-acc">${renderItems(accItems)}</div>
+          <div class="module-nav-items ${accOpen ? '' : 'collapsed'}" id="nav-group-acc">${renderItems(accItems, 'acc')}</div>
         </div>` : ''}
       </nav>
       <div class="sidebar-bottom">

@@ -162,6 +162,8 @@ const API = {
   // Notifications
   notifications: () => API.req('/notifications'),
   unreadCount: () => API.req('/notifications/unread-count'),
+  moduleCounts: () => API.req('/notifications/module-counts'),
+  readModuleNotifs: (module) => API.req('/notifications/read-module', { method: 'POST', body: JSON.stringify({ module }) }),
   markRead: (id) => API.req('/notifications/' + id + '/read', { method: 'POST' }),
   markAllRead: () => API.req('/notifications/read-all', { method: 'POST' }),
   subscribePush: (data) => API.req('/notifications/subscribe', { method: 'POST', body: JSON.stringify(data) }),

@@ -27,6 +27,7 @@ const State = {
   filesOpen: false,
   unreadCounts: null,
   msgUnreadTotal: 0,
+  moduleCounts: {},
   mentions: null,
   commentsFeed: null,
   commentsUnread: 0,
@@ -109,6 +110,7 @@ function getGreeting() {
 }
 
 function nav(screen) {
+  clearModuleBadge(screen);
   State.screen = screen;
   State.activeProjectId = null;
   State.activeProject = null;
@@ -548,8 +550,10 @@ document.addEventListener('DOMContentLoaded', () => {
       render();
       loadNotifCount();
       loadMsgUnread();
+      loadModuleCounts();
       setInterval(loadNotifCount, 60000);
       setInterval(loadMsgUnread, 45000);
+      setInterval(loadModuleCounts, 60000);
       startRealtimePolling();
       initPushNotifications();
       initInstallPrompt();
@@ -601,8 +605,9 @@ function applyRealtimeRefresh() {
   if (s === 'project') State.activeProject = null;
   if (s === 'category') State.activeCategory = null;
   if (s === 'priorities') State.agendaItems = null;
-  // Keep the Messages nav badge fresh too.
+  // Keep the Messages nav badge and the per-module counts fresh too.
   loadMsgUnread();
+  loadModuleCounts();
   if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities'].includes(s)) {
     render();
   }
@@ -816,14 +821,64 @@ async function loadMsgUnread() {
 }
 
 function updateMsgBadge() {
-  const badge = document.getElementById('nav-msg-badge');
-  if (!badge) return;
-  if (State.msgUnreadTotal > 0) {
-    badge.textContent = State.msgUnreadTotal > 99 ? '99+' : State.msgUnreadTotal;
-    badge.style.display = 'flex';
-  } else {
-    badge.style.display = 'none';
-  }
+  updateNavBadges();
+}
+
+// ===== Per-module notification badges =====
+//
+// The bell says how many notifications you have; these say WHERE they are. The
+// server buckets unread notifications by sidebar nav id — for both Workflow and
+// CRM, since CRM notices are mirrored into the same store — so the per-item
+// numbers always add up to the bell count. Group headers roll their items up,
+// which is what makes a collapsed group still tell you something.
+
+async function loadModuleCounts() {
+  if (!State.user) return;
+  try {
+    const res = await API.moduleCounts();
+    State.moduleCounts = res.counts || {};
+  } catch (e) { return; }
+  updateNavBadges();
+}
+
+/**
+ * Messages is the one item whose badge is not purely notification-driven: DM and
+ * channel unread are not notifications at all, so take whichever is higher.
+ */
+function navBadgeCounts() {
+  const c = Object.assign({}, State.moduleCounts || {});
+  c.messages = Math.max(Number(c.messages) || 0, Number(State.msgUnreadTotal) || 0);
+  return c;
+}
+
+function navBadgeText(n) { return n > 99 ? '99+' : String(n); }
+
+function updateNavBadges() {
+  const counts = navBadgeCounts();
+  const groups = {};
+  document.querySelectorAll('[data-nav-badge]').forEach(el => {
+    const n = Number(counts[el.getAttribute('data-nav-badge')]) || 0;
+    const g = el.getAttribute('data-nav-group');
+    if (g) groups[g] = (groups[g] || 0) + n;
+    el.textContent = n > 0 ? navBadgeText(n) : '';
+    el.style.display = n > 0 ? 'flex' : 'none';
+  });
+  document.querySelectorAll('[data-nav-group-badge]').forEach(el => {
+    const n = groups[el.getAttribute('data-nav-group-badge')] || 0;
+    el.textContent = n > 0 ? navBadgeText(n) : '';
+    el.style.display = n > 0 ? 'inline-flex' : 'none';
+  });
+}
+
+/**
+ * Opening a module is dealing with its notifications, so clear them. Zeroed
+ * locally first so the pill disappears on click rather than on the next poll.
+ */
+function clearModuleBadge(navId) {
+  if (!navId || !State.moduleCounts || !Number(State.moduleCounts[navId])) return;
+  State.moduleCounts[navId] = 0;
+  updateNavBadges();
+  API.readModuleNotifs(navId).then(loadNotifCount).catch(() => {});
 }
 
 function updateNotifBadge() {

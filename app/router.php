@@ -259,6 +259,8 @@ $routes = [
     'POST notifications/{id}/read' => ['NotificationController::markRead', true],
     'POST notifications/read-all' => ['NotificationController::markAllRead', true],
     'GET notifications/unread-count' => ['NotificationController::unreadCount', true],
+    'GET notifications/module-counts' => ['NotificationController::moduleCounts', true],
+    'POST notifications/read-module' => ['NotificationController::readModule', true],
     'POST notifications/subscribe' => ['NotificationController::subscribe', true],
 ];
 
