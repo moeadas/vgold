@@ -1,4 +1,39 @@
 // VGo — My Tasks view with day plan card + filterable task sections
+
+/**
+ * Is this a CRM-generated follow-up rather than a Workflow task?
+ * Shared with Task Overview so both screens tuck CRM rows into the same
+ * collapsible section instead of letting them flood the list.
+ */
+function isCrmFollowUpTask(t) {
+  return t.source_module === 'crm.follow_up'
+    || t.source_module === 'crm.followup'
+    || (t.source_module || '').indexOf('crm') === 0
+    || !!t.crm_lead_id;
+}
+
+/**
+ * Collapsible "CRM follow-ups" block. `rowFn` renders one task row, so My Tasks
+ * and Task Overview can each pass their own row renderer.
+ */
+function crmFollowUpSection(crmTasks, idPrefix, rowFn) {
+  if (!crmTasks.length) return '';
+  const bodyId = `${idPrefix}-crm-body`;
+  const chevId = `${idPrefix}-crm-chevron`;
+  return `
+      <div class="cat-toggle-section" style="margin-top:10px">
+        <button class="cat-toggle-header" onclick="toggleCatSection('${bodyId}')">
+          <span style="display:flex;align-items:center;gap:8px">
+            <span class="cat-toggle-chevron" id="${chevId}">${I.arrowR}</span>
+            <span style="font-weight:600;color:#8E6B3A">CRM follow-ups</span>
+            <span class="count">${crmTasks.length}</span>
+          </span>
+        </button>
+        <div class="cat-toggle-body" id="${bodyId}" style="display:none">
+          <div class="task-list">${crmTasks.map(rowFn).join('')}</div>
+        </div>
+      </div>`;
+}
 async function renderMyTasks() {
   // Fetch the code-based day plan (fast, no AI) for the top card
   let plan = State.dayPlan;
@@ -56,25 +91,10 @@ async function renderMyTasks() {
     filteredGroups = filteredGroups.filter(g => g.tasks[0]?.status === filter);
   }
 
-  const isCrmTask = t => t.source_module === 'crm.follow_up' || t.source_module === 'crm.followup' || (t.source_module || '').indexOf('crm') === 0 || !!t.crm_lead_id;
   const groupsHTML = filteredGroups.map((g, gi) => {
-    const crmTasks = g.tasks.filter(isCrmTask);
-    const wfTasks = g.tasks.filter(t => !isCrmTask(t));
-    const bodyId = `crm-tasks-body-${gi}`;
-    const chevId = `crm-tasks-chevron-${gi}`;
-    const crmSection = crmTasks.length ? `
-      <div class="cat-toggle-section" style="margin-top:10px">
-        <button class="cat-toggle-header" onclick="toggleCatSection('${bodyId}')">
-          <span style="display:flex;align-items:center;gap:8px">
-            <span class="cat-toggle-chevron" id="${chevId}">${I.arrowR}</span>
-            <span style="font-weight:600;color:#8E6B3A">CRM follow-ups</span>
-            <span class="count">${crmTasks.length}</span>
-          </span>
-        </button>
-        <div class="cat-toggle-body" id="${bodyId}" style="display:none">
-          <div class="task-list">${crmTasks.map(t => taskRowHTML(t)).join('')}</div>
-        </div>
-      </div>` : '';
+    const crmTasks = g.tasks.filter(isCrmFollowUpTask);
+    const wfTasks = g.tasks.filter(t => !isCrmFollowUpTask(t));
+    const crmSection = crmFollowUpSection(crmTasks, `mytasks-${gi}`, t => taskRowHTML(t));
     return `
     <div class="task-group">
       <div class="task-group-header">

@@ -39,19 +39,25 @@ async function renderTaskOverview() {
   // User cards row
   const userCardsHTML = renderUserCards(users, tasks);
 
-  // Task groups
-  const groupsHTML = Object.values(groups).filter(g => g.tasks.length > 0).map(g => `
+  // Task groups. CRM follow-ups are tucked into a collapsible section per status
+  // group — same treatment as My Tasks — so they don't swamp the workflow tasks.
+  const groupsHTML = Object.values(groups).filter(g => g.tasks.length > 0).map((g, gi) => {
+    const crmTasks = g.tasks.filter(isCrmFollowUpTask);
+    const wfTasks = g.tasks.filter(t => !isCrmFollowUpTask(t));
+    const crmSection = crmFollowUpSection(crmTasks, `overview-${gi}`, t => overviewTaskRowHTML(t));
+    return `
     <div class="task-group">
       <div class="task-group-header">
         <span class="dot" style="background:${g.color}"></span>
         <span class="label">${g.label}</span>
-        <span class="count">${g.tasks.length}</span>
+        <span class="count">${wfTasks.length}${crmTasks.length ? ` + ${crmTasks.length} CRM` : ''}</span>
       </div>
       <div class="task-list">
-        ${g.tasks.map(t => overviewTaskRowHTML(t)).join('')}
+        ${wfTasks.map(t => overviewTaskRowHTML(t)).join('') || (crmTasks.length ? '<div class="empty-state" style="padding:10px 2px;text-align:left"><div class="desc">No workflow tasks — see CRM follow-ups below.</div></div>' : '')}
       </div>
-    </div>
-  `).join('') || '<div class="empty-state"><div class="title">No tasks</div><div class="desc">No tasks match the current filter.</div></div>';
+      ${crmSection}
+    </div>`;
+  }).join('') || '<div class="empty-state"><div class="title">No tasks</div><div class="desc">No tasks match the current filter.</div></div>';
 
   return `
     <div class="fade-in">
