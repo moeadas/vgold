@@ -144,8 +144,10 @@ async function renderCrmDashboard() {
 // Persistent leads-list UI state (filters, sort, page, multi-select).
 const CrmLeads = {
   q: '', status: '', priority: '', lead_type: '', lead_source: '', country: '', owner: '',
-  page: 1, per_page: 50, sort_by: '', sort_dir: 'DESC',
+  // Most recently acted on first — the list you actually work from.
+  page: 1, per_page: 50, sort_by: 'last_activity', sort_dir: 'DESC',
   selected: new Set(), total: 0, pages: 1,
+  notifOnly: false,
 };
 // Statuses that mean the lead has become a customer. Mirrors
 // CRMController::CUSTOMER_STATUSES.
@@ -160,7 +162,50 @@ function crmLeadsQuery() {
   ['q','status','priority','lead_type','lead_source','country','owner'].forEach(k => { if (CrmLeads[k]) p[k] = CrmLeads[k]; });
   p.page = CrmLeads.page; p.per_page = CrmLeads.per_page;
   if (CrmLeads.sort_by) { p.sort_by = CrmLeads.sort_by; p.sort_dir = CrmLeads.sort_dir; }
+  // "Only leads with notifications" — the client already knows which ids those
+  // are from the notification feed, so it just narrows the query to them.
+  if (CrmLeads.notifOnly) {
+    const ids = crmNotifLeadIds();
+    p.ids = ids.length ? ids.join(',') : '0';
+  }
   return p;
+}
+
+function crmNotifLeadIds() {
+  return (typeof recordNotifIds === 'function') ? recordNotifIds('crm_lead') : [];
+}
+function crmLeadNotifCount(leadId) {
+  return (typeof recordNotifCount === 'function') ? recordNotifCount('crm_lead', leadId) : 0;
+}
+/** The pill shown next to a lead that has unread notifications. */
+function crmNotifPill(n) {
+  if (!n) return '';
+  const label = n + ' unread notification' + (n > 1 ? 's' : '');
+  return `<span class="crm-notif-pill" title="${label}" aria-label="${label}">${n > 99 ? '99+' : n}</span>`;
+}
+
+function crmToggleNotifOnly() {
+  CrmLeads.notifOnly = !CrmLeads.notifOnly;
+  CrmLeads.page = 1;
+  render();
+}
+
+/** Short relative time — "4h ago" reads faster than a date in a busy list. */
+function crmRelTime(value) {
+  if (!value) return '—';
+  const d = new Date(String(value).replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return '—';
+  const secs = Math.floor((Date.now() - d.getTime()) / 1000);
+  if (secs < 0) return crmFormatDate(value);
+  if (secs < 60) return 'just now';
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return mins + 'm ago';
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  const days = Math.floor(hrs / 24);
+  if (days < 7) return days + 'd ago';
+  if (days < 35) return Math.floor(days / 7) + 'w ago';
+  return crmFormatDate(value);
 }
 
 async function renderCrmLeads() {
@@ -177,10 +222,13 @@ async function renderCrmLeads() {
   const th = (label, col) => `<th onclick="crmLeadSort('${col}')" style="cursor:pointer;user-select:none;white-space:nowrap;">${label}${sortArrow(col)}</th>`;
   const allChecked = State.crmLeads.length > 0 && State.crmLeads.every(l => CrmLeads.selected.has(l.id));
 
-  const rows = State.crmLeads.map(lead => `
-    <tr class="clickable-row" style="cursor:pointer;">
+  const rows = State.crmLeads.map(lead => {
+    const notif = crmLeadNotifCount(lead.id);
+    return `
+    <tr class="clickable-row${notif ? ' crm-row-notif' : ''}" style="cursor:pointer;">
       <td onclick="event.stopPropagation()"><input type="checkbox" class="crm-lead-check" ${CrmLeads.selected.has(lead.id) ? 'checked' : ''} onchange="crmLeadToggle(${lead.id}, this.checked)"></td>
-      <td onclick="goCrmLead(${lead.id})"><strong>${esc(lead.display_name || 'Unnamed')}</strong><br><small class="text-muted">${esc(lead.company_name || lead.lead_type || '—')}</small></td>
+      <td onclick="goCrmLead(${lead.id})"><strong>${esc(lead.display_name || 'Unnamed')}</strong>${crmNotifPill(notif)}<br><small class="text-muted">${esc(lead.company_name || lead.lead_type || '—')}</small></td>
+      <td onclick="goCrmLead(${lead.id})" style="white-space:nowrap;">${esc(crmRelTime(lead.last_activity_at))}</td>
       <td onclick="goCrmLead(${lead.id})">${esc(lead.country || '—')}</td>
       <td onclick="goCrmLead(${lead.id})"><span class="badge ${crmStatusBadge(lead.status)}">${esc(lead.status)}</span></td>
       <td onclick="goCrmLead(${lead.id})"><span class="badge ${crmPriorityBadge(lead.priority)}">${esc(lead.priority)}</span></td>
@@ -190,7 +238,22 @@ async function renderCrmLeads() {
         <button class="btn btn-sm btn-outline" onclick="goCrmLeadEditPage(${lead.id})" title="Edit lead">${CRM_ICONS.edit}</button>
         <button class="btn btn-sm btn-secondary" onclick="openCrmInteractionModal(${lead.id})">Log</button>
       </td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
+
+  // Banner naming exactly which leads the sidebar's Leads count refers to.
+  const notifIds = crmNotifLeadIds();
+  const notifTotal = (typeof recordNotifTotal === 'function') ? recordNotifTotal('crm_lead') : 0;
+  const notifBar = (notifTotal || CrmLeads.notifOnly) ? `
+    <div class="crm-notif-bar">
+      <span class="crm-notif-pill">${notifTotal > 99 ? '99+' : notifTotal}</span>
+      <span>${notifTotal
+        ? `unread notification${notifTotal > 1 ? 's' : ''} about ${notifIds.length} lead${notifIds.length > 1 ? 's' : ''} — assignments, WhatsApp replies and follow-ups. Each one is marked below and clears when you open the lead.`
+        : 'No unread lead notifications left.'}</span>
+      ${CrmLeads.notifOnly
+        ? `<button class="btn btn-sm btn-outline" onclick="crmToggleNotifOnly()">Show all leads</button>`
+        : (notifTotal ? `<button class="btn btn-sm btn-primary" onclick="crmToggleNotifOnly()">Show only these</button>` : '')}
+    </div>` : '';
 
   const start = CrmLeads.total ? (CrmLeads.page - 1) * CrmLeads.per_page + 1 : 0;
   const end = Math.min(CrmLeads.page * CrmLeads.per_page, CrmLeads.total);
@@ -240,16 +303,18 @@ async function renderCrmLeads() {
 
       <div id="crm-bulk-bar">${crmBulkBarHtml()}</div>
 
+      ${notifBar}
+
       <div class="card">
-        <div class="card-header"><h2 class="card-title">All Leads</h2></div>
+        <div class="card-header"><h2 class="card-title">${CrmLeads.notifOnly ? 'Leads with notifications' : 'All Leads'}</h2></div>
         <div class="card-body">
           <div class="table-container">
             <table class="table">
               <thead><tr>
                 <th style="width:32px;"><input type="checkbox" ${allChecked ? 'checked' : ''} onchange="crmLeadSelectAllVisible(this.checked)"></th>
-                ${th('Company','company_name')}${th('Country','country')}${th('Status','lead_status')}${th('Priority','priority')}${th('Source','lead_source')}${th('Owner','assigned_name')}<th>Actions</th>
+                ${th('Company','company_name')}${th('Last activity','last_activity')}${th('Country','country')}${th('Status','lead_status')}${th('Priority','priority')}${th('Source','lead_source')}${th('Owner','assigned_name')}<th>Actions</th>
               </tr></thead>
-              <tbody>${rows || `<tr><td colspan="8" class="text-center text-muted">No leads match these filters.</td></tr>`}</tbody>
+              <tbody>${rows || `<tr><td colspan="9" class="text-center text-muted">No leads match these filters.</td></tr>`}</tbody>
             </table>
           </div>
           ${pager}
@@ -927,6 +992,8 @@ async function saveCrmInteraction() {
 
 // ===== Native lead detail =====
 function goCrmLead(id) {
+  // Opening the lead is what deals with its notifications — not opening the list.
+  if (typeof clearRecordBadge === 'function') clearRecordBadge('crm_lead', Number(id));
   State.screen = 'crm-lead';
   State.crmLeadEditMode = false;
   State.activeCrmLeadId = Number(id);

@@ -107,6 +107,15 @@ class CRMController {
             $v = trim($_GET[$pair[0]] ?? '');
             if ($v !== '') { $where[] = "l.$pair[1] = ?"; $params[] = $v; }
         }
+        // Explicit id set — used by the "with notifications" filter on the Leads
+        // screen, which already knows the lead ids from the notification feed.
+        if (!empty($_GET['ids'])) {
+            $ids = array_slice(array_values(array_unique(array_filter(
+                array_map('intval', explode(',', (string)$_GET['ids'])),
+                fn($n) => $n > 0
+            ))), 0, 500);
+            $where[] = $ids ? ('l.lead_id IN (' . implode(',', $ids) . ')') : '1=0';
+        }
         // Owner filter: client sends a VGold user id → map to its crm_user_id.
         if (!empty($_GET['owner'])) {
             $where[] = 'l.assigned_to = (SELECT crm_user_id FROM users WHERE id = ? LIMIT 1)';
@@ -125,6 +134,45 @@ class CRMController {
         return [$where, $params];
     }
 
+    /** Does this table/column pair exist? Cached per request. */
+    private static function tableHasColumn($table, $column) {
+        static $cache = [];
+        $key = $table . '.' . $column;
+        if (array_key_exists($key, $cache)) return $cache[$key];
+        try {
+            $r = DB::fetch(
+                "SELECT COUNT(*) c FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                [$table, $column]
+            );
+            return $cache[$key] = ((int)($r['c'] ?? 0) > 0);
+        } catch (\Throwable $e) {
+            return $cache[$key] = false;
+        }
+    }
+
+    /**
+     * "Last action taken" on a lead: the most recent of the record itself, its
+     * logged interactions, its WhatsApp traffic and its calls.
+     *
+     * Composed from whatever those tables actually offer, so a missing table or
+     * a renamed column degrades to a smaller GREATEST() instead of 500-ing the
+     * whole Leads page.
+     */
+    private static function leadActivityExpr() {
+        $parts = ["COALESCE(l.updated_at, l.created_at, '1000-01-01 00:00:00')"];
+        foreach ([
+            ['crm_interactions', 'interaction_date'],
+            ['crm_whatsapp_messages', 'created_at'],
+            ['crm_voip_calls', 'created_at'],
+        ] as [$table, $col]) {
+            if (self::tableHasColumn($table, $col) && self::tableHasColumn($table, 'lead_id')) {
+                $parts[] = "COALESCE((SELECT MAX(a.`$col`) FROM `$table` a WHERE a.lead_id = l.lead_id), '1000-01-01 00:00:00')";
+            }
+        }
+        return count($parts) > 1 ? 'GREATEST(' . implode(', ', $parts) . ')' : $parts[0];
+    }
+
     public static function leads() {
         Authz::requireModuleAccess('crm.leads');
         [$where, $params] = self::leadFilters();
@@ -132,15 +180,21 @@ class CRMController {
 
         $total = (int)(DB::fetch("SELECT COUNT(*) c FROM crm_leads l WHERE $whereSql", $params)['c'] ?? 0);
 
+        $activity = self::leadActivityExpr();
         $sortMap = [
+            'last_activity' => 'last_activity_at',
             'updated_at' => 'l.updated_at', 'created_at' => 'l.created_at',
             'company_name' => 'l.company_name', 'contact_person' => 'l.contact_person',
             'country' => 'l.country', 'lead_status' => 'l.lead_status',
-            'priority' => "FIELD(l.priority,'Urgent','High','Medium','Low')",
+            // Ranked low-to-high so the default DESC click puts Urgent on top,
+            // which is what "sort by priority" is asking for.
+            'priority' => "FIELD(l.priority,'Low','Medium','High','Urgent')",
             'lead_source' => 'l.lead_source', 'lead_type' => 'l.lead_type', 'assigned_name' => 'assigned_name',
         ];
         $sortBy = $_GET['sort_by'] ?? '';
-        $orderCol = $sortMap[$sortBy] ?? "FIELD(l.priority,'Urgent','High','Medium','Low'), l.updated_at";
+        // Default: whatever was touched most recently, because that is the list
+        // you actually work from. Priority is still one click away.
+        $orderCol = $sortMap[$sortBy] ?? 'last_activity_at';
         $dir = strtoupper($_GET['sort_dir'] ?? 'DESC') === 'ASC' ? 'ASC' : 'DESC';
 
         $perPage = min(max((int)($_GET['per_page'] ?? 50), 1), 500);
@@ -148,10 +202,11 @@ class CRMController {
         $offset = ($page - 1) * $perPage;
 
         $rows = DB::fetchAll(
-            "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name
+            "SELECT l.*, u.id AS assigned_vgold_id, u.name AS assigned_name,
+                    $activity AS last_activity_at
              FROM crm_leads l LEFT JOIN users u ON u.crm_user_id = l.assigned_to
              WHERE $whereSql
-             ORDER BY $orderCol $dir LIMIT $perPage OFFSET $offset",
+             ORDER BY $orderCol $dir, l.lead_id DESC LIMIT $perPage OFFSET $offset",
             $params
         );
         jsonResponse([
@@ -912,6 +967,7 @@ class CRMController {
             'assigned_name' => $row['assigned_name'],
             'created_at' => $row['created_at'] ?? null,
             'updated_at' => $row['updated_at'],
+            'last_activity_at' => $row['last_activity_at'] ?? $row['updated_at'] ?? null,
         ];
     }
 

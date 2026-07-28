@@ -1827,7 +1827,7 @@ async function waRenderInboxTab() {
     return `<div class="wa-inbox-item" onclick="waOpenChat(${ch.lead_id})">
       <div class="wa-avatar">${esc(waInitials(name))}</div>
       <div class="wa-inbox-main">
-        <div class="wa-inbox-row"><span class="wa-inbox-name">${esc(name)}</span><small class="ct-secline">${waTimeAgo(ch.last_message_at)}</small></div>
+        <div class="wa-inbox-row"><span class="wa-inbox-name">${esc(name)}${typeof crmNotifPill === 'function' ? crmNotifPill(crmLeadNotifCount(ch.lead_id)) : ''}</span><small class="ct-secline">${waTimeAgo(ch.last_message_at)}</small></div>
         ${ch.company_name && ch.company_name !== name ? `<div class="ct-secline">${esc(ch.company_name)}</div>` : ''}
         <div class="wa-inbox-last">${pre}${esc((ch.last_message || '').slice(0, 80))}</div>
       </div>
@@ -1862,6 +1862,8 @@ async function waSendQuick() {
 // --- Chat panel (per-lead / per-number thread) ---
 async function waOpenChat(leadId, toNumber, name) {
   ensureCrmModStyles();
+  // Reading the conversation deals with its notifications.
+  if (leadId && typeof clearRecordBadge === 'function') clearRecordBadge('crm_lead', Number(leadId));
   const ch = leadId ? (CrmMod.cache.waChats?.data || []).find(x => Number(x.lead_id) === Number(leadId)) : null;
   // Pick the first field that actually holds a dialable number — imported rows
   // often store "NA"/"-" in phone, with the real number in mobile (or vice versa).

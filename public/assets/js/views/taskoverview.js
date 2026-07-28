@@ -322,6 +322,7 @@ function meetingGoProject(projectId) {
 }
 
 function goTaskPage(taskId, projectId) {
+  if (typeof clearRecordBadge === 'function') clearRecordBadge('task', parseInt(taskId));
   closeAllTaskMenus();
   State.screen = 'task';
   State.activeTaskId = parseInt(taskId);

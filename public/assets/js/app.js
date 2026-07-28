@@ -28,6 +28,7 @@ const State = {
   unreadCounts: null,
   msgUnreadTotal: 0,
   moduleCounts: {},
+  recordCounts: {},
   mentions: null,
   commentsFeed: null,
   commentsUnread: 0,
@@ -837,8 +838,47 @@ async function loadModuleCounts() {
   try {
     const res = await API.moduleCounts();
     State.moduleCounts = res.counts || {};
+    State.recordCounts = res.records || {};
   } catch (e) { return; }
   updateNavBadges();
+}
+
+/** Unread notifications pointing at one record, e.g. recordNotifCount('crm_lead', 42). */
+function recordNotifCount(linkType, linkId) {
+  const map = (State.recordCounts || {})[linkType];
+  return map ? (Number(map[String(linkId)]) || 0) : 0;
+}
+
+/** Every record of a kind that has unread notifications, most first. */
+function recordNotifIds(linkType) {
+  const map = (State.recordCounts || {})[linkType] || {};
+  return Object.keys(map).filter(k => Number(map[k]) > 0)
+    .sort((a, b) => Number(map[b]) - Number(map[a]))
+    .map(Number);
+}
+
+function recordNotifTotal(linkType) {
+  const map = (State.recordCounts || {})[linkType] || {};
+  return Object.keys(map).reduce((s, k) => s + (Number(map[k]) || 0), 0);
+}
+
+/**
+ * Opening a specific lead or task is what deals with its notifications — not
+ * opening the list it sits in. Clearing here rather than at the module level is
+ * what lets the Leads badge survive long enough to tell you *which* leads.
+ */
+function clearRecordBadge(linkType, linkId) {
+  const n = recordNotifCount(linkType, linkId);
+  if (!n) return;
+  const navId = { crm_lead: 'crm-leads', task: 'mytasks' }[linkType];
+  delete State.recordCounts[linkType][String(linkId)];
+  if (navId && State.moduleCounts) {
+    State.moduleCounts[navId] = Math.max(0, (Number(State.moduleCounts[navId]) || 0) - n);
+  }
+  updateNavBadges();
+  API.readRecordNotifs(linkType, Number(linkId))
+    .then(() => { loadNotifCount(); loadModuleCounts(); })
+    .catch(() => {});
 }
 
 /**
@@ -870,12 +910,19 @@ function updateNavBadges() {
   });
 }
 
+// Modules whose notifications point at a record you open from inside them.
+// Clearing these on module open would destroy the very thing the badge exists
+// to tell you — *which* leads or tasks. They clear per record instead.
+const RECORD_BACKED_NAV = ['mytasks', 'taskoverview', 'crm-leads', 'crm-customers', 'crm-interactions', 'crm-communications'];
+
 /**
- * Opening a module is dealing with its notifications, so clear them. Zeroed
- * locally first so the pill disappears on click rather than on the next poll.
+ * Opening a module with nothing to drill into is dealing with its
+ * notifications, so clear them. Zeroed locally first so the pill disappears on
+ * click rather than on the next poll.
  */
 function clearModuleBadge(navId) {
-  if (!navId || !State.moduleCounts || !Number(State.moduleCounts[navId])) return;
+  if (!navId || RECORD_BACKED_NAV.indexOf(navId) !== -1) return;
+  if (!State.moduleCounts || !Number(State.moduleCounts[navId])) return;
   State.moduleCounts[navId] = 0;
   updateNavBadges();
   API.readModuleNotifs(navId).then(loadNotifCount).catch(() => {});

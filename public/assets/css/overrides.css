@@ -443,3 +443,26 @@
 /* The item pill is the established unread red; keep it legible on the
    gold active row. */
 .nav-btn.active .nav-badge { box-shadow: 0 0 0 1.5px var(--gold-bg, #fff); }
+
+/* ============================================================
+   15) Record-level notification markers — the pill that says *which* lead,
+       conversation or task the module count is about.
+   ------------------------------------------------------------ */
+.crm-notif-pill {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px; margin-left: 8px;
+  border-radius: 99px; vertical-align: 2px;
+  background: #B0432B; color: #fff;
+  font-size: 10px; font-weight: 700; line-height: 1; letter-spacing: 0;
+}
+.crm-native tr.crm-row-notif > td { background: rgba(176, 67, 43, .045); }
+.crm-native tr.crm-row-notif > td:first-child { box-shadow: inset 3px 0 0 #B0432B; }
+
+.crm-native .crm-notif-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; margin-bottom: 16px;
+  border: 1px solid var(--color-border); border-left: 3px solid #B0432B;
+  border-radius: 10px; background: var(--color-surface); font-size: 13px;
+}
+.crm-native .crm-notif-bar .crm-notif-pill { margin-left: 0; }
+.crm-native .crm-notif-bar > span:nth-child(2) { flex: 1 1 auto; }

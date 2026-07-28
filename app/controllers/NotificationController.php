@@ -108,7 +108,43 @@ class NotificationController {
             $counts[$id] = ($counts[$id] ?? 0) + (int)$r['c'];
             $total += (int)$r['c'];
         }
-        jsonResponse(['counts' => (object)$counts, 'total' => $total]);
+
+        // Same unread set, broken down by the record each notification points at,
+        // so a list can show *which* leads or tasks the module count is about.
+        $recs = DB::fetchAll(
+            "SELECT link_type, link_id, COUNT(*) AS c
+               FROM notifications
+              WHERE user_id = ? AND is_read = 0 AND link_type IS NOT NULL AND link_id > 0
+              GROUP BY link_type, link_id",
+            [$userId]
+        );
+        $records = [];
+        foreach ($recs as $r) {
+            $records[$r['link_type']][(string)(int)$r['link_id']] = (int)$r['c'];
+        }
+        foreach ($records as $k => $v) $records[$k] = (object)$v;
+
+        jsonResponse(['counts' => (object)$counts, 'records' => (object)$records, 'total' => $total]);
+    }
+
+    /**
+     * Mark one record's notifications read — called when that lead or task is
+     * opened. This is what lets a module badge survive being looked at: the
+     * count only goes down as the individual records are actually dealt with.
+     */
+    public static function readRecord() {
+        $userId = Auth::userId();
+        $data   = input();
+        $type   = trim((string)($data['link_type'] ?? ''));
+        $id     = (int)($data['link_id'] ?? 0);
+        if ($type === '' || $id <= 0) jsonResponse(['ok' => false, 'error' => 'link_type and link_id are required'], 400);
+
+        DB::query(
+            "UPDATE notifications SET is_read = 1
+              WHERE user_id = ? AND is_read = 0 AND link_type = ? AND link_id = ?",
+            [$userId, $type, $id]
+        );
+        jsonResponse(['ok' => true]);
     }
 
     /**

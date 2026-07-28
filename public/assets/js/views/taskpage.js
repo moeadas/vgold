@@ -166,6 +166,7 @@ async function renderTaskPage(taskId) {
 
 // Navigate to task page
 function goTaskPage(taskId, projectId) {
+  if (typeof clearRecordBadge === 'function') clearRecordBadge('task', parseInt(taskId));
   State.screen = 'task';
   State.activeTaskId = parseInt(taskId);
   State.activeTaskProjectId = projectId ? parseInt(projectId) : null;

@@ -261,6 +261,7 @@ $routes = [
     'GET notifications/unread-count' => ['NotificationController::unreadCount', true],
     'GET notifications/module-counts' => ['NotificationController::moduleCounts', true],
     'POST notifications/read-module' => ['NotificationController::readModule', true],
+    'POST notifications/read-record' => ['NotificationController::readRecord', true],
     'POST notifications/subscribe' => ['NotificationController::subscribe', true],
 ];
 
