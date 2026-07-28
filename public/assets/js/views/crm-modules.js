@@ -40,6 +40,22 @@ async function crmApiPost(path, body) {
   if (!data.success) throw new Error(data.message || 'Request failed.');
   return data;
 }
+/**
+ * Multipart sibling of crmApiPost, for endpoints that read $_FILES.
+ * JSON bodies cannot carry files, so anything with attachments goes through here.
+ */
+async function crmApiPostForm(path, formData, _retried) {
+  formData.set('csrf_token', await crmCsrf());
+  const res = await fetch('/crm/api/' + path, { method: 'POST', credentials: 'same-origin', body: formData });
+  if (res.status === 413) throw new Error('The attachments are too large for the server to accept. Remove or shrink a file and try again.');
+  const data = await res.json().catch(() => ({ success: false, message: 'The server returned an unexpected response.' }));
+  if (data && data.message && /csrf|expired|refresh/i.test(data.message) && !_retried) {
+    _crmCsrfToken = null; // token rotated — refetch once and retry
+    return crmApiPostForm(path, formData, true);
+  }
+  if (!data.success) throw new Error(data.message || 'Request failed.');
+  return data;
+}
 function crmModInvalidate(key) { delete CrmMod.cache[key]; }
 function crmModDate(v) {
   if (!v) return '';

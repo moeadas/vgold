@@ -59,6 +59,7 @@ function renderSidebar() {
       'acc-reconciliation': 'acc-banking',
       'crm-lead': 'crm-leads',
       'crm-lead-new': 'crm-leads',
+      'crm-lead-email': 'crm-leads',
       'crm-customer': 'crm-customers',
     };
     const activeId = parents[State.screen] || State.screen;

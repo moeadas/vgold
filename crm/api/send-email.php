@@ -11,12 +11,74 @@ startSecureSession();
 requireLogin();
 header('Content-Type: application/json');
 
+/** Parse a php.ini shorthand size ("8M", "1G", "512K") into bytes. */
+function emailIniBytes($value) {
+    $value = trim((string)$value);
+    if ($value === '') return 0;
+    $unit = strtolower($value[strlen($value) - 1]);
+    $num  = (float)$value;
+    switch ($unit) {
+        case 'g': $num *= 1024; // no break
+        case 'm': $num *= 1024; // no break
+        case 'k': $num *= 1024;
+    }
+    return (int)$num;
+}
+
+/**
+ * The attachment budget that actually applies to this send.
+ *
+ * Microsoft Graph's sendMail caps the whole request at 4MB and base64 inflates
+ * bytes by 4/3, so a Graph sender really only has ~3MB. Advertising 10MB there
+ * would just mean a long upload followed by a failed send. PHP's own
+ * upload_max_filesize / post_max_size can be lower still, so both are folded in.
+ */
+function emailAttachmentLimits($usesGraph) {
+    $perFile = 10 * 1024 * 1024;
+    $total   = 25 * 1024 * 1024;
+    if ($usesGraph) { $perFile = 3 * 1024 * 1024; $total = 3 * 1024 * 1024; }
+
+    $upload = emailIniBytes(ini_get('upload_max_filesize'));
+    $post   = emailIniBytes(ini_get('post_max_size'));
+    if ($upload > 0) $perFile = min($perFile, $upload);
+    // Leave headroom for the subject, body and form fields.
+    if ($post > 0)   $total   = max(0, min($total, $post - 512 * 1024));
+    if ($total > 0)  $perFile = min($perFile, $total);
+
+    return ['per_file' => $perFile, 'total' => $total, 'method' => $usesGraph ? 'graph' : 'smtp'];
+}
+
+/** Does this user send through Microsoft Graph rather than SMTP? */
+function emailUserUsesGraph($userId) {
+    try {
+        $db = Database::getInstance();
+        $u  = $db->findOne('users', ['user_id' => $userId]);
+        return !empty($u['ms_access_token']) && !empty($u['ms_refresh_token']);
+    } catch (Exception $e) {
+        return false;
+    }
+}
+
+// GET ?limits=1 — the compose page asks for the real budget before you pick
+// files, so the limit shown in the UI is the limit the send will honour.
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['limits'])) {
+    $cu = getCurrentUser();
+    jsonSuccess('ok', ['limits' => emailAttachmentLimits(emailUserUsesGraph($cu['user_id']))]);
+}
+
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     jsonError('Method not allowed', 405);
 }
 
 $data = json_decode(file_get_contents('php://input'), true);
 if (!$data) $data = $_POST;
+
+// A body larger than post_max_size reaches PHP with $_POST and $_FILES both
+// empty, which would otherwise surface as a bogus "invalid CSRF token".
+if (empty($data) && empty($_FILES) && (int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 0) {
+    jsonError('The message is larger than this server accepts (limit ' . ini_get('post_max_size')
+        . '). Remove or shrink an attachment and try again.', 413);
+}
 
 // CSRF
 $token = $data['csrf_token'] ?? null;
@@ -52,36 +114,6 @@ function autoLinkUrls($text) {
     );
 }
 
-// Process file attachments
-$attachments = [];
-if (!empty($_FILES['attachments'])) {
-    $files = $_FILES['attachments'];
-    $maxSize = 10 * 1024 * 1024; // 10MB per file
-    $totalMax = 25 * 1024 * 1024; // 25MB total
-    $totalSize = 0;
-    $count = is_array($files['name']) ? count($files['name']) : 1;
-    
-    for ($i = 0; $i < $count; $i++) {
-        $name  = is_array($files['name']) ? $files['name'][$i] : $files['name'];
-        $tmp   = is_array($files['tmp_name']) ? $files['tmp_name'][$i] : $files['tmp_name'];
-        $size  = is_array($files['size']) ? $files['size'][$i] : $files['size'];
-        $error = is_array($files['error']) ? $files['error'][$i] : $files['error'];
-        
-        if ($error !== UPLOAD_ERR_OK) continue;
-        if ($size > $maxSize) jsonError("Attachment '$name' exceeds 10MB limit", 400);
-        $totalSize += $size;
-        if ($totalSize > $totalMax) jsonError('Total attachment size exceeds 25MB limit', 400);
-        
-        $content = file_get_contents($tmp);
-        $attachments[] = [
-            'name'    => $name,
-            'content' => base64_encode($content),
-            'size'    => $size,
-            'type'    => mime_content_type($tmp) ?: 'application/octet-stream',
-        ];
-    }
-}
-
 // Get user settings
 try {
     $db = Database::getInstance();
@@ -102,6 +134,46 @@ try {
 $msAccessToken  = $user['ms_access_token'] ?? '';
 $msRefreshToken = $user['ms_refresh_token'] ?? '';
 $msTokenExpires = $user['ms_token_expires'] ?? '';
+
+// Process file attachments. Done here, after the send method is known, because
+// Graph and SMTP have very different size ceilings.
+$limits      = emailAttachmentLimits(!empty($msAccessToken) && !empty($msRefreshToken));
+$attachments = [];
+if (!empty($_FILES['attachments'])) {
+    $files     = $_FILES['attachments'];
+    $totalSize = 0;
+    $count     = is_array($files['name']) ? count($files['name']) : 1;
+    $mb        = function ($b) { return round($b / 1048576, 1) . 'MB'; };
+
+    for ($i = 0; $i < $count; $i++) {
+        $name  = is_array($files['name']) ? $files['name'][$i] : $files['name'];
+        $tmp   = is_array($files['tmp_name']) ? $files['tmp_name'][$i] : $files['tmp_name'];
+        $size  = is_array($files['size']) ? $files['size'][$i] : $files['size'];
+        $error = is_array($files['error']) ? $files['error'][$i] : $files['error'];
+
+        if ($error === UPLOAD_ERR_INI_SIZE || $error === UPLOAD_ERR_FORM_SIZE) {
+            jsonError("Attachment '$name' is larger than this server accepts (" . $mb($limits['per_file']) . ' max).', 400);
+        }
+        if ($error !== UPLOAD_ERR_OK) continue;
+        if ($size > $limits['per_file']) {
+            jsonError("Attachment '$name' exceeds the " . $mb($limits['per_file']) . ' per-file limit'
+                . ($limits['method'] === 'graph' ? ' for Microsoft 365 sending.' : '.'), 400);
+        }
+        $totalSize += $size;
+        if ($totalSize > $limits['total']) {
+            jsonError('Total attachment size exceeds the ' . $mb($limits['total']) . ' limit'
+                . ($limits['method'] === 'graph' ? ' for Microsoft 365 sending.' : '.'), 400);
+        }
+
+        $content = file_get_contents($tmp);
+        $attachments[] = [
+            'name'    => $name,
+            'content' => base64_encode($content),
+            'size'    => $size,
+            'type'    => mime_content_type($tmp) ?: 'application/octet-stream',
+        ];
+    }
+}
 
 if (!empty($msAccessToken) && !empty($msRefreshToken)) {
     // ===== MICROSOFT GRAPH API =====

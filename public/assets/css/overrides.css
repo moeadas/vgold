@@ -384,3 +384,40 @@
 .sched-status .sched-dot { width: 10px; height: 10px; border-radius: 99px; flex: none; background: #6B8E5A; }
 .sched-status.warn .sched-dot { background: #C99520; }
 .sched-cron-url { font-family: var(--mono, ui-monospace, monospace); font-size: 12px; }
+
+/* ============================================================
+   13) Email composer — full page (replaces the compose modal) and
+       the attachment picker.
+   ------------------------------------------------------------ */
+.crm-native .crm-email-warn {
+  padding: 10px 12px; margin-bottom: 16px;
+  border: 1px solid #E6C77A; border-left-width: 3px; border-radius: 8px;
+  background: #FDF6E3; color: #7A5A11; font-size: 13px;
+}
+.crm-native .crm-attach-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.crm-native .crm-attach-bar .btn svg { margin-right: 6px; vertical-align: -2px; }
+.crm-native .crm-attach-list {
+  display: flex; flex-direction: column; gap: 6px;
+  margin-top: 10px;
+}
+.crm-native .crm-attach-list:empty { margin-top: 0; }
+.crm-native .crm-attach-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--color-border); border-radius: 8px;
+  background: var(--color-surface); font-size: 13px;
+}
+.crm-native .crm-attach-name {
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-weight: 600;
+}
+.crm-native .crm-attach-size { flex: none; color: var(--color-text-secondary); font-size: 12px; }
+.crm-native .crm-attach-x {
+  flex: none; width: 24px; height: 24px; line-height: 1;
+  border: 0; border-radius: 6px; cursor: pointer;
+  background: transparent; color: var(--color-text-secondary); font-size: 18px;
+}
+.crm-native .crm-attach-x:hover { background: #FDE8E8; color: #B3261E; }

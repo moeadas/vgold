@@ -211,6 +211,7 @@ async function render() {
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
       case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
       case 'crm-lead-new': mainContent = await renderCrmLeadNewPage(); break;
+      case 'crm-lead-email': mainContent = await renderCrmLeadEmailPage(State.activeCrmLeadId); break;
       case 'crm-customers': mainContent = await renderCrmCustomers(); break;
       case 'crm-email-builder': mainContent = await renderEmailBuilderPage(); break;
       case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
@@ -426,6 +427,11 @@ function routeFromHash() {
     State.activeCrmLeadId = null;
     State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
   }
+  else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2] && parts[3] === 'email') {
+    State.screen = 'crm-lead-email';
+    State.activeCrmLeadId = parseInt(parts[2]) || null;
+    State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
+  }
   else if (parts[0] === 'crm' && parts[1] === 'lead' && parts[2]) {
     State.screen = 'crm-lead';
     State.activeCrmLeadId = parseInt(parts[2]) || null;
@@ -476,6 +482,8 @@ function updateHash() {
     hash = 'crm/email-builder' + (State.emailCampaignId ? '/' + State.emailCampaignId : '');
   } else if (State.screen === 'crm-lead-new') {
     hash = 'crm/lead/new';
+  } else if (State.screen === 'crm-lead-email' && State.activeCrmLeadId) {
+    hash = 'crm/lead/' + State.activeCrmLeadId + '/email';
   } else if (State.screen === 'crm-lead' && State.activeCrmLeadId) {
     hash = 'crm/lead/' + State.activeCrmLeadId;
   } else if (State.screen === 'task' && State.activeTaskId) {

@@ -36,6 +36,7 @@ const CRM_ICONS = {
   edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
   phone: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>',
   mail: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>',
+  paperclip: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>',
 };
 
 // ===== Badge helpers (map lead status / priority / interaction type to design classes) =====
@@ -1205,40 +1206,212 @@ function crmLeadWhatsApp(leadId) {
   waOpenChat(leadId, number, name);
 }
 
-// Send Email — native compose modal posting to the legacy send-email.php endpoint
-// via crmApiPost (which attaches the csrf_token field automatically).
+// ===== Send Email — full-page composer with attachments =====
+//
+// The legacy endpoint crm/api/send-email.php has always accepted a multipart
+// body ($_POST + $_FILES['attachments']); the old modal posted JSON, so $_FILES
+// was always empty and attachments were unreachable. This posts FormData.
+//
+// Picked files are held in CrmEmail.files rather than left on the <input>: the
+// user can add files across several picks, remove one, and re-pick the same
+// file — none of which a live FileList supports.
+
+const CrmEmail = { leadId: null, files: [], limits: null, sending: false };
+const CRM_EMAIL_FALLBACK_LIMITS = { per_file: 10 * 1024 * 1024, total: 25 * 1024 * 1024, method: 'smtp' };
+
+function crmEmailLimits() { return CrmEmail.limits || CRM_EMAIL_FALLBACK_LIMITS; }
+function crmEmailSize(bytes) {
+  const b = Number(bytes) || 0;
+  if (b >= 1048576) return (b / 1048576).toFixed(b >= 10485760 ? 0 : 1) + ' MB';
+  if (b >= 1024) return Math.round(b / 1024) + ' KB';
+  return b + ' B';
+}
+function crmEmailTotal() { return CrmEmail.files.reduce((s, f) => s + f.size, 0); }
+
+/** Reset the draft whenever we switch to a different lead. */
+function crmEmailBind(leadId) {
+  if (CrmEmail.leadId !== Number(leadId)) {
+    CrmEmail.leadId = Number(leadId);
+    CrmEmail.files = [];
+    CrmEmail.sending = false;
+  }
+}
+
 function openCrmLeadEmail(leadId) {
   const lead = crmActiveLead(leadId);
-  const to = lead ? (lead.email || '') : '';
-  if (!to) { toast('No email address on this lead.', 'error'); return; }
-  Modal.open({
-    title: 'Compose Email',
-    body: `<div class="crm-native">
-      <div class="form-group"><label class="form-label">To</label><input class="form-control" id="cle-to" type="email" value="${esc(to)}"></div>
-      <div class="form-group"><label class="form-label">Cc <small class="text-muted">(optional, comma-separated)</small></label><input class="form-control" id="cle-cc" type="text" placeholder="cc1@example.com, cc2@example.com"></div>
-      ${crmInput('cle-subject', 'Subject', 'Enter subject…')}
-      <div class="form-group"><label class="form-label">Message</label><textarea class="form-control" id="cle-body" rows="10" placeholder="Write your email message here…"></textarea></div>
-      ${crmErrorBox('cle-email-error')}
-    </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button><button class="btn-primary" onclick="sendCrmLeadEmail(${leadId})">${CRM_ICONS.mail} Send Email</button>`,
-  });
+  if (lead && !String(lead.email || '').trim()) { toast('No email address on this lead.', 'error'); return; }
+  crmEmailBind(leadId);
+  State.screen = 'crm-lead-email';
+  State.activeCrmLeadId = Number(leadId);
+  updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+  closeMobileSidebar();
 }
-async function sendCrmLeadEmail(leadId) {
+
+function closeCrmLeadEmail() {
+  const leadId = CrmEmail.leadId;
+  CrmEmail.files = [];
+  CrmEmail.leadId = null;
+  if (leadId) goCrmLead(leadId); else nav('crm-leads');
+}
+
+async function renderCrmLeadEmailPage(leadId) {
+  if (!crmHas('crm.leads')) return crmAccessDenied('crm.leads');
+  crmEmailBind(leadId);
+
+  let lead = crmActiveLead(leadId);
+  if (!lead) {
+    try {
+      lead = (await API.crmLeadDetail(leadId)).lead;
+      State.crmLeadDetail = lead;
+    } catch (e) { return crmModError('Compose Email', e.message); }
+  }
+
+  // Ask the server for the real budget once per session — it differs between
+  // Microsoft 365 (≈3MB) and SMTP, and PHP's own ini caps can be lower still.
+  if (!CrmEmail.limits) {
+    try {
+      const d = await crmApiGet('send-email.php?limits=1');
+      if (d && d.success && d.data && d.data.limits) CrmEmail.limits = d.data.limits;
+    } catch (e) { /* fall back to the documented limits */ }
+  }
+  const lim = crmEmailLimits();
+
+  const to = String(lead.email || '').trim();
+  const who = lead.contact_person || lead.company_name || ('Lead #' + leadId);
+  const isCustomer = CRM_CUSTOMER_STATUSES.includes(lead.status);
+
+  const noEmail = !to
+    ? `<div class="crm-email-warn">This ${isCustomer ? 'customer' : 'lead'} has no email address on file. Enter one below — it will not be saved to the record.</div>`
+    : '';
+
+  // The list markup is inlined below, but the running total lives in its own
+  // node — paint it once the returned string is actually in the DOM.
+  setTimeout(crmEmailPaintAttachments, 0);
+
+  return `<div class="crm-native fade-in">
+    ${crmModHead('Compose Email', `To ${who}${lead.company_name && lead.company_name !== who ? ' · ' + lead.company_name : ''}`,
+      `<button class="btn btn-outline" onclick="closeCrmLeadEmail()">${CRM_ICONS.back} Back to ${isCustomer ? 'customer' : 'lead'}</button>`)}
+    <div class="card" style="max-width:960px">
+      <div class="card-body">
+        ${noEmail}
+        <div class="form-group"><label class="form-label" for="cle-to">To</label>
+          <input class="form-control" id="cle-to" type="email" value="${esc(to)}" placeholder="name@example.com"></div>
+        <div class="form-group"><label class="form-label" for="cle-cc">Cc <small class="text-muted">(optional, comma-separated)</small></label>
+          <input class="form-control" id="cle-cc" type="text" placeholder="cc1@example.com, cc2@example.com"></div>
+        ${crmInput('cle-subject', 'Subject', 'Enter subject…')}
+        <div class="form-group"><label class="form-label" for="cle-body">Message</label>
+          <textarea class="form-control" id="cle-body" rows="14" placeholder="Write your email message here…"></textarea></div>
+
+        <div class="form-group">
+          <label class="form-label">Attachments
+            <small class="text-muted">up to ${crmEmailSize(lim.per_file)} per file, ${crmEmailSize(lim.total)} total${lim.method === 'graph' ? ' (Microsoft 365 limit)' : ''}</small>
+          </label>
+          <input type="file" id="cle-files" multiple hidden onchange="crmEmailAddFiles(this)">
+          <div class="crm-attach-bar">
+            <button type="button" class="btn btn-outline btn-sm" onclick="document.getElementById('cle-files').click()">${CRM_ICONS.paperclip || ''} Add files</button>
+            <span class="ct-secline" id="cle-attach-total"></span>
+          </div>
+          <div id="cle-attach-list" class="crm-attach-list">${crmEmailAttachMarkup()}</div>
+        </div>
+
+        ${crmErrorBox('cle-email-error')}
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin:16px 0 40px;max-width:960px">
+      <button class="btn btn-primary" id="cle-send" onclick="sendCrmLeadEmail(${leadId})">${CRM_ICONS.mail} Send Email</button>
+      <button class="btn btn-outline" onclick="closeCrmLeadEmail()">Cancel</button>
+    </div>
+  </div>`;
+}
+
+function crmEmailAttachMarkup() {
+  if (!CrmEmail.files.length) return '';
+  return CrmEmail.files.map((f, i) => `<div class="crm-attach-item">
+      <span class="crm-attach-name" title="${esc(f.name)}">${esc(f.name)}</span>
+      <span class="crm-attach-size">${crmEmailSize(f.size)}</span>
+      <button type="button" class="crm-attach-x" title="Remove" aria-label="Remove ${esc(f.name)}" onclick="crmEmailRemoveFile(${i})">&times;</button>
+    </div>`).join('');
+}
+
+/** Repaint just the attachment list — a full render() would wipe the draft. */
+function crmEmailPaintAttachments() {
+  const list = document.getElementById('cle-attach-list');
+  if (list) list.innerHTML = crmEmailAttachMarkup();
+  const total = document.getElementById('cle-attach-total');
+  if (total) {
+    total.textContent = CrmEmail.files.length
+      ? `${CrmEmail.files.length} file${CrmEmail.files.length > 1 ? 's' : ''} · ${crmEmailSize(crmEmailTotal())} of ${crmEmailSize(crmEmailLimits().total)}`
+      : '';
+  }
+}
+
+function crmEmailError(msg) {
   const err = document.getElementById('cle-email-error');
+  if (!err) return;
+  err.textContent = msg || '';
+  err.style.display = msg ? 'block' : 'none';
+}
+
+function crmEmailAddFiles(input) {
+  const lim = crmEmailLimits();
+  const picked = Array.from(input.files || []);
+  input.value = ''; // so the same file can be re-picked after being removed
+  const rejected = [];
+
+  for (const f of picked) {
+    if (CrmEmail.files.some(x => x.name === f.name && x.size === f.size)) continue;
+    if (f.size > lim.per_file) { rejected.push(`"${f.name}" (${crmEmailSize(f.size)}) is over the ${crmEmailSize(lim.per_file)} per-file limit`); continue; }
+    if (crmEmailTotal() + f.size > lim.total) { rejected.push(`"${f.name}" would push the total past ${crmEmailSize(lim.total)}`); continue; }
+    CrmEmail.files.push(f);
+  }
+  crmEmailError(rejected.length ? 'Not attached — ' + rejected.join('; ') + '.' : '');
+  crmEmailPaintAttachments();
+}
+
+function crmEmailRemoveFile(index) {
+  CrmEmail.files.splice(index, 1);
+  crmEmailError('');
+  crmEmailPaintAttachments();
+}
+
+async function sendCrmLeadEmail(leadId) {
+  if (CrmEmail.sending) return;
   const g = i => (document.getElementById(i)?.value || '').trim();
   const to = g('cle-to'), cc = g('cle-cc'), subject = g('cle-subject'), body = g('cle-body');
-  if (!to || !subject || !body) {
-    if (err) { err.textContent = 'To, subject, and message are all required.'; err.style.display = 'block'; }
-    return;
-  }
-  if (typeof crmApiPost !== 'function') { if (err) { err.textContent = 'Email service is unavailable.'; err.style.display = 'block'; } return; }
+  if (!to || !subject || !body) { crmEmailError('To, subject, and message are all required.'); return; }
+  if (typeof crmApiPostForm !== 'function') { crmEmailError('Email service is unavailable.'); return; }
+
+  const btn = document.getElementById('cle-send');
+  const label = btn ? btn.innerHTML : '';
+  CrmEmail.sending = true;
+  if (btn) { btn.disabled = true; btn.textContent = CrmEmail.files.length ? 'Sending with attachments…' : 'Sending…'; }
+  crmEmailError('');
+
   try {
-    await crmApiPost('send-email.php', { lead_id: Number(leadId), to, cc, subject, body });
+    const fd = new FormData();
+    fd.append('lead_id', String(Number(leadId)));
+    fd.append('to', to);
+    fd.append('cc', cc);
+    fd.append('subject', subject);
+    fd.append('body', body);
+    CrmEmail.files.forEach(f => fd.append('attachments[]', f, f.name));
+
+    await crmApiPostForm('send-email.php', fd);
+
+    const n = CrmEmail.files.length;
+    CrmEmail.files = [];
+    CrmEmail.leadId = null;
     State.crmLeadDetail = null;
-    Modal.close();
-    toast('Email sent', 'success');
-    render();
-  } catch (e) { if (err) { err.textContent = e.message; err.style.display = 'block'; } }
+    toast(n ? `Email sent with ${n} attachment${n > 1 ? 's' : ''}` : 'Email sent', 'success');
+    goCrmLead(leadId);
+  } catch (e) {
+    crmEmailError(e.message);
+  } finally {
+    CrmEmail.sending = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = label; }
+  }
 }
 
 // ===== Native full-page Edit Lead (replaces openCrmLeadEditModal) =====
