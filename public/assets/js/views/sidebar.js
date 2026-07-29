@@ -69,6 +69,7 @@ function renderSidebar() {
       'acc-contact': State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers',
       'acc-account': 'acc-banking',
       'acc-bill-scan': 'acc-bills',
+      'acc-danger': 'acc-settings',
       // A form page keeps whichever nav item it was opened from highlighted.
       'acc-form': (typeof AccState !== 'undefined' && AccState.form?.back?.screen) || 'acc-dashboard',
       'acc-reconciliation': 'acc-banking',

@@ -2399,8 +2399,12 @@ class AccountingController
         Authz::requireAccAdmin();
         $data = input();
 
-        if (($data['confirm_text'] ?? '') !== 'CLEAR ACCOUNTING') {
-            jsonError('Type CLEAR ACCOUNTING to confirm');
+        // Typing DELETE is the guard. Surrounding dashes or spaces are forgiven
+        // because the prompt shows the word emphasised; the older phrase still
+        // works so nothing that already scripted this breaks.
+        $confirm = strtoupper(trim((string)($data['confirm_text'] ?? ''), " \t\n\r-–—_"));
+        if ($confirm !== 'DELETE' && $confirm !== 'CLEAR ACCOUNTING') {
+            jsonError('Type DELETE to confirm.');
         }
         $user = Auth::user();
         $password = (string)($data['password'] ?? '');

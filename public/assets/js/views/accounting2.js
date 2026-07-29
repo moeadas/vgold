@@ -1356,9 +1356,9 @@ async function renderAccSettings() {
       </div>
       <div style="display:flex;gap:10px;flex-wrap:wrap">
         <button class="btn-secondary" onclick="accRecalc()">Recalculate all balances</button>
-        <button class="btn-secondary" onclick="nav('settings')">Clear accounting data →</button>
+        <button class="btn-danger" onclick="accNav('acc-danger')">Clear accounting data…</button>
       </div>
-      <p class="acc-sub" style="margin-top:10px">Clearing all accounting data lives in VGold Settings → Danger Zone, alongside the other destructive actions.</p>
+      <p class="acc-sub" style="margin-top:10px">Clearing opens a confirmation page — it asks you to type <b>DELETE</b> and shows exactly what will be removed first.</p>
     </div>
   </div>`;
 }
@@ -1431,45 +1431,165 @@ function accModuleChips(modules, member) {
   }).join('');
 }
 
-/** Danger-zone card appended to VGold Settings — clears all accounting data. */
+/** Danger-zone entry appended to VGold Settings — links to the confirmation page. */
 function accDangerZoneCard(user) {
   if (!user || user.role !== 'admin') return '';
   if (!(State.user && (State.user.modules || []).includes('acc.settings'))) return '';
   return `
     <div class="danger-zone" style="margin-top:14px" id="settings-acc-data">
       <h4>Clear Accounting &amp; Finance data</h4>
-      <p>Permanently deletes every invoice, bill, payment, transfer, journal entry, contact, item, category, tax rate, bank account and ledger account in the Accounting app. Your company profile and the rest of VGold (Workflow, CRM) are untouched. Invoice and bill counters reset to 0001.</p>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:10px">
-        <div class="form-field" style="flex:1;min-width:170px">
-          <label class="form-label">Your password</label>
-          <input class="form-input" type="password" id="acc-reset-pw" autocomplete="current-password" placeholder="••••••••">
-        </div>
-        <div class="form-field" style="flex:1;min-width:190px">
-          <label class="form-label">Type CLEAR ACCOUNTING</label>
-          <input class="form-input" id="acc-reset-text" placeholder="CLEAR ACCOUNTING">
-        </div>
-        <button class="btn-danger" style="flex:none" onclick="accClearData('fresh')">Clear accounting data</button>
-        <button class="btn-secondary" style="flex:none" onclick="accClearData('sample')">Clear &amp; reload sample data</button>
-      </div>
+      <p>Permanently deletes every invoice, bill, payment, transfer, journal entry, contact, item, category, tax rate, bank account and ledger account in the Accounting app. Your company profile and the rest of VGold (Workflow, CRM) are untouched.</p>
+      <button class="btn-danger" onclick="accNav('acc-danger')">Clear accounting data…</button>
     </div>`;
 }
 
+/* ===================== Clear accounting data — a page, with a real gate =====
+ *
+ * This used to be a form at the bottom of VGold Settings that the Accounting
+ * screen linked to with nav('settings'), landing you at the top of a long page
+ * with the control far below the fold. Clicking the button looked like it did
+ * nothing. It is now its own page: it lists what will actually be removed, and
+ * the button stays disabled until DELETE is typed, so it can never silently
+ * refuse.
+ */
+
+const AccDanger = { counts: null, mode: 'fresh', busy: false, error: null };
+
+async function renderAccDangerZone() {
+  await accBoot();
+  if (!accHas('acc.settings') || (State.user?.role !== 'admin')) {
+    return accDenied('accounting settings');
+  }
+  if (!AccDanger.counts) {
+    try {
+      const res = await API.accDataSummary();
+      AccDanger.counts = res.counts || {};
+    } catch (e) {
+      AccDanger.counts = {};
+      AccDanger.error = e.message;
+    }
+  }
+
+  const LABELS = {
+    acc_documents: 'Invoices and bills', acc_document_items: 'Line items',
+    acc_document_item_taxes: 'Line taxes', acc_document_totals: 'Document totals',
+    acc_document_histories: 'Document history', acc_transactions: 'Payments and transactions',
+    acc_transaction_splits: 'Transaction splits', acc_transaction_taxes: 'Transaction taxes',
+    acc_transfers: 'Transfers', acc_reconciliations: 'Reconciliations',
+    acc_journal_entries: 'Journal entries', acc_journal_lines: 'Journal lines',
+    acc_recurrings: 'Recurring schedules', acc_contacts: 'Customers and vendors',
+    acc_contact_people: 'Contact people', acc_items: 'Catalog items',
+    acc_categories: 'Categories', acc_taxes: 'Tax rates',
+    acc_accounts: 'Bank and cash accounts', acc_chart_of_accounts: 'Ledger accounts',
+    acc_attachments: 'Attached files',
+  };
+  const counts = AccDanger.counts || {};
+  const rows = Object.keys(counts)
+    .filter(k => counts[k] > 0)
+    .sort((a, b) => counts[b] - counts[a])
+    .map(k => `<tr><td>${esc(LABELS[k] || k)}</td><td style="text-align:right"><strong>${counts[k].toLocaleString()}</strong></td></tr>`)
+    .join('');
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  const usesPassword = (State.user?.auth_provider || 'password') !== 'microsoft';
+
+  return `<div class="fade-in acc-page">
+    ${accHeader('Clear accounting data',
+      'Deletes everything in the Accounting app. Workflow and CRM are not touched.',
+      `<button class="btn-secondary" onclick="accNav('acc-settings')">← Back to accounting settings</button>`)}
+
+    <div class="acc-card acc-form-card">
+      ${total === 0
+        ? `<div class="acc-alert acc-alert-warn">There is no accounting data to clear.</div>`
+        : `<div class="acc-alert acc-alert-bad">
+             <strong>This permanently deletes ${total.toLocaleString()} records.</strong>
+             It cannot be undone, and there is no export step — take a database backup first if you might want any of it.
+           </div>
+           <div class="acc-table-wrap" style="max-width:520px">
+             <table class="acc-table"><tbody>${rows}</tbody></table>
+           </div>`}
+
+      <p class="acc-sub" style="margin-top:14px">Your company profile, document prefixes and numbering settings are kept. Invoice and bill counters restart at 0001.</p>
+
+      <div class="form-row" style="gap:12px;margin-top:18px;flex-wrap:wrap">
+        ${usesPassword ? `
+        <div class="form-field" style="flex:1;min-width:200px">
+          <label class="form-label">Your password</label>
+          <input class="form-input" type="password" id="acc-reset-pw" autocomplete="current-password" placeholder="••••••••">
+        </div>` : ''}
+        <div class="form-field" style="flex:1;min-width:220px">
+          <label class="form-label">Type <b>DELETE</b> to confirm</label>
+          <input class="form-input acc-mono" id="acc-reset-text" placeholder="DELETE" autocomplete="off"
+                 oninput="accDangerTyped()" onkeydown="if(event.key==='Enter')accClearData('fresh')">
+        </div>
+      </div>
+
+      <div id="acc-danger-msg" class="acc-alert acc-alert-bad" style="display:none;margin-top:14px"></div>
+
+      <div class="acc-form-actions">
+        <button class="btn-danger" id="acc-danger-go" disabled onclick="accClearData('fresh')">Clear all accounting data</button>
+        <button class="btn-secondary" id="acc-danger-sample" disabled onclick="accClearData('sample')">Clear and load sample data</button>
+        <button class="btn-secondary" onclick="accNav('acc-settings')">Cancel</button>
+      </div>
+      <p class="acc-sub" style="margin-top:8px" id="acc-danger-hint">Both buttons stay disabled until you type DELETE.</p>
+    </div>
+  </div>`;
+}
+
+/** Confirmation word gate — the buttons only become live once it matches. */
+function accDangerConfirmed() {
+  const raw = (document.getElementById('acc-reset-text')?.value || '');
+  return raw.trim().replace(/^[-–—_\s]+|[-–—_\s]+$/g, '').toUpperCase() === 'DELETE';
+}
+
+function accDangerTyped() {
+  const ok = accDangerConfirmed();
+  const go = document.getElementById('acc-danger-go');
+  const sample = document.getElementById('acc-danger-sample');
+  if (go) go.disabled = !ok;
+  if (sample) sample.disabled = !ok;
+  const hint = document.getElementById('acc-danger-hint');
+  if (hint) hint.textContent = ok
+    ? 'Confirmed. This cannot be undone.'
+    : 'Both buttons stay disabled until you type DELETE.';
+}
+
 async function accClearData(mode) {
-  const text = accVal('acc-reset-text');
-  if (text !== 'CLEAR ACCOUNTING') { toast('Type CLEAR ACCOUNTING to confirm', 'error'); return; }
+  if (AccDanger.busy || !accDangerConfirmed()) return;
+  const msg = document.getElementById('acc-danger-msg');
+  const show = (m) => { if (msg) { msg.textContent = m; msg.style.display = 'block'; } else toast(m, 'error'); };
+  if (msg) msg.style.display = 'none';
+
   const ok = await Modal.confirm({
-    title: mode === 'sample' ? 'Reload sample accounting data' : 'Clear all accounting data',
+    title: mode === 'sample' ? 'Clear and load sample data' : 'Clear all accounting data',
     message: mode === 'sample'
-      ? 'This deletes all accounting data and reloads the bundled demo dataset. Workflow and CRM are untouched.'
-      : 'This permanently deletes all Accounting & Finance data. Workflow and CRM are untouched. This cannot be undone.',
-    confirmText: mode === 'sample' ? 'Clear and reload' : 'Clear everything',
+      ? 'Everything in Accounting is deleted and the bundled demo dataset is loaded in its place. Workflow and CRM are untouched.'
+      : 'Everything in Accounting is permanently deleted. Workflow and CRM are untouched. This cannot be undone.',
+    confirmText: mode === 'sample' ? 'Clear and load' : 'Delete everything',
     danger: true,
   });
   if (!ok) return;
+
+  const btn = document.getElementById(mode === 'sample' ? 'acc-danger-sample' : 'acc-danger-go');
+  const label = btn ? btn.textContent : '';
+  AccDanger.busy = true;
+  if (btn) { btn.disabled = true; btn.textContent = 'Clearing…'; }
   try {
-    await API.accReset({ mode, password: accVal('acc-reset-pw'), confirm_text: text });
+    const res = await API.accReset({
+      mode,
+      password: accVal('acc-reset-pw'),
+      confirm_text: document.getElementById('acc-reset-text')?.value || '',
+    });
     accResetCaches();
-    toast(mode === 'sample' ? 'Accounting data reset to the sample dataset' : 'All accounting data cleared', 'success');
-    render();
-  } catch (e) { toast(e.message, 'error'); }
+    AccDanger.counts = null;
+    toast(mode === 'sample'
+      ? 'Accounting cleared and the sample dataset loaded'
+      : 'Cleared ' + Object.values(res.deleted || {}).reduce((a, b) => a + b, 0).toLocaleString() + ' accounting records',
+      'success');
+    accNav('acc-settings');
+  } catch (e) {
+    show(e.message);
+    if (btn) { btn.disabled = false; btn.textContent = label; }
+  } finally {
+    AccDanger.busy = false;
+  }
 }
