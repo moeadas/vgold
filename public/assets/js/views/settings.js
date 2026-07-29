@@ -249,9 +249,14 @@ async function renderSettings() {
         </div>
       </div>
 
+      ${(user.auth_provider || 'password') === 'microsoft' ? `
+      <div class="settings-card">
+        <h3>Password</h3>
+        <div class="desc">You sign in with Microsoft, so VGold has no password of yours to change. Manage it through your Microsoft 365 account.</div>
+      </div>` : `
       <div class="settings-card">
         <h3>Change Password</h3>
-        <div class="desc">Update your account password.</div>
+        <div class="desc">Update the password you use to sign in to VGold.</div>
         <div class="password-form">
           <div class="form-field">
             <label class="form-label">Current password</label>
@@ -259,7 +264,7 @@ async function renderSettings() {
           </div>
           <div class="form-field">
             <label class="form-label">New password</label>
-            <input class="form-input" type="password" id="pw-new" placeholder="At least 6 characters" autocomplete="new-password">
+            <input class="form-input" type="password" id="pw-new" placeholder="At least 8 characters" autocomplete="new-password">
           </div>
           <div class="form-field">
             <label class="form-label">Confirm new password</label>
@@ -267,8 +272,9 @@ async function renderSettings() {
           </div>
           <div class="pw-error" id="pw-error" style="display:none"></div>
           <button class="btn-primary" style="align-self:flex-start" onclick="changePassword()">Update password</button>
+          <p class="desc" style="margin:2px 0 0">Forgotten it? Sign out and use <strong>Forgot your password?</strong> on the sign-in screen.</p>
         </div>
-      </div>
+      </div>`}
 
       <div class="settings-card">
         <h3>Email Notifications</h3>
@@ -319,7 +325,7 @@ async function renderSettings() {
               <input class="form-input" id="new-user-email" type="email" placeholder="email@company.com" oninput="updateAuthProviderHint()">
             </div>
             <div class="form-field" style="flex:0 0 120px">
-              <input class="form-input" id="new-user-pass" type="password" placeholder="Password (ext. only)">
+              <input class="form-input" id="new-user-pass" type="password" placeholder="Password (ext. only, 8+)">
             </div>
             <div class="role-toggle" style="flex:none">
               <button class="active" id="new-user-member" onclick="setNewUserRole('member')">Member</button>
@@ -613,8 +619,8 @@ async function createUser() {
   const isInternal = email.endsWith('@victorygenomics.com');
   const authProvider = isInternal ? 'microsoft' : 'password';
   
-  if (authProvider === 'password' && (!pass || pass.length < 6)) {
-    errEl.textContent = 'Password must be at least 6 characters for external users';
+  if (authProvider === 'password' && (!pass || pass.length < 8)) {
+    errEl.textContent = 'Password must be at least 8 characters for external users';
     errEl.style.display = 'block';
     return;
   }
@@ -734,7 +740,7 @@ async function changePassword() {
   const errEl = document.getElementById('pw-error');
   errEl.style.display = 'none';
   if (!current || !newPw) { errEl.textContent = 'Please fill in all fields'; errEl.style.display = 'block'; return; }
-  if (newPw.length < 6) { errEl.textContent = 'Password must be at least 6 characters'; errEl.style.display = 'block'; return; }
+  if (newPw.length < 8) { errEl.textContent = 'Password must be at least 8 characters'; errEl.style.display = 'block'; return; }
   if (newPw !== confirm) { errEl.textContent = 'New passwords do not match'; errEl.style.display = 'block'; return; }
   try {
     await API.updatePassword({ current_password: current, new_password: newPw });
@@ -954,40 +960,161 @@ async function saveIntegrationSettings() {
 
 // ===== Edit a team member (role + CRM module access in one place) =====
 let _editUserRole = 'member';
+/** Editing a user is a page, not a popup — it now carries password controls too. */
 function openEditUser(userId) {
+  State.screen = 'settings-user';
+  State.editUserId = Number(userId);
+  updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+  closeMobileSidebar();
+}
+
+function closeEditUser() {
+  State.editUserId = null;
+  nav('settings');
+}
+
+async function renderEditUserPage(userId) {
+  userId = Number(userId);
+  if ((State.user?.role) !== 'admin') {
+    return `<div class="settings-page fade-in"><div class="settings-card"><h3>Admins only</h3>
+      <div class="desc">Only an administrator can edit other user accounts.</div>
+      <button class="btn-secondary" style="margin-top:12px" onclick="nav('settings')">Back to settings</button></div></div>`;
+  }
+  if (!State.teamData) {
+    try { State.teamData = await API.team(); } catch (e) { State.teamData = { members: [], invites: [] }; }
+  }
+  if (State.moduleAccess === undefined) {
+    try { State.moduleAccess = await API.moduleAccess(); } catch (e) { State.moduleAccess = null; }
+  }
   const member = (State.teamData?.members || []).find(m => m.id === userId);
-  if (!member) { toast('User not found', 'error'); return; }
+  if (!member) {
+    return `<div class="settings-page fade-in"><div class="settings-card"><h3>User not found</h3>
+      <div class="desc">That account is no longer in this workspace.</div>
+      <button class="btn-secondary" style="margin-top:12px" onclick="nav('settings')">Back to settings</button></div></div>`;
+  }
+
   _editUserRole = member.role === 'admin' ? 'admin' : 'member';
   const modInfo = State.moduleAccess || { modules: [], members: [] };
   const macc = (modInfo.members || []).find(m => m.id === userId);
   const isAdmin = member.role === 'admin';
-  const current = new Set(isAdmin ? (modInfo.modules || []).map(m => m.key) : (macc?.access || []));
   const isSelf = userId === (State.user?.id);
+  // External = signs in with a VGold password. Microsoft accounts authenticate
+  // against Microsoft, so there is no local password to change.
+  const isExternal = (member.auth_provider || 'password') !== 'microsoft';
+  const current = new Set(isAdmin ? (modInfo.modules || []).map(m => m.key) : (macc?.access || []));
   const modChips = (modInfo.modules || []).map(mod => `
     <label class="module-access-chip ${current.has(mod.key) ? 'checked' : ''}">
       <input type="checkbox" class="edit-user-module" value="${esc(mod.key)}" ${current.has(mod.key) ? 'checked' : ''} ${isAdmin ? 'disabled' : ''}
         onchange="this.closest('.module-access-chip').classList.toggle('checked', this.checked)"><span>${esc(mod.label)}</span>
     </label>`).join('') || '<div class="desc">No CRM modules are defined.</div>';
-  Modal.open({
-    title: 'Edit ' + member.name,
-    body: `<div class="crm-native">
-      <div class="form-field">
-        <label class="form-label">Role</label>
-        <div class="role-toggle">
-          <button type="button" class="${!isAdmin ? 'active' : ''}" id="edit-role-member" onclick="setEditUserRole('member')" ${isSelf ? 'disabled' : ''}>Member</button>
-          <button type="button" class="${isAdmin ? 'active' : ''}" id="edit-role-admin" onclick="setEditUserRole('admin')" ${isSelf ? 'disabled' : ''}>Admin</button>
+
+  const passwordCard = isExternal ? `
+    <div class="settings-card" id="settings-user-password">
+      <h3>Password</h3>
+      <div class="desc">${esc(member.name)} signs in with an email address and password. Set one directly, or email a link and let them choose their own.</div>
+
+      <div class="pw-admin-grid">
+        <div class="form-field">
+          <label class="form-label">New password</label>
+          <input class="form-input" type="password" id="admin-pw-new" placeholder="At least 8 characters" autocomplete="new-password">
         </div>
-        ${isSelf ? '<p style="font-size:12px;color:var(--muted);margin-top:6px">You cannot change your own role.</p>' : '<p style="font-size:12px;color:var(--muted);margin-top:6px">Admins automatically get every CRM module.</p>'}
+        <div class="form-field">
+          <label class="form-label">Confirm</label>
+          <input class="form-input" type="password" id="admin-pw-confirm" placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <button class="btn-primary" onclick="adminSetPassword(${userId})">Set password</button>
       </div>
-      <div class="form-field" style="margin-top:14px">
-        <label class="form-label">CRM module access</label>
-        <div id="edit-user-modules" style="display:flex;flex-wrap:wrap;gap:6px;${isAdmin ? 'opacity:.55;pointer-events:none' : ''}">${modChips}</div>
+      <p class="pw-admin-note">Setting a password here signs no one out, but it does invalidate any reset link already sent to them. Tell them the new password over a channel they already trust — this screen will not email it.</p>
+
+      <div class="pw-admin-divider"><span>or</span></div>
+
+      <button class="btn-secondary" onclick="adminSendReset(${userId})">Email a reset link to ${esc(member.email)}</button>
+      <p class="pw-admin-note">The link works once and expires in 60 minutes. Sending a new one cancels any earlier link.</p>
+
+      <div id="admin-pw-result" class="pw-admin-result" style="display:none"></div>
+      <div id="admin-pw-error" class="pw-error" style="display:none;margin-top:10px"></div>
+    </div>` : `
+    <div class="settings-card">
+      <h3>Password</h3>
+      <div class="desc">${esc(member.name)} signs in with Microsoft, so there is no VGold password to change. Password resets are handled in Microsoft 365.</div>
+    </div>`;
+
+  return `<div class="settings-page fade-in">
+    <div class="settings-head">
+      <button class="btn-secondary" onclick="closeEditUser()">← Back to settings</button>
+    </div>
+    <div class="settings-card">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div class="avatar" style="width:42px;height:42px;font-size:14px;background:${esc(member.avatar_color || '#9A8A78')}">${esc(member.initials || '?')}</div>
+        <div style="flex:1;min-width:0">
+          <h3 style="margin:0">${esc(member.name)}</h3>
+          <div class="desc" style="margin:2px 0 0">${esc(member.email)} · signs in with ${isExternal ? 'a VGold password (external)' : 'Microsoft (internal)'}</div>
+        </div>
       </div>
+    </div>
+
+    <div class="settings-card">
+      <h3>Role</h3>
+      <div class="role-toggle" style="margin-top:8px">
+        <button type="button" class="${!isAdmin ? 'active' : ''}" id="edit-role-member" onclick="setEditUserRole('member')" ${isSelf ? 'disabled' : ''}>Member</button>
+        <button type="button" class="${isAdmin ? 'active' : ''}" id="edit-role-admin" onclick="setEditUserRole('admin')" ${isSelf ? 'disabled' : ''}>Admin</button>
+      </div>
+      <p class="desc" style="margin-top:8px">${isSelf ? 'You cannot change your own role.' : 'Admins automatically get every CRM module.'}</p>
+    </div>
+
+    <div class="settings-card">
+      <h3>CRM module access</h3>
+      <div id="edit-user-modules" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;${isAdmin ? 'opacity:.55;pointer-events:none' : ''}">${modChips}</div>
       <div id="edit-user-error" class="pw-error" style="display:none;margin-top:10px"></div>
-    </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-      <button class="btn-primary" onclick="saveEditUser(${userId})">Save changes</button>`,
-  });
+      <div style="display:flex;gap:10px;margin-top:16px">
+        <button class="btn-primary" onclick="saveEditUser(${userId})">Save changes</button>
+        <button class="btn-secondary" onclick="closeEditUser()">Cancel</button>
+      </div>
+    </div>
+
+    ${passwordCard}
+  </div>`;
+}
+
+function adminPwFeedback(message, isError) {
+  const err = document.getElementById('admin-pw-error');
+  const ok = document.getElementById('admin-pw-result');
+  if (err) { err.textContent = isError ? message : ''; err.style.display = isError ? 'block' : 'none'; }
+  if (ok) { ok.innerHTML = isError ? '' : message; ok.style.display = isError ? 'none' : 'block'; }
+}
+
+async function adminSetPassword(userId) {
+  const pw = document.getElementById('admin-pw-new')?.value || '';
+  const pw2 = document.getElementById('admin-pw-confirm')?.value || '';
+  if (pw.length < 8) { adminPwFeedback('Password must be at least 8 characters.', true); return; }
+  if (pw !== pw2) { adminPwFeedback('Those passwords do not match.', true); return; }
+  try {
+    const res = await API.setUserPassword(userId, pw);
+    document.getElementById('admin-pw-new').value = '';
+    document.getElementById('admin-pw-confirm').value = '';
+    adminPwFeedback(esc(res.message || 'Password updated.'), false);
+    toast('Password updated', 'success');
+  } catch (e) { adminPwFeedback(e.message, true); }
+}
+
+async function adminSendReset(userId) {
+  try {
+    const res = await API.sendUserPasswordReset(userId);
+    if (res.ok === false && res.link) {
+      // The token is valid even though SMTP failed — hand the link over rather
+      // than leaving the admin with nothing but an error.
+      adminPwFeedback(esc(res.message || 'The email could not be sent.')
+        + '<code class="pw-admin-link">' + esc(res.link) + '</code>', false);
+      toast('Email failed — copy the link instead', 'error');
+      return;
+    }
+    adminPwFeedback(esc(res.message || 'Reset link sent.'), false);
+    toast('Reset link sent', 'success');
+  } catch (e) {
+    adminPwFeedback(e.message, true);
+  }
 }
 function setEditUserRole(r) {
   _editUserRole = r;
@@ -1019,8 +1146,8 @@ async function saveEditUser(userId) {
     }
     State.teamData = null;
     State.moduleAccess = undefined;
-    Modal.close();
     toast('User updated', 'success');
+    // Stay on the page — the admin may still want the password controls below.
     render();
   } catch(e) { if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; } else toast(e.message, 'error'); }
 }

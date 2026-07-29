@@ -29,6 +29,7 @@ const State = {
   msgUnreadTotal: 0,
   moduleCounts: {},
   recordCounts: {},
+  editUserId: null,
   mentions: null,
   commentsFeed: null,
   commentsUnread: 0,
@@ -210,6 +211,7 @@ async function render() {
       case 'messages': mainContent = await renderMessages(); break;
       case 'task': mainContent = await renderTaskPage(State.activeTaskId); break;
       case 'settings': mainContent = await renderSettings(); break;
+      case 'settings-user': mainContent = await renderEditUserPage(State.editUserId); break;
       case 'crm-dashboard': mainContent = await renderCrmDashboard(); break;
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
       case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
@@ -405,6 +407,11 @@ function routeFromHash() {
   else if (hash === 'priorities' || hash === 'agenda') { State.screen = 'priorities'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
+  else if (parts[0] === 'settings' && parts[1] === 'user' && parts[2]) {
+    State.screen = 'settings-user';
+    State.editUserId = parseInt(parts[2]) || null;
+    State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
+  }
   else if (hash === 'settings' || hash.startsWith('settings-')) { State.screen = 'settings'; State.activeProjectId = null; State.activeProject = null; }
   else if (parts[0] === 'acc' && parts[1]) {
     // #acc/<screen> and #acc/<detail>/<id>
@@ -485,6 +492,8 @@ function updateHash() {
     hash = 'crm/email-builder' + (State.emailCampaignId ? '/' + State.emailCampaignId : '');
   } else if (State.screen === 'crm-lead-new') {
     hash = 'crm/lead/new';
+  } else if (State.screen === 'settings-user' && State.editUserId) {
+    hash = 'settings/user/' + State.editUserId;
   } else if (State.screen === 'crm-lead-email' && State.activeCrmLeadId) {
     hash = 'crm/lead/' + State.activeCrmLeadId + '/email';
   } else if (State.screen === 'crm-lead' && State.activeCrmLeadId) {

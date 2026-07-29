@@ -165,6 +165,12 @@ const API = {
   moduleCounts: () => API.req('/notifications/module-counts'),
   readModuleNotifs: (module) => API.req('/notifications/read-module', { method: 'POST', body: JSON.stringify({ module }) }),
   readRecordNotifs: (link_type, link_id) => API.req('/notifications/read-record', { method: 'POST', body: JSON.stringify({ link_type, link_id }) }),
+  // Passwords
+  forgotPassword: (email) => API.req('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetCheck: (token) => API.req('/auth/reset-check?token=' + encodeURIComponent(token)),
+  resetPassword: (token, password) => API.req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
+  setUserPassword: (id, password) => API.req('/settings/users/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) }),
+  sendUserPasswordReset: (id) => API.req('/settings/users/' + id + '/send-reset', { method: 'POST' }),
   markRead: (id) => API.req('/notifications/' + id + '/read', { method: 'POST' }),
   markAllRead: () => API.req('/notifications/read-all', { method: 'POST' }),
   subscribePush: (data) => API.req('/notifications/subscribe', { method: 'POST', body: JSON.stringify(data) }),

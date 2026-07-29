@@ -115,6 +115,35 @@ class Schema {
         }
     }
 
+    /**
+     * Password-reset tokens.
+     *
+     * Only the SHA-256 of a token is stored, so a leaked database still does not
+     * hand anyone a working reset link. Rows are kept after use — they are the
+     * audit trail for who reset what, and the rate limiter counts them.
+     */
+    public static function ensurePasswordResets() {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        try {
+            DB::query("CREATE TABLE IF NOT EXISTS `password_resets` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `token_hash` CHAR(64) NOT NULL,
+                `expires_at` DATETIME NOT NULL,
+                `used_at` DATETIME NULL,
+                `requested_by` INT NULL,
+                `requested_ip` VARCHAR(45) NULL,
+                `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE KEY `token_hash_unq` (`token_hash`),
+                KEY `user_created_idx` (`user_id`, `created_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        } catch (\Throwable $e) {
+            error_log('Schema::ensurePasswordResets: ' . $e->getMessage());
+        }
+    }
+
     // CRM integration guard — idempotently ensures the users-table linkage
     // columns and the configurable role map exist. The bulk crm_* tables are
     // created by migration 011 at deploy time; this only guards the light,

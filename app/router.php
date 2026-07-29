@@ -6,6 +6,8 @@ require_once __DIR__ . '/lib/Auth.php';
 require_once __DIR__ . '/lib/Authz.php';
 require_once __DIR__ . '/lib/Csrf.php';
 require_once __DIR__ . '/lib/Schema.php';
+require_once __DIR__ . '/lib/Mail.php';
+require_once __DIR__ . '/lib/PasswordReset.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/ProjectController.php';
@@ -46,6 +48,9 @@ $routes = [
     // Auth
     'POST auth/register' => ['AuthController::registerDisabled', false],
     'POST auth/login' => ['AuthController::login', false],
+    'POST auth/forgot-password' => ['AuthController::forgotPassword', false],
+    'GET auth/reset-check' => ['AuthController::resetCheck', false],
+    'POST auth/reset-password' => ['AuthController::resetPassword', false],
     'POST auth/logout' => ['AuthController::logout', true],
     'GET auth/microsoft' => ['AuthController::microsoftLogin', false],
     'GET auth/microsoft/callback' => ['AuthController::microsoftCallback', false],
@@ -139,6 +144,8 @@ $routes = [
     'POST settings/users' => ['SettingsController::createUser', true],
     'PATCH settings/users/{id}/role' => ['SettingsController::changeRole', true],
     'POST settings/users/{id}/toggle-active' => ['SettingsController::toggleUserActive', true],
+    'POST settings/users/{id}/password' => ['SettingsController::setUserPassword', true],
+    'POST settings/users/{id}/send-reset' => ['SettingsController::sendUserPasswordReset', true],
     'DELETE settings/users' => ['SettingsController::deleteUser', true],
     'GET settings/module-access' => ['SettingsController::moduleAccess', true],
     'PUT settings/module-access' => ['SettingsController::updateModuleAccess', true],

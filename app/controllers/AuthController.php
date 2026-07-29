@@ -59,6 +59,64 @@ class AuthController {
         }
     }
     
+    /**
+     * Start a reset from the login screen.
+     *
+     * Answers identically whether or not the address exists — this endpoint is
+     * public, so a distinguishable response would turn it into a tool for
+     * discovering who has an account.
+     */
+    public static function forgotPassword() {
+        $data  = input();
+        $email = strtolower(trim($data['email'] ?? ''));
+        $generic = ['ok' => true, 'message' => 'If that address belongs to an account that signs in with a password, a reset link is on its way.'];
+
+        // Per-IP ceiling, independent of which address is being probed.
+        $ipKey = 'pwreset_' . md5($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+        $win   = $_SESSION[$ipKey . '_time'] ?? 0;
+        if ($win && (time() - $win) > 3600) { unset($_SESSION[$ipKey], $_SESSION[$ipKey . '_time']); }
+        if ((int)($_SESSION[$ipKey] ?? 0) >= 10) jsonResponse($generic);
+        $_SESSION[$ipKey] = (int)($_SESSION[$ipKey] ?? 0) + 1;
+        if (!isset($_SESSION[$ipKey . '_time'])) $_SESSION[$ipKey . '_time'] = time();
+
+        if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) jsonResponse($generic);
+
+        $user = DB::fetch("SELECT id, name, email, auth_provider FROM users WHERE LOWER(email) = ? AND is_active = 1", [$email]);
+        // Microsoft accounts have no local password, so there is nothing to reset.
+        if ($user && PasswordReset::isPasswordAccount($user) && !PasswordReset::isThrottled($user['id'])) {
+            $token = PasswordReset::issue($user['id']);
+            PasswordReset::sendEmail($user, $token);
+        }
+        jsonResponse($generic);
+    }
+
+    /** Is this reset link still good? Lets the UI say so before asking for a password. */
+    public static function resetCheck() {
+        $row = PasswordReset::resolve($_GET['token'] ?? '');
+        if (!$row) jsonResponse(['valid' => false]);
+        jsonResponse(['valid' => true, 'name' => $row['name'], 'email' => $row['email']]);
+    }
+
+    /** Finish a reset: spend the token, set the password, sign the person in. */
+    public static function resetPassword() {
+        $data     = input();
+        $token    = (string)($data['token'] ?? '');
+        $password = (string)($data['password'] ?? '');
+
+        $err = PasswordReset::validate($password);
+        if ($err) jsonError($err);
+
+        $row = PasswordReset::consume($token, $password);
+        if (!$row) jsonError('This reset link has expired or has already been used. Request a new one.', 400);
+
+        $wm = DB::fetch("SELECT workspace_id FROM workspace_members WHERE user_id = ? ORDER BY joined_at ASC LIMIT 1", [$row['user_id']]);
+        if (!$wm) jsonResponse(['ok' => true, 'signed_in' => false]);
+
+        $_SESSION['auth_provider'] = 'password';
+        Auth::login((int)$row['user_id'], (int)$wm['workspace_id']);
+        jsonResponse(['ok' => true, 'signed_in' => true, 'csrf_token' => Csrf::token()]);
+    }
+
     public static function login() {
         $data = input();
         requireFields(['email', 'password'], $data);

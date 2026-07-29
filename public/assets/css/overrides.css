@@ -466,3 +466,49 @@
 }
 .crm-native .crm-notif-bar .crm-notif-pill { margin-left: 0; }
 .crm-native .crm-notif-bar > span:nth-child(2) { flex: 1 1 auto; }
+
+/* ============================================================
+   16) Password screens — forgot / reset on the signed-out shell, and the
+       admin password controls on the user page.
+   ------------------------------------------------------------ */
+.login-alt-actions { margin-top: 16px; text-align: center; }
+.login-link {
+  font-size: 13.5px; font-weight: 600; color: var(--gold-dark, #8E6B3A);
+  text-decoration: none; border-bottom: 1px solid transparent;
+}
+.login-link:hover { border-bottom-color: currentColor; }
+.login-note {
+  background: #F3F7F1; border: 1px solid #CFE0C7; color: #35563A;
+  border-radius: 10px; padding: 12px 14px; font-size: 13.5px; line-height: 1.5;
+}
+.login-fineprint {
+  margin-top: 18px; font-size: 12px; line-height: 1.5;
+  color: var(--muted); text-align: center;
+}
+
+.pw-admin-grid {
+  display: grid; grid-template-columns: 1fr 1fr auto; gap: 10px; align-items: end;
+  margin-top: 14px;
+}
+@media (max-width: 640px) { .pw-admin-grid { grid-template-columns: 1fr; } }
+.pw-admin-note { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.pw-admin-divider {
+  display: flex; align-items: center; gap: 12px;
+  margin: 20px 0 16px; font-size: 11px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+}
+.pw-admin-divider::before, .pw-admin-divider::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+.pw-admin-result {
+  margin-top: 12px; padding: 11px 14px; border-radius: 10px;
+  background: #F3F7F1; border: 1px solid #CFE0C7; color: #35563A;
+  font-size: 13.5px; line-height: 1.5;
+}
+.pw-admin-link {
+  display: block; margin-top: 8px; padding: 8px 10px;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px;
+  font-family: ui-monospace, monospace; font-size: 11.5px;
+  word-break: break-all; user-select: all;
+}
+.settings-head { margin-bottom: 16px; }

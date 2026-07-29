@@ -42,16 +42,94 @@ class SettingsController {
         $data = input();
         $current = $data['current_password'] ?? '';
         $new = $data['new_password'] ?? '';
-        if (strlen($new) < 8) jsonError('Password must be at least 8 characters');
-        
-        $user = DB::fetch("SELECT password FROM users WHERE id = ?", [Auth::userId()]);
-        if (!password_verify($current, $user['password'])) {
+
+        $err = PasswordReset::validate($new);
+        if ($err) jsonError($err);
+
+        $user = DB::fetch("SELECT password, auth_provider FROM users WHERE id = ?", [Auth::userId()]);
+        if (!$user) jsonError('Account not found', 404);
+        if (!PasswordReset::isPasswordAccount($user)) {
+            jsonError('Your account signs in with Microsoft, so it has no VGold password to change.', 400);
+        }
+        if (empty($user['password']) || !password_verify($current, $user['password'])) {
             jsonError('Current password is incorrect');
         }
-        
-        $hash = password_hash($new, PASSWORD_DEFAULT);
-        DB::update('users', ['password' => $hash], 'id = ?', [Auth::userId()]);
+
+        DB::update('users', ['password' => PasswordReset::hash($new)], 'id = ?', [Auth::userId()]);
         jsonResponse(['ok' => true]);
+    }
+
+    /**
+     * Admin sets a password on someone else's account.
+     *
+     * Only meaningful for accounts that sign in with a password — a Microsoft
+     * account authenticates against Microsoft, so a local password would sit
+     * there unused and misleading.
+     */
+    public static function setUserPassword($id) {
+        Auth::requireAdmin();
+        $id   = (int)$id;
+        $data = input();
+        $new  = (string)($data['password'] ?? '');
+
+        $target = self::passwordTargetOrFail($id);
+        $err = PasswordReset::validate($new);
+        if ($err) jsonError($err);
+
+        DB::update('users', ['password' => PasswordReset::hash($new)], 'id = ?', [$id]);
+        // Any outstanding reset link is now stale.
+        Schema::ensurePasswordResets();
+        DB::query("UPDATE password_resets SET used_at = NOW() WHERE user_id = ? AND used_at IS NULL", [$id]);
+
+        self::logPasswordAction($id, 'set the password for');
+        jsonResponse(['ok' => true, 'message' => 'Password updated for ' . $target['name'] . '.']);
+    }
+
+    /** Admin emails a reset link instead of choosing the password themselves. */
+    public static function sendUserPasswordReset($id) {
+        Auth::requireAdmin();
+        $id = (int)$id;
+        $target = self::passwordTargetOrFail($id);
+
+        $actor = Auth::user();
+        $token = PasswordReset::issue($id, Auth::userId());
+        $sent  = PasswordReset::sendEmail($target, $token, $actor['name'] ?? null);
+
+        self::logPasswordAction($id, 'sent a password reset link to');
+        if (!$sent) {
+            // The link is valid either way — hand it back so the admin can pass
+            // it on out of band rather than being stuck behind broken SMTP.
+            jsonResponse([
+                'ok' => false,
+                'link' => PasswordReset::link($token),
+                'message' => 'The email could not be sent (check SMTP settings). Copy this one-time link to ' . $target['name'] . ' instead — it expires in ' . PasswordReset::TTL_MINUTES . ' minutes.',
+            ]);
+        }
+        jsonResponse(['ok' => true, 'message' => 'Reset link sent to ' . $target['email'] . '. It expires in ' . PasswordReset::TTL_MINUTES . ' minutes.']);
+    }
+
+    /** Shared guard: the target must exist, share this workspace, and use a password. */
+    private static function passwordTargetOrFail($id) {
+        $user = DB::fetch(
+            "SELECT u.id, u.name, u.email, u.auth_provider, u.is_active
+               FROM users u JOIN workspace_members wm ON wm.user_id = u.id
+              WHERE u.id = ? AND wm.workspace_id = ? LIMIT 1",
+            [$id, Auth::workspaceId()]
+        );
+        if (!$user) jsonError('User not found in this workspace', 404);
+        if (!PasswordReset::isPasswordAccount($user)) {
+            jsonError($user['name'] . ' signs in with Microsoft, so there is no VGold password to change. Passwords apply to external users only.', 400);
+        }
+        return $user;
+    }
+
+    private static function logPasswordAction($targetId, $verb) {
+        try {
+            $actor  = Auth::user();
+            $target = DB::fetch("SELECT name, email FROM users WHERE id = ?", [$targetId]);
+            error_log(sprintf('VGold audit: %s (#%d) %s %s (#%d)',
+                $actor['name'] ?? 'unknown', Auth::userId(), $verb, $target['email'] ?? '?', $targetId));
+        } catch (\Throwable $e) { /* auditing must never block the action */ }
     }
     
     public static function notifications() {
@@ -285,9 +363,9 @@ class SettingsController {
         
         // Password: required for password users, empty for microsoft users
         if ($provider === 'password') {
-            if (empty($data['password']) || strlen($data['password']) < 6)
-                jsonError('Password must be at least 6 characters');
-            $hash = password_hash($data['password'], PASSWORD_DEFAULT);
+            $err = PasswordReset::validate($data['password'] ?? '');
+            if ($err) jsonError($err);
+            $hash = PasswordReset::hash($data['password']);
         } else {
             $hash = ''; // MS users don't need a local password
         }
