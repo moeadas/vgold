@@ -27,6 +27,8 @@ const ACC_NAV_ICONS = {
 /* ===================== State ===================== */
 
 const AccState = {
+  form: null,            // the form currently rendered as a page (see accOpenForm)
+  billScan: null,        // draft read off an uploaded bill, awaiting review
   boot: null,            // /acc/bootstrap payload (modules, options, settings)
   dashboard: null,
   docs: { invoice: null, bill: null },
@@ -66,6 +68,7 @@ Object.assign(API, {
   accDocuments: (p = {}) => API.req('/acc/documents?' + new URLSearchParams(p).toString()),
   accDocument: (id) => API.req('/acc/documents/' + id),
   accCreateDocument: (d) => API.req('/acc/documents', { method: 'POST', body: JSON.stringify(d) }),
+  accCreateVendorFromDraft: (d) => API.req('/acc/vendors/from-draft', { method: 'POST', body: JSON.stringify(d) }),
   accUpdateDocument: (id, d) => API.req('/acc/documents/' + id, { method: 'PUT', body: JSON.stringify(d) }),
   accDeleteDocument: (id) => API.req('/acc/documents/' + id, { method: 'DELETE' }),
   accDocumentStatus: (id, action) => API.req('/acc/documents/' + id + '/status', { method: 'POST', body: JSON.stringify({ action }) }),
@@ -223,6 +226,66 @@ function accHeader(title, desc, actions) {
       </div>
       ${actions ? `<div class="acc-head-actions">${actions}</div>` : ''}
     </div>`;
+}
+
+/* ===================== Forms as pages, not popups =====================
+ *
+ * Every accounting form used to be a Modal. They are now pages, but rather than
+ * fifteen bespoke screens each form keeps its existing body/footer markup and
+ * renders into this one host — same fields, same handlers, no overlay.
+ *
+ * accOpenForm() takes exactly the shape Modal.open() did, so a call site only
+ * changes its function name.
+ */
+function accOpenForm(spec) {
+  AccState.form = {
+    key: spec.key || 'form',
+    title: spec.title || '',
+    desc: spec.desc || '',
+    body: spec.body || '',
+    footer: spec.footer || '',
+    onMount: spec.onMount || null,
+    // Where Cancel goes back to — wherever the form was opened from.
+    back: { screen: State.screen, docId: State.accDocId, contactId: State.accContactId,
+            accountId: State.accAccountId, reconciliationId: State.accReconciliationId },
+  };
+  State.screen = 'acc-form';
+  updateHash();
+  render();
+  document.querySelector('.main')?.scrollTo(0, 0);
+  closeMobileSidebar();
+}
+
+/** Leave a form page and go back where it was opened from. */
+function accCloseForm() {
+  const back = AccState.form?.back;
+  AccState.form = null;
+  // Some delete handlers call this from a list row, where no form was ever
+  // opened. Closing nothing must not navigate anywhere.
+  if (State.screen !== 'acc-form') return;
+  if (!back || !back.screen || back.screen === 'acc-form') { accNav('acc-dashboard'); return; }
+  accNav(back.screen, {
+    accDocId: back.docId, accContactId: back.contactId,
+    accAccountId: back.accountId, accReconciliationId: back.reconciliationId,
+  });
+}
+
+function renderAccForm() {
+  const f = AccState.form;
+  // A refresh or a shared link has no form in memory — nothing to restore.
+  if (!f) {
+    return `<div class="fade-in acc-page">${accHeader('Accounting & Finance', '')}
+      <div class="acc-card"><div class="acc-empty">That form is no longer open.
+      <div style="margin-top:14px"><button class="btn-primary" onclick="accNav('acc-dashboard')">Go to Accounting</button></div></div></div></div>`;
+  }
+  if (f.onMount) setTimeout(f.onMount, 0);
+  return `<div class="fade-in acc-page acc-form-page">
+    ${accHeader(f.title, f.desc, `<button class="btn-secondary" onclick="accCloseForm()">← Back</button>`)}
+    <div class="acc-card acc-form-card">
+      <div class="acc-form-body">${f.body}</div>
+      ${f.footer ? `<div class="acc-form-actions">${f.footer}</div>` : ''}
+    </div>
+  </div>`;
 }
 
 function accBackLink(label, onclick) {
@@ -512,7 +575,10 @@ async function renderAccDocuments(type) {
     <div class="fade-in acc-page">
       ${accHeader(isInvoice ? 'Invoices' : 'Bills & expenses',
         isInvoice ? 'Money owed to Victory Genomics.' : 'Money Victory Genomics owes.',
-        `<button class="btn-primary" onclick="accDocEditor('${type}')">${I.plus} New ${isInvoice ? 'invoice' : 'bill'}</button>`)}
+        (isInvoice
+          ? `<button class="btn-primary" onclick="accDocEditor('${type}')">${I.plus} New invoice</button>`
+          : `<button class="btn-secondary" onclick="accGoBillScan()">${I.file || ''} Upload a bill</button>
+             <button class="btn-primary" onclick="accDocEditor('${type}')">${I.plus} New bill</button>`))}
 
       <div class="acc-toolbar">
         <div class="acc-tabs" style="margin:0">
@@ -736,7 +802,7 @@ async function accDocEditor(type, id) {
       : [{ name: '', quantity: 1, price: 0, tax_ids: [] }],
   };
 
-  Modal.open({
+  accOpenForm({
     title: (id ? 'Edit ' : 'New ') + (isInvoice ? 'invoice' : 'bill'),
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -782,7 +848,7 @@ async function accDocEditor(type, id) {
         <div class="acc-kv"><span class="acc-kv-label">Tax</span><span class="acc-kv-value" id="acc-ed-taxamt">${accMoney(0)}</span></div>
         <div class="acc-kv acc-kv-grand"><span>Total</span><span class="acc-kv-value" id="acc-ed-total">${accMoney(0)}</span></div>
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-primary" onclick="accEditorSave()">${id ? 'Save changes' : 'Create ' + (isInvoice ? 'invoice' : 'bill')}</button>`,
     onMount: () => { accEditorRenderLines(); },
   });
@@ -887,7 +953,7 @@ async function accEditorSave() {
       const res = await API.accCreateDocument(payload);
       newId = res.id;
     }
-    Modal.close();
+    accCloseForm();
     AccState.editor = null;
     AccState.doc = null;
     AccState.docs = { invoice: null, bill: null };
@@ -1097,7 +1163,7 @@ function accPaymentModal(docId) {
   const balance = Number(d.amount) - Number(d.paid_amount);
   const accounts = accOpts().accounts || [];
 
-  Modal.open({
+  accOpenForm({
     title: d.type === 'invoice' ? 'Record payment received' : 'Record payment made',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -1117,7 +1183,7 @@ function accPaymentModal(docId) {
       </div>
       ${accAdjBlock(d.type, balance, 'acc-pay-amount')}
       <p class="acc-sub" style="margin-top:12px">Outstanding balance: <b>${accMoney(balance)}</b></p>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-primary" onclick="accSavePayment(${docId})">Record payment</button>`,
   });
   accAdjRecalc();
@@ -1136,7 +1202,7 @@ async function accSavePayment(docId) {
       reference: accVal('acc-pay-ref'),
       adjustments: accAdjCollect(),
     });
-    Modal.close();
+    accCloseForm();
     AccState.doc = null;
     AccState.docs = { invoice: null, bill: null };
     AccState.dashboard = null;
@@ -1193,10 +1259,10 @@ async function accPrintInvoice(id) {
       ${company.invoice_footer ? `<p class="acc-sub" style="margin-top:22px">${esc(company.invoice_footer)}</p>` : ''}
     </div>`;
 
-  Modal.open({
+  accOpenForm({
     title: 'Invoice ' + d.number,
     body: html,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Close</button>
              <button class="btn-primary" onclick="accDoPrint()">Print / Save PDF</button>`,
   });
 }
@@ -1344,7 +1410,7 @@ async function renderAccContact(id) {
 function accContactModal(type, id) {
   const c = (id && AccState.contact && Number(AccState.contact.contact.id) === Number(id)) ? AccState.contact.contact : null;
   const isCustomer = type === 'customer';
-  Modal.open({
+  accOpenForm({
     title: (id ? 'Edit ' : 'New ') + (isCustomer ? 'customer' : 'vendor'),
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -1370,7 +1436,7 @@ function accContactModal(type, id) {
         ${accField('Website', `<input class="form-input" id="acc-c-website" value="${esc(c ? (c.website || '') : '')}">`)}
         ${accField('Tax number', `<input class="form-input" id="acc-c-tax" value="${esc(c ? (c.tax_number || '') : '')}">`)}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-primary" onclick="accSaveContact('${type}',${id || 'null'})">${id ? 'Save changes' : 'Create'}</button>`,
   });
 }
@@ -1388,7 +1454,7 @@ async function accSaveContact(type, id) {
   try {
     if (id) await API.accUpdateContact(id, payload);
     else await API.accCreateContact(payload);
-    Modal.close();
+    accCloseForm();
     AccState.contacts = null;
     AccState.contact = null;
     await accRefreshOptions();
@@ -1413,13 +1479,13 @@ async function accDeleteContact(id) {
 /* ===================== CRM → Accounting import ===================== */
 
 function accCrmImportModal() {
-  Modal.open({
+  accOpenForm({
     title: 'Import a customer from the CRM',
     body: `
       <p class="acc-sub" style="margin-bottom:12px">Search your CRM leads and turn one into an accounting customer. The link is kept, so the lead and the customer stay connected.</p>
       <input class="form-input" id="acc-crm-q" placeholder="Search company, contact or email…" oninput="accCrmSearchDebounced()">
       <div id="acc-crm-results" style="margin-top:12px"></div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button>`,
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Close</button>`,
   });
 }
 
@@ -1454,7 +1520,7 @@ async function accCrmSearch() {
 async function accImportLead(leadId) {
   try {
     const res = await API.accImportCrmLead(leadId);
-    Modal.close();
+    accCloseForm();
     AccState.contacts = null;
     await accRefreshOptions();
     toast(res.existing ? 'That lead is already an accounting customer' : 'Customer imported from CRM', 'success');

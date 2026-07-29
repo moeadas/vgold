@@ -529,3 +529,9 @@
 .mail-status-ok   { border-left-color: #6B8E5A; background: #F3F7F1; color: #35563A; }
 .mail-status-warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
 .mail-status-bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
+
+/* SMTP test row — sits under the save button in Settings. */
+.smtp-test-row {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
+}

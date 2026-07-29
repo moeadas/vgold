@@ -296,3 +296,63 @@
   .acc-print-doc { border: 0; padding: 0; }
   .main, .content { padding: 0 !important; }
 }
+
+/* ============================================================
+   Forms as pages (accOpenForm) — the accounting app no longer uses
+   modal overlays for data entry.
+   ------------------------------------------------------------ */
+.acc-form-page .acc-form-card { max-width: 860px; }
+.acc-form-body { display: block; }
+.acc-form-actions {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);
+}
+
+/* ============================================================
+   Bill scan — upload a supplier document and review what was read.
+   ------------------------------------------------------------ */
+.billscan-drop {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 44px 20px; text-align: center; cursor: pointer;
+  border: 2px dashed var(--border); border-radius: 14px;
+  background: var(--sand-light, #faf8f4);
+  transition: border-color .15s, background .15s;
+}
+.billscan-drop:hover, .billscan-drop.over { border-color: var(--gold, #C99520); background: var(--gold-bg, #fdf8ec); }
+.billscan-drop-icon { font-size: 26px; opacity: .55; }
+.billscan-picked { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; justify-content: center; }
+
+.billscan-status {
+  display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+  padding: 10px 14px; border-radius: 10px;
+  border: 1px solid var(--border); border-left-width: 3px;
+  font-size: 13px; font-weight: 600;
+}
+.billscan-ok   { border-left-color: #6B8E5A; background: #F3F7F1; color: #35563A; }
+.billscan-warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
+.billscan-bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
+
+.billscan-lines input.form-input { padding: 7px 9px; font-size: 13px; }
+.billscan-totals {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-end;
+  margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 13.5px;
+}
+.billscan-totals > div { display: flex; gap: 18px; min-width: 300px; justify-content: space-between; }
+.billscan-total-stated { font-size: 15px; padding-top: 6px; border-top: 1px solid var(--border); }
+
+.acc-alert {
+  padding: 12px 14px; margin-bottom: 16px; border-radius: 10px;
+  border: 1px solid var(--border); border-left-width: 3px; font-size: 13.5px; line-height: 1.55;
+}
+.acc-alert-warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
+.acc-alert-bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
+
+/* Small shared bits the bill-scan page relies on. */
+.acc-muted { color: var(--muted); font-size: 12.5px; }
+.acc-subhead { font-size: 14px; font-weight: 700; margin: 0 0 8px; }
+.acc-icon-btn {
+  border: 0; background: transparent; cursor: pointer;
+  width: 26px; height: 26px; border-radius: 6px; line-height: 1;
+  color: var(--muted); font-size: 18px;
+}
+.acc-icon-btn:hover { background: #FDE8E8; color: #B0432B; }

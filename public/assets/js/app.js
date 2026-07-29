@@ -229,6 +229,8 @@ async function render() {
       case 'crm-knowledge': mainContent = await renderCrmModule(State.screen.replace('-', '.')); break;
       // ===== Accounting & Finance (native, explicit-grant access) =====
       case 'acc-dashboard': mainContent = await renderAccDashboard(); break;
+      case 'acc-form': mainContent = renderAccForm(); break;
+      case 'acc-bill-scan': mainContent = await renderAccBillScan(); break;
       case 'acc-invoices': mainContent = await renderAccDocuments('invoice'); break;
       case 'acc-bills': mainContent = await renderAccDocuments('bill'); break;
       case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;
@@ -422,7 +424,7 @@ function routeFromHash() {
       State.screen = 'acc-' + parts[1];
       State[detail[parts[1]]] = parseInt(parts[2]) || null;
     } else {
-      const knownAcc = ['dashboard','invoices','bills','customers','vendors','contacts','banking','ledger','catalog','recurring','reports','settings'];
+      const knownAcc = ['dashboard','invoices','bills','customers','vendors','contacts','banking','ledger','catalog','recurring','reports','settings','form','bill-scan'];
       let accScreen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
       if (accScreen === 'acc-contacts') accScreen = 'acc-customers'; // split into two screens
       State.screen = accScreen;

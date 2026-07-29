@@ -8,6 +8,8 @@ require_once __DIR__ . '/lib/Csrf.php';
 require_once __DIR__ . '/lib/Schema.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
+require_once __DIR__ . '/lib/AiClient.php';
+require_once __DIR__ . '/lib/BillExtractor.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/ProjectController.php';
@@ -221,6 +223,8 @@ $routes = [
     'POST acc/reconciliations/{id}/close' => ['AccountingController::reconciliationClose', true],
 
     // Attachments — bank statements, supplier PDFs, remittance advice.
+    'POST acc/bills/extract' => ['AccountingController::extractBill', true],
+    'POST acc/vendors/from-draft' => ['AccountingController::createVendorFromDraft', true],
     'POST acc/attachments' => ['AccountingController::uploadAttachment', true],
     'GET acc/attachments/{id}/download' => ['AccountingController::downloadAttachment', true],
     'DELETE acc/attachments/{id}' => ['AccountingController::deleteAttachment', true],

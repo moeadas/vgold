@@ -224,7 +224,18 @@ class SettingsController {
             if (!isset($update['password'])) $update['password'] = '';
             DB::insert('smtp_settings', $update);
         }
-        jsonResponse(['ok' => true]);
+
+        // The live config was port 587 with implicit SSL, which cannot connect at
+        // all. Say so on save rather than letting it fail silently later.
+        $warning = null;
+        if ($update['port'] === 587 && $update['encryption'] === 'ssl') {
+            $warning = 'Port 587 almost always expects STARTTLS. If the test fails, set Encryption to TLS.';
+        } elseif ($update['port'] === 465 && $update['encryption'] === 'tls') {
+            $warning = 'Port 465 almost always expects implicit SSL. If the test fails, set Encryption to SSL.';
+        } elseif ($update['encryption'] === 'none') {
+            $warning = 'Unencrypted SMTP sends the password in the clear. Use SSL (465) or TLS (587) if the server supports it.';
+        }
+        jsonResponse(['ok' => true, 'warning' => $warning]);
     }
     
     public static function testSmtp() {
@@ -236,14 +247,21 @@ class SettingsController {
             jsonError('SMTP is not configured yet');
         }
         
-        $html = '<h2>VGold SMTP Test</h2><p>This is a test email from VGold. If you received this, your SMTP settings are working correctly.</p><p>Sent: ' . date('Y-m-d H:i:s') . '</p>';
-        
-        $sent = Mail::send($user['email'], $user['name'], 'VGold SMTP Test', $html);
-        if ($sent) {
-            jsonResponse(['ok' => true, 'message' => 'Test email sent to ' . $user['email']]);
-        } else {
-            jsonError('Failed to send test email. Check your SMTP settings.');
+        $data = input();
+        $to = trim((string)($data['to'] ?? '')) ?: $user['email'];
+        if (!filter_var($to, FILTER_VALIDATE_EMAIL)) jsonError('Enter a valid address to send the test to.');
+
+        $status = Mail::status($wsId);
+        $html = '<h2>VGold SMTP test</h2>'
+            . '<p>This is a test email from VGold. If you are reading it, outgoing mail works — password resets and notifications will arrive.</p>'
+            . '<p style="color:#666;font-size:13px">Sent ' . date('Y-m-d H:i:s') . ' via ' . htmlspecialchars((string)$status['host']) . '</p>';
+
+        if (Mail::send($to, $user['name'], 'VGold SMTP test', $html)) {
+            jsonResponse(['ok' => true, 'message' => 'Test email sent to ' . $to . ' via ' . $status['host'] . '. Check the inbox (and the spam folder).']);
         }
+        // The specific reason is the whole point of a test button — a generic
+        // "check your settings" is what let a broken config sit unnoticed.
+        jsonError(Mail::lastError() ?: 'The test email could not be sent.', 400);
     }
     
     // ===== API Keys =====

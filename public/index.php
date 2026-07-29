@@ -92,6 +92,7 @@ echo '<!DOCTYPE html>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/accounting.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/accounting2.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/acc-billscan.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/app.js?v=' . ASSET_VERSION . '"></script>
 </body>
 </html>';

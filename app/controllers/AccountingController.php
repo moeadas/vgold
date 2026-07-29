@@ -417,7 +417,25 @@ class AccountingController
             return $docId;
         });
 
-        jsonResponse(['ok' => true, 'id' => (int)$result, 'document' => DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$result])]);
+        // A bill created from a scan carries the original file with it, so the
+        // document and the paperwork behind it never drift apart.
+        $attachmentId = null;
+        if (!empty($data['staged_path'])) {
+            $attachmentId = self::attachStaged(
+                (int)$result,
+                (string)$data['staged_path'],
+                Acc::strOrNull($data['staged_name'] ?? null, 255) ?: 'bill',
+                Acc::strOrNull($data['staged_mime'] ?? null, 120),
+                (int)($data['staged_size'] ?? 0)
+            );
+        }
+
+        jsonResponse([
+            'ok' => true,
+            'id' => (int)$result,
+            'attachment_id' => $attachmentId,
+            'document' => DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$result]),
+        ]);
     }
 
     public static function updateDocument($id)
@@ -1866,6 +1884,120 @@ class AccountingController
             Authz::requireAccModule('acc.banking');
         }
         return [$type, $id];
+    }
+
+    /**
+     * Read an uploaded bill and hand back a draft for review.
+     *
+     * The file is parked in the attachment directory but no attachment row and
+     * no document are created — a bill only exists once a person has looked at
+     * what was read off the page and pressed save. The staged path comes back so
+     * the save step can attach the original to the document it creates.
+     */
+    public static function extractBill()
+    {
+        AccSchema::ensure();
+        if (!Authz::hasModuleAccess('acc.bills')) jsonError('You do not have access to Bills', 403);
+
+        if (!isset($_FILES['file'])) jsonError('No file uploaded');
+        $file = $_FILES['file'];
+        if ($file['error'] === UPLOAD_ERR_INI_SIZE || $file['error'] === UPLOAD_ERR_FORM_SIZE) {
+            jsonError('That file is larger than this server accepts (limit ' . ini_get('upload_max_filesize') . ').');
+        }
+        if ($file['error'] !== UPLOAD_ERR_OK) jsonError('Upload failed');
+        if ($file['size'] <= 0) jsonError('That file is empty');
+        if ($file['size'] > 12 * 1024 * 1024) jsonError('Bills up to 12MB can be read. Try a smaller scan or a photo.');
+
+        $ext  = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
+        $mime = strtolower((string)($file['type'] ?? ''));
+        $allowedExt = ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'heif'];
+        if (!in_array($ext, $allowedExt, true)) {
+            jsonError('Upload a PDF or a photo of the bill (PDF, PNG, JPG, WEBP).');
+        }
+        // Trust the extension over the browser-declared type, which is often blank.
+        $mimeByExt = [
+            'pdf' => 'application/pdf', 'png' => 'image/png', 'jpg' => 'image/jpeg',
+            'jpeg' => 'image/jpeg', 'webp' => 'image/webp', 'gif' => 'image/gif',
+            'heic' => 'image/heic', 'heif' => 'image/heif',
+        ];
+        $mime = $mimeByExt[$ext];
+
+        $dir = AccSchema::attachmentDir();
+        if (!is_dir($dir) || !is_writable($dir)) jsonError('Attachment storage is not writable on the server');
+
+        $safe   = ltrim(mb_substr(preg_replace('/[^A-Za-z0-9._-]/', '_', $file['name']), 0, 120), '.');
+        $unique = 'billscan_' . Auth::userId() . '_' . time() . '_' . bin2hex(random_bytes(4)) . '_' . $safe;
+        $full   = $dir . '/' . $unique;
+        if (!move_uploaded_file($file['tmp_name'], $full)) jsonError('Failed to save the file');
+        @chmod($full, 0644);
+
+        try {
+            $draft = BillExtractor::extract($full, $mime, Auth::userId());
+            $draft = BillExtractor::match($draft);
+        } catch (\Throwable $e) {
+            @unlink($full); // nothing was created, so leave nothing behind
+            jsonError($e->getMessage(), 422);
+        }
+
+        $draft['staged_path'] = AccSchema::ATTACHMENT_DIR . '/' . $unique;
+        $draft['staged_name'] = mb_substr($file['name'], 0, 255);
+        $draft['staged_mime'] = $mime;
+        $draft['staged_size'] = (int)$file['size'];
+
+        jsonResponse(['ok' => true, 'draft' => $draft]);
+    }
+
+    /**
+     * Attach a file staged by extractBill() to the document it became.
+     * Called after the draft is saved; a failure here must not lose the bill.
+     */
+    public static function attachStaged($documentId, $path, $name, $mime, $size)
+    {
+        try {
+            $dir  = AccSchema::attachmentDir();
+            $real = realpath($dir . '/' . basename($path));
+            if (!$real || strpos($real, realpath($dir)) !== 0 || !is_file($real)) return null;
+
+            $id = DB::insert('acc_attachments', [
+                'attachable_type' => 'document',
+                'attachable_id'   => (int)$documentId,
+                'name'            => $name,
+                'path'            => AccSchema::ATTACHMENT_DIR . '/' . basename($real),
+                'mime'            => $mime,
+                'size'            => (int)$size,
+                'uploaded_by'     => Auth::userId(),
+            ]);
+            Acc::addHistory((int)$documentId, 'attachment', 'Attached ' . $name);
+            return (int)$id;
+        } catch (\Throwable $e) {
+            error_log('attachStaged: ' . $e->getMessage());
+            return null;
+        }
+    }
+
+    /** Create a vendor from a scanned bill, when none matched. */
+    public static function createVendorFromDraft()
+    {
+        AccSchema::ensure();
+        if (!Authz::hasModuleAccess('acc.bills') && !Authz::hasModuleAccess('acc.vendors')) {
+            jsonError('You do not have access to Vendors', 403);
+        }
+        $data = input();
+        $name = trim((string)($data['name'] ?? ''));
+        if ($name === '') jsonError('A vendor name is required');
+
+        $existing = DB::fetch("SELECT id FROM acc_contacts WHERE type = 'vendor' AND deleted_at IS NULL AND LOWER(name) = LOWER(?)", [$name]);
+        if ($existing) jsonResponse(['ok' => true, 'id' => (int)$existing['id'], 'existed' => true]);
+
+        $id = DB::insert('acc_contacts', [
+            'type'          => 'vendor',
+            'name'          => mb_substr($name, 0, 191),
+            'email'         => Acc::strOrNull($data['email'] ?? null, 191),
+            'tax_number'    => Acc::strOrNull($data['tax_number'] ?? null, 100),
+            'currency_code' => Acc::strOrNull($data['currency_code'] ?? null, 8) ?: Acc::setting('default_currency', 'USD'),
+            'enabled'       => 1,
+        ]);
+        jsonResponse(['ok' => true, 'id' => (int)$id, 'existed' => false]);
     }
 
     public static function uploadAttachment()

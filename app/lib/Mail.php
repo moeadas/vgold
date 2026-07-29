@@ -3,6 +3,16 @@
 require_once __DIR__ . '/Crypto.php';
 class Mail {
     private static $cache = [];
+    /** Why the last send failed, verbatim from the server where possible. */
+    private static $lastError = null;
+
+    public static function lastError() { return self::$lastError; }
+
+    private static function fail($reason) {
+        self::$lastError = $reason;
+        error_log('Mail::send: ' . $reason);
+        return false;
+    }
 
     /**
      * Which workspace's SMTP config applies?
@@ -117,9 +127,9 @@ class Mail {
 
     public static function send($toEmail, $toName, $subject, $htmlBody, $textBody = '', $workspaceId = null) {
         $cfg = self::loadSettings($workspaceId);
+        self::$lastError = null;
         if (!$cfg) {
-            error_log('Mail::send: no SMTP configuration — dropping "' . $subject . '" to ' . $toEmail);
-            return false;
+            return self::fail('No outgoing mail is configured. Add SMTP settings under Settings first.');
         }
 
         $host = $cfg['host'];
@@ -148,15 +158,20 @@ class Mail {
 
         $socket = @stream_socket_client($remote, $errno, $errstr, 15, STREAM_CLIENT_CONNECT, $context);
         if (!$socket) {
-            error_log(sprintf('Mail::send: cannot reach %s (%s) %s', $remote, $errno, $errstr));
-            return false;
+            return self::fail(sprintf(
+                'Could not connect to %s. %s%s',
+                $remote, $errstr ?: 'No response.',
+                ($port === 587 && $encryption === 'ssl')
+                    ? ' Port 587 normally expects STARTTLS — try setting Encryption to TLS.'
+                    : (($port === 465 && $encryption === 'tls') ? ' Port 465 normally expects SSL — try setting Encryption to SSL.' : '')
+            ));
         }
 
         // Read greeting (multi-line)
         $greeting = self::readResponse($socket);
         if (strpos($greeting, '220') !== 0) {
-            error_log('Mail::send: unexpected greeting from ' . $host . ': ' . trim($greeting));
-            fclose($socket); return false;
+            fclose($socket);
+            return self::fail($host . ' did not greet us as an SMTP server: ' . trim($greeting));
         }
 
         // EHLO
@@ -165,14 +180,17 @@ class Mail {
         // STARTTLS upgrade for explicit-TLS connections
         if ($useStartTls) {
             $tlsResp = self::sendCmd($socket, 'STARTTLS');
-            if (strpos($tlsResp, '220') !== 0) { fclose($socket); return false; }
+            if (strpos($tlsResp, '220') !== 0) {
+                fclose($socket);
+                return self::fail($host . ' refused STARTTLS: ' . trim($tlsResp) . ' — if this server uses implicit SSL, set Encryption to SSL and the port to 465.');
+            }
             $crypto = STREAM_CRYPTO_METHOD_TLS_CLIENT;
             if (defined('STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT')) {
                 $crypto |= STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT;
             }
             if (!@stream_socket_enable_crypto($socket, true, $crypto)) {
                 fclose($socket);
-                return false;
+                return self::fail('The TLS handshake with ' . $host . ' failed.');
             }
             // Re-issue EHLO over the now-encrypted channel
             self::sendCmd($socket, 'EHLO vgold.victorygenomics.com');
@@ -183,8 +201,8 @@ class Mail {
         self::sendCmd($socket, base64_encode($username));
         $authResp = self::sendCmd($socket, base64_encode($password));
         if (strpos($authResp, '235') !== 0) {
-            error_log('Mail::send: SMTP auth rejected by ' . $host . ' for ' . $username . ': ' . trim($authResp));
-            fclose($socket); return false;
+            fclose($socket);
+            return self::fail($host . ' rejected the sign-in for ' . $username . ': ' . trim($authResp));
         }
 
         // MAIL FROM
@@ -218,9 +236,11 @@ class Mail {
         self::sendCmd($socket, 'QUIT');
         fclose($socket);
 
-        $accepted = strpos($dataResp, '250') === 0;
-        if (!$accepted) error_log('Mail::send: ' . $host . ' refused the message: ' . trim($dataResp));
-        return $accepted;
+        if (strpos($dataResp, '250') !== 0) {
+            return self::fail($host . ' accepted the connection but refused the message: ' . trim($dataResp)
+                . ' — this usually means the From address is not one this mailbox may send as.');
+        }
+        return true;
     }
 
     public static function sendNotification($userId, $subject, $htmlBody, $type = 'general') {

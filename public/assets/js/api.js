@@ -126,7 +126,7 @@ const API = {
   // SMTP
   smtp: () => API.req('/settings/smtp'),
   updateSmtp: (data) => API.req('/settings/smtp', { method: 'PUT', body: JSON.stringify(data) }),
-  testSmtp: () => API.req('/settings/smtp/test', { method: 'POST' }),
+  testSmtp: (to) => API.req('/settings/smtp/test', { method: 'POST', body: JSON.stringify({ to: to || '' }) }),
   // User management
   createUser: (data) => API.req('/settings/users', { method: 'POST', body: JSON.stringify(data) }),
   deleteUser: (userId, extra) => API.req('/settings/users', { method: 'DELETE', body: JSON.stringify({ user_id: userId, ...(extra || {}) }) }),

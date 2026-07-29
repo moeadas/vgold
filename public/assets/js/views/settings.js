@@ -438,7 +438,7 @@ function renderSmtpForm(smtp) {
         </div>
         <div class="form-field" style="flex:1">
           <label class="form-label">Port</label>
-          <input class="form-input" id="smtp-port" type="number" value="${s.port || 465}" placeholder="465">
+          <input class="form-input" id="smtp-port" type="number" value="${s.port || 465}" placeholder="465" onchange="smtpPortChanged()">
         </div>
         <div class="form-field" style="flex:1">
           <label class="form-label">Encryption</label>
@@ -473,6 +473,16 @@ function renderSmtpForm(smtp) {
         <button class="btn-primary" onclick="saveSmtp()">Save SMTP settings</button>
       </div>
       <div id="smtp-error" class="pw-error" style="display:none;margin-top:8px"></div>
+
+      <div class="smtp-test-row">
+        <div class="form-field" style="flex:1">
+          <label class="form-label">Send a test email to</label>
+          <input class="form-input" id="smtp-test-to" type="email" placeholder="${esc((State.user && State.user.email) || 'you@example.com')}">
+        </div>
+        <button class="btn-secondary" onclick="testSmtp()">Send test</button>
+      </div>
+      <div class="desc" style="margin:6px 0 0">Nothing confirms these settings except an email actually arriving. If it fails you'll see exactly what the mail server said.</div>
+      <div id="smtp-test-result" class="mail-status" style="display:none;margin-top:12px"></div>
     </div>
   `;
 }
@@ -566,19 +576,48 @@ async function saveSmtp() {
   }
   
   try {
-    await API.updateSmtp(data);
+    const res = await API.updateSmtp(data);
     State.smtpSettings = null; // Force reload
+    State.mailStatus = undefined;
     toast('SMTP settings saved', 'success');
+    if (res && res.warning) toast(res.warning, 'error');
     render();
+    // Nothing proves the settings work except sending, so offer it immediately.
+    setTimeout(() => {
+      const t = document.getElementById('smtp-test-to');
+      if (t) t.focus();
+    }, 100);
   } catch(e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
 }
 
 async function testSmtp() {
+  const to = document.getElementById('smtp-test-to')?.value.trim() || '';
+  const out = document.getElementById('smtp-test-result');
+  const show = (msg, ok) => {
+    if (!out) { toast(msg, ok ? 'success' : 'error'); return; }
+    out.className = 'mail-status ' + (ok ? 'mail-status-ok' : 'mail-status-bad');
+    out.textContent = msg;
+    out.style.display = 'block';
+  };
+  show('Sending…', true);
   try {
-    toast('Sending test email...', 'info');
-    const res = await API.testSmtp();
-    toast(res.message || 'Test email sent!', 'success');
-  } catch(e) { toast(e.message, 'error'); }
+    const res = await API.testSmtp(to);
+    show(res.message || 'Test email sent.', true);
+    State.mailStatus = undefined;
+  } catch (e) {
+    // e.message is now the server's actual refusal, not "check your settings".
+    show(e.message, false);
+  }
+}
+
+/** Port and encryption go together; pick the usual partner when the port changes. */
+function smtpPortChanged() {
+  const port = parseInt(document.getElementById('smtp-port')?.value, 10);
+  const enc = document.getElementById('smtp-encryption');
+  if (!enc) return;
+  if (port === 587) enc.value = 'tls';
+  else if (port === 465) enc.value = 'ssl';
+  else if (port === 25) enc.value = 'none';
 }
 
 // ===== User management =====

@@ -199,7 +199,7 @@ function accAccountModal(id) {
   const a = (id && AccState.banking) ? (AccState.banking.accounts || []).find(x => Number(x.id) === Number(id))
     : (id && AccState.account ? AccState.account.account : null);
   const acct = a || (AccState.account && Number(AccState.account.account.id) === Number(id) ? AccState.account.account : null);
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit account' : 'New account',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -218,7 +218,7 @@ function accAccountModal(id) {
         ${accField('Enabled', accSelect('acc-a-enabled', [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }], acct ? String(acct.enabled) : '1'))}
       </div>
       ${id ? '<p class="acc-sub" style="margin-top:10px">The current balance is always recalculated from the opening balance plus this account\'s transactions.</p>' : ''}`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteAccount(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveAccount(${id || 'null'})">${id ? 'Save changes' : 'Create account'}</button>`,
   });
@@ -234,7 +234,7 @@ async function accSaveAccount(id) {
   };
   try {
     if (id) await API.accUpdateAccount(id, payload); else await API.accCreateAccount(payload);
-    Modal.close();
+    accCloseForm();
     AccState.banking = null; AccState.account = null; AccState.dashboard = null;
     await accRefreshOptions();
     toast(id ? 'Account saved' : 'Account created', 'success');
@@ -247,7 +247,7 @@ async function accDeleteAccount(id) {
   if (!ok) return;
   try {
     await API.accDeleteAccount(id);
-    Modal.close();
+    accCloseForm();
     AccState.banking = null; AccState.account = null;
     await accRefreshOptions();
     toast('Account deleted', 'success');
@@ -259,7 +259,7 @@ function accTransactionModal(id) {
   const t = id && AccState.transactions ? (AccState.transactions.transactions || []).find(x => Number(x.id) === Number(id)) : null;
   const o = accOpts();
   const contacts = (o.customers || []).concat(o.vendors || []);
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit transaction' : 'New transaction',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -294,7 +294,7 @@ function accTransactionModal(id) {
         <div id="acc-match-select">${accMatchPlaceholder()}</div>
       </div>
       ${accAdjBlock('invoice', 0, 'acc-t-amount')}`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteTransaction(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveTransaction(${id || 'null'})">${id ? 'Save changes' : 'Add transaction'}</button>`,
   });
@@ -375,7 +375,7 @@ async function accSaveTransaction(id) {
   };
   try {
     if (id) await API.accUpdateTransaction(id, payload); else await API.accCreateTransaction(payload);
-    Modal.close();
+    accCloseForm();
     // Matching moves a document's balance, so the document caches go too.
     AccState.transactions = null; AccState.banking = null; AccState.dashboard = null; AccState.account = null;
     AccState.doc = null; AccState.docs = { invoice: null, bill: null }; AccState.reports = null;
@@ -389,7 +389,7 @@ async function accDeleteTransaction(id) {
   if (!ok) return;
   try {
     await API.accDeleteTransaction(id);
-    Modal.close();
+    accCloseForm();
     // Matching moves a document's balance, so the document caches go too.
     AccState.transactions = null; AccState.banking = null; AccState.dashboard = null; AccState.account = null;
     AccState.doc = null; AccState.docs = { invoice: null, bill: null }; AccState.reports = null;
@@ -400,7 +400,7 @@ async function accDeleteTransaction(id) {
 
 function accTransferModal(fromId) {
   const accounts = accOpts().accounts || [];
-  Modal.open({
+  accOpenForm({
     title: 'New transfer',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -415,7 +415,7 @@ function accTransferModal(fromId) {
         ${accField('Description', `<input class="form-input" id="acc-tr-desc" placeholder="e.g. Monthly reserve transfer">`)}
       </div>
       <p class="acc-sub" style="margin-top:10px">Both sides are flagged as internal transfers, so they never appear in Profit &amp; Loss or Cash Flow.</p>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-primary" onclick="accSaveTransfer()">Create transfer</button>`,
   });
 }
@@ -431,7 +431,7 @@ async function accSaveTransfer() {
       from_account_id: Number(from), to_account_id: Number(to), amount,
       transferred_at: accVal('acc-tr-date'), description: accVal('acc-tr-desc'),
     });
-    Modal.close();
+    accCloseForm();
     AccState.banking = null; AccState.transactions = null; AccState.account = null; AccState.dashboard = null;
     await accRefreshOptions();
     toast('Transfer created', 'success');
@@ -455,7 +455,7 @@ function accReconciliationModal(accountId) {
   const accounts = accOpts().accounts || [];
   const first = new Date(); first.setDate(1);
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
-  Modal.open({
+  accOpenForm({
     title: 'Start reconciliation',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -466,7 +466,7 @@ function accReconciliationModal(accountId) {
         ${accField('Period start', `<input class="form-input" type="date" id="acc-r-start" value="${first.toISOString().slice(0, 10)}">`)}
         ${accField('Period end', `<input class="form-input" type="date" id="acc-r-end" value="${last.toISOString().slice(0, 10)}">`)}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-primary" onclick="accSaveReconciliation()">Start</button>`,
   });
 }
@@ -479,7 +479,7 @@ async function accSaveReconciliation() {
       started_at: accVal('acc-r-start'), ended_at: accVal('acc-r-end'),
       closing_balance: accNumVal('acc-r-closing'),
     });
-    Modal.close();
+    accCloseForm();
     AccState.banking = null;
     toast('Reconciliation started', 'success');
     accGoReconciliation(res.id);
@@ -686,7 +686,7 @@ function accCoaList() {
 
 function accCoaModal(id) {
   const a = id && AccState.coa ? (AccState.coa.accounts || []).find(x => Number(x.id) === Number(id)) : null;
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit ledger account' : 'New ledger account',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -702,7 +702,7 @@ function accCoaModal(id) {
         ${accField('Enabled', accSelect('acc-coa-enabled', [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }], a ? String(a.enabled) : '1'))}
       </div>
       <p class="acc-sub" style="margin-top:10px">Balances are always derived from posted journal lines — they cannot be typed in.</p>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteCoa(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveCoa(${id || 'null'})">${id ? 'Save changes' : 'Create'}</button>`,
   });
@@ -714,7 +714,7 @@ async function accSaveCoa(id) {
   const payload = { code, name, type: accVal('acc-coa-type'), side: accVal('acc-coa-side'), enabled: accVal('acc-coa-enabled') === '1' };
   try {
     if (id) await API.accUpdateCoa(id, payload); else await API.accCreateCoa(payload);
-    Modal.close();
+    accCloseForm();
     AccState.coa = null;
     await accRefreshOptions();
     toast(id ? 'Saved' : 'Created', 'success');
@@ -727,7 +727,7 @@ async function accDeleteCoa(id) {
   if (!ok) return;
   try {
     await API.accDeleteCoa(id);
-    Modal.close();
+    accCloseForm();
     AccState.coa = null;
     await accRefreshOptions();
     toast('Deleted', 'success');
@@ -741,7 +741,7 @@ let AccJournalDraft = null;
 
 function accJournalModal() {
   AccJournalDraft = [{ coa: '', debit: 0, credit: 0, description: '' }, { coa: '', debit: 0, credit: 0, description: '' }];
-  Modal.open({
+  accOpenForm({
     title: 'New journal entry',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -754,7 +754,7 @@ function accJournalModal() {
       </div>
       <div id="acc-j-lines" style="margin-top:8px"></div>
       <div class="acc-balance" id="acc-j-balance"></div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              <button class="btn-secondary" onclick="accSaveJournal('draft')">Save as draft</button>
              <button class="btn-primary" onclick="accSaveJournal('posted')">Post entry</button>`,
     onMount: () => accJournalRender(),
@@ -816,7 +816,7 @@ async function accSaveJournal(status) {
   if (lines.length < 2) { toast('Add at least two complete lines', 'error'); return; }
   try {
     await API.accCreateJournal({ entry_date: accVal('acc-j-date'), memo, status, lines });
-    Modal.close();
+    accCloseForm();
     AccState.journal = null; AccState.coa = null; AccState.reports = null;
     toast(status === 'posted' ? 'Entry posted' : 'Draft saved', 'success');
     render();
@@ -891,7 +891,7 @@ function accCatalogTab(t) { AccState.catalogTab = t; render(); }
 function accItemModal(id) {
   const i = id && AccState.catalog ? (AccState.catalog.items || []).find(x => Number(x.id) === Number(id)) : null;
   const cats = (AccState.catalog && AccState.catalog.categories) || [];
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit item' : 'New item',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -910,7 +910,7 @@ function accItemModal(id) {
       <div class="form-row" style="gap:12px;margin-top:10px">
         ${accField('Description', `<textarea class="form-input" id="acc-i-desc" rows="2">${esc(i ? (i.description || '') : '')}</textarea>`)}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteItem(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveItem(${id || 'null'})">${id ? 'Save' : 'Create'}</button>`,
   });
@@ -927,7 +927,7 @@ async function accSaveItem(id) {
   };
   try {
     await API.accSaveItem(id, payload);
-    Modal.close(); AccState.catalog = null; await accRefreshOptions();
+    accCloseForm(); AccState.catalog = null; await accRefreshOptions();
     toast(id ? 'Saved' : 'Created', 'success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -935,14 +935,14 @@ async function accSaveItem(id) {
 async function accDeleteItem(id) {
   const ok = await Modal.confirm({ title: 'Delete item', message: 'Existing documents keep their line text; only the catalog entry is removed.', confirmText: 'Delete', danger: true });
   if (!ok) return;
-  try { await API.accDeleteItem(id); Modal.close(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
+  try { await API.accDeleteItem(id); accCloseForm(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
   catch (e) { toast(e.message, 'error'); }
 }
 
 function accCategoryModal(id) {
   const c = id && AccState.catalog ? (AccState.catalog.categories || []).find(x => Number(x.id) === Number(id)) : null;
   const cats = ((AccState.catalog && AccState.catalog.categories) || []).filter(x => !id || Number(x.id) !== Number(id));
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit category' : 'New category',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -954,7 +954,7 @@ function accCategoryModal(id) {
         ${accField('Colour', `<input class="form-input" type="color" id="acc-cat-color" value="${esc(c ? (c.color || '#7e6549') : '#7e6549')}" style="padding:4px;height:38px">`)}
         ${accField('Enabled', accSelect('acc-cat-enabled', [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }], c ? String(c.enabled) : '1'))}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteCategory(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveCategory(${id || 'null'})">${id ? 'Save' : 'Create'}</button>`,
   });
@@ -970,7 +970,7 @@ async function accSaveCategory(id) {
   };
   try {
     await API.accSaveCategory(id, payload);
-    Modal.close(); AccState.catalog = null; await accRefreshOptions();
+    accCloseForm(); AccState.catalog = null; await accRefreshOptions();
     toast(id ? 'Saved' : 'Created', 'success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -978,13 +978,13 @@ async function accSaveCategory(id) {
 async function accDeleteCategory(id) {
   const ok = await Modal.confirm({ title: 'Delete category', message: 'Categories used by transactions cannot be deleted — disable them instead.', confirmText: 'Delete', danger: true });
   if (!ok) return;
-  try { await API.accDeleteCategory(id); Modal.close(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
+  try { await API.accDeleteCategory(id); accCloseForm(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
   catch (e) { toast(e.message, 'error'); }
 }
 
 function accTaxModal(id) {
   const t = id && AccState.catalog ? (AccState.catalog.taxes || []).find(x => Number(x.id) === Number(id)) : null;
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit tax rate' : 'New tax rate',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
@@ -998,7 +998,7 @@ function accTaxModal(id) {
         ], t ? t.type : 'normal'))}
         ${accField('Enabled', accSelect('acc-tax-enabled', [{ value: '1', label: 'Enabled' }, { value: '0', label: 'Disabled' }], t ? String(t.enabled) : '1'))}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteTax(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveTax(${id || 'null'})">${id ? 'Save' : 'Create'}</button>`,
   });
@@ -1010,7 +1010,7 @@ async function accSaveTax(id) {
   const payload = { name, rate: accNumVal('acc-tax-rate'), type: accVal('acc-tax-type'), enabled: accVal('acc-tax-enabled') === '1' };
   try {
     await API.accSaveTax(id, payload);
-    Modal.close(); AccState.catalog = null; await accRefreshOptions();
+    accCloseForm(); AccState.catalog = null; await accRefreshOptions();
     toast(id ? 'Saved' : 'Created', 'success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1018,7 +1018,7 @@ async function accSaveTax(id) {
 async function accDeleteTax(id) {
   const ok = await Modal.confirm({ title: 'Delete tax rate', message: 'Taxes applied to existing documents cannot be deleted — disable them instead.', confirmText: 'Delete', danger: true });
   if (!ok) return;
-  try { await API.accDeleteTax(id); Modal.close(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
+  try { await API.accDeleteTax(id); accCloseForm(); AccState.catalog = null; await accRefreshOptions(); toast('Deleted', 'success'); render(); }
   catch (e) { toast(e.message, 'error'); }
 }
 
@@ -1067,7 +1067,7 @@ async function accRunRecurring() {
 
 function accRecurringModal(id) {
   const r = id && AccState.recurring ? (AccState.recurring.schedules || []).find(x => Number(x.id) === Number(id)) : null;
-  Modal.open({
+  accOpenForm({
     title: id ? 'Edit schedule' : 'New recurring schedule',
     body: `
       <div class="form-row" style="gap:12px">
@@ -1093,7 +1093,7 @@ function accRecurringModal(id) {
           { value: 'active', label: 'Active' }, { value: 'paused', label: 'Paused' }, { value: 'ended', label: 'Ended' },
         ], r ? r.status : 'active'))}
       </div>`,
-    footer: `<button class="btn-secondary" onclick="Modal.close()">Cancel</button>
+    footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
              ${id ? `<button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteRecurring(${id})">Delete</button>` : ''}
              <button class="btn-primary" onclick="accSaveRecurring(${id || 'null'})">${id ? 'Save' : 'Create'}</button>`,
   });
@@ -1111,7 +1111,7 @@ async function accSaveRecurring(id) {
   };
   try {
     await API.accSaveRecurring(id, payload);
-    Modal.close(); AccState.recurring = null;
+    accCloseForm(); AccState.recurring = null;
     toast(id ? 'Saved' : 'Schedule created', 'success'); render();
   } catch (e) { toast(e.message, 'error'); }
 }
@@ -1119,7 +1119,7 @@ async function accSaveRecurring(id) {
 async function accDeleteRecurring(id) {
   const ok = await Modal.confirm({ title: 'Delete schedule', message: 'Documents already generated are kept.', confirmText: 'Delete', danger: true });
   if (!ok) return;
-  try { await API.accDeleteRecurring(id); Modal.close(); AccState.recurring = null; toast('Deleted', 'success'); render(); }
+  try { await API.accDeleteRecurring(id); accCloseForm(); AccState.recurring = null; toast('Deleted', 'success'); render(); }
   catch (e) { toast(e.message, 'error'); }
 }
 
