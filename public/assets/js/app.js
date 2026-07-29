@@ -30,6 +30,7 @@ const State = {
   moduleCounts: {},
   recordCounts: {},
   editUserId: null,
+  mailStatus: null,
   mentions: null,
   commentsFeed: null,
   commentsUnread: 0,

@@ -512,3 +512,20 @@
   word-break: break-all; user-select: all;
 }
 .settings-head { margin-bottom: 16px; }
+
+/* ============================================================
+   17) Outgoing-mail status — states the actual delivery path, because a
+       missing SMTP config used to fail completely silently.
+   ------------------------------------------------------------ */
+.mail-status {
+  padding: 12px 14px; margin-bottom: 16px;
+  border: 1px solid var(--border); border-left-width: 3px; border-radius: 10px;
+  font-size: 13px; line-height: 1.55;
+}
+.mail-status code {
+  font-family: ui-monospace, monospace; font-size: 12px;
+  background: rgba(0,0,0,.04); padding: 1px 5px; border-radius: 4px;
+}
+.mail-status-ok   { border-left-color: #6B8E5A; background: #F3F7F1; color: #35563A; }
+.mail-status-warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
+.mail-status-bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }

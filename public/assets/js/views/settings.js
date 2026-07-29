@@ -19,7 +19,11 @@ async function renderSettings() {
   }
   let smtp = State.smtpSettings;
   if (smtp === undefined) {
-    try { const res = await API.smtp(); smtp = res.settings; State.smtpSettings = smtp; } catch(e) { smtp = null; }
+    try {
+      const res = await API.smtp();
+      smtp = res.settings; State.smtpSettings = smtp;
+      State.mailStatus = res.status || null;
+    } catch(e) { smtp = null; State.mailStatus = null; }
   }
   let moduleAccess = State.moduleAccess;
   let crmConfig = State.crmSettings;
@@ -394,9 +398,38 @@ async function renderSettings() {
   `;
 }
 
+/**
+ * Outgoing mail was failing silently: nothing was ever saved here, so every
+ * Workflow email was dropped with no indication anywhere in the UI. This states
+ * the actual delivery path.
+ */
+function mailStatusBanner() {
+  const st = State.mailStatus;
+  if (!st) return '';
+  if (!st.configured) {
+    return `<div class="mail-status mail-status-bad">
+      <strong>No outgoing mail is configured.</strong> Password resets, task assignment
+      emails and mentions are being dropped. Fill in the SMTP details below to fix it.
+    </div>`;
+  }
+  if (st.source === 'crm') {
+    return `<div class="mail-status mail-status-warn">
+      <strong>Using the CRM's SMTP settings</strong> — <code>${esc(st.host || '')}</code>,
+      sending as <code>${esc(st.from_email || '')}</code>. Nothing has been saved below,
+      so VGold falls back to the credentials already configured under CRM configuration.
+      Saving your own here will take precedence.
+    </div>`;
+  }
+  return `<div class="mail-status mail-status-ok">
+    Outgoing mail is configured — <code>${esc(st.host || '')}</code>,
+    sending as <code>${esc(st.from_email || '')}</code>.
+  </div>`;
+}
+
 function renderSmtpForm(smtp) {
   const s = smtp || {};
   return `
+    ${mailStatusBanner()}
     <div class="smtp-form">
       <div class="form-row" style="gap:12px">
         <div class="form-field" style="flex:2">
@@ -522,6 +555,7 @@ async function saveSmtp() {
   };
   const pw = document.getElementById('smtp-password')?.value;
   if (pw) data.password = pw;
+  State.mailStatus = undefined;
   
   const errEl = document.getElementById('smtp-error');
   errEl.style.display = 'none';

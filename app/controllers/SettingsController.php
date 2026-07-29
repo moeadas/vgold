@@ -177,8 +177,11 @@ class SettingsController {
     public static function smtp() {
         $wsId = Auth::workspaceId();
         $cfg = DB::fetch("SELECT id, host, port, username, from_name, from_email, encryption, is_active FROM smtp_settings WHERE workspace_id = ?", [$wsId]);
+        // Report where mail is actually going out from, so an unconfigured
+        // Workflow SMTP is visible instead of silently swallowing every email.
+        $status = Mail::status($wsId);
         if (!$cfg) {
-            jsonResponse(['settings' => null]);
+            jsonResponse(['settings' => null, 'status' => $status]);
         } else {
             jsonResponse(['settings' => [
                 'id' => (int)$cfg['id'],
@@ -189,7 +192,7 @@ class SettingsController {
                 'from_email' => $cfg['from_email'],
                 'encryption' => $cfg['encryption'],
                 'is_active' => (bool)$cfg['is_active'],
-            ]]);
+            ], 'status' => $status]);
         }
     }
     
