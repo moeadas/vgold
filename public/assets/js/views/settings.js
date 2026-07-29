@@ -70,6 +70,11 @@ async function renderSettings() {
     </div>
   `;
 
+  let backupsCardHtml = '';
+  if (user.role === 'admin' && typeof renderBackupsCard === 'function') {
+    try { backupsCardHtml = await renderBackupsCard(user); } catch (e) { backupsCardHtml = ''; }
+  }
+
   const members = (team.members || []).map(m => {
     const isMs = (m.auth_provider || 'password') === 'microsoft';
     const providerBadge = isMs 
@@ -393,6 +398,7 @@ async function renderSettings() {
         </div>
         ${typeof accDangerZoneCard === 'function' ? accDangerZoneCard(user) : ''}
       </div>
+      ${backupsCardHtml}
       ` : ''}
     </div>
   `;

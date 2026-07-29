@@ -10,6 +10,8 @@ require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
 require_once __DIR__ . '/lib/AiClient.php';
 require_once __DIR__ . '/lib/BillExtractor.php';
+require_once __DIR__ . '/lib/CodeVersion.php';
+require_once __DIR__ . '/lib/Backup.php';
 require_once __DIR__ . '/lib/helpers.php';
 require_once __DIR__ . '/controllers/AuthController.php';
 require_once __DIR__ . '/controllers/ProjectController.php';
@@ -25,6 +27,7 @@ require_once __DIR__ . '/lib/AccSchema.php';
 require_once __DIR__ . '/lib/Acc.php';
 require_once __DIR__ . '/lib/AccSeed.php';
 require_once __DIR__ . '/controllers/AccountingController.php';
+require_once __DIR__ . '/controllers/BackupController.php';
 require_once __DIR__ . '/lib/CRMTaskBridge.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/../vendor/autoload.php';
@@ -135,6 +138,10 @@ $routes = [
     'GET settings/api-keys' => ['SettingsController::apiKeys', true],
     'PUT settings/api-keys' => ['SettingsController::updateApiKey', true],
     'DELETE settings/api-keys' => ['SettingsController::deleteApiKey', true],
+    'GET settings/backups' => ['BackupController::index', true],
+    'POST settings/backups/run' => ['BackupController::runNow', true],
+    'GET settings/backups/{id}/download' => ['BackupController::download', true],
+    'GET settings/version-check' => ['BackupController::versionCheck', true],
     'GET settings/team' => ['SettingsController::team', true],
     'POST settings/invite' => ['SettingsController::invite', true],
     'GET settings/members' => ['SettingsController::workspaceMembers', true],

@@ -21,6 +21,9 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 # ── Block sensitive paths (defense in depth; app also guards them) ────────────
 RewriteRule (?i)(^|/)\.git(/|$)                             - [F,L]
 RewriteRule (?i)^(config|app|migration|vendor)(/|$)          - [F,L]
+# storage/ holds database backups when no directory outside the docroot is
+# writable. Nothing in it is ever meant to be fetched over HTTP.
+RewriteRule (?i)^storage(/|$)                                - [F,L]
 RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$)  - [F,L]
 RewriteRule (?i)\.(sql|db|sqlite|env|log|lock|sh|bak|dist)$  - [F,L]
 RewriteRule (?i)^(deploy|composer)\.                         - [F,L]

@@ -31,6 +31,8 @@ const State = {
   recordCounts: {},
   editUserId: null,
   mailStatus: null,
+  backups: null,
+  versionCheck: null,
   mentions: null,
   commentsFeed: null,
   commentsUnread: 0,

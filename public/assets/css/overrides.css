@@ -535,3 +535,30 @@
   display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
   margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border);
 }
+
+/* ============================================================
+   18) Backups and code parity in Settings.
+   ------------------------------------------------------------ */
+.bk-actions { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-top: 14px; }
+.bk-pill {
+  display: inline-block; padding: 2px 9px; border-radius: 999px;
+  font-size: 11px; font-weight: 700;
+}
+.bk-pill.bk-ok   { background: #E4EDE7; color: #25563F; }
+.bk-pill.bk-warn { background: #FDF6E3; color: #7A5A11; }
+.bk-pill.bk-bad  { background: #FDE8E8; color: #B0432B; }
+
+.bk-version-facts {
+  display: flex; gap: 28px; flex-wrap: wrap;
+  margin-top: 12px; padding: 12px 14px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+  font-size: 13px;
+}
+.bk-version-facts > div { display: flex; flex-direction: column; gap: 3px; }
+.bk-version-facts code { font-family: ui-monospace, monospace; font-size: 12px; }
+
+.bk-drift { margin-top: 14px; font-size: 13px; }
+.bk-drift ul { margin: 6px 0 0 18px; }
+.bk-drift li { font-family: ui-monospace, monospace; font-size: 12px; line-height: 1.7; }
+.bk-drift li.bk-bad  { color: #B0432B; }
+.bk-drift li.bk-warn { color: #7A5A11; }

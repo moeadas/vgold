@@ -115,6 +115,31 @@ class Schema {
         }
     }
 
+    /** Backup run history, so the Settings panel can show what actually ran. */
+    public static function ensureBackups() {
+        static $done = false;
+        if ($done) return;
+        $done = true;
+        try {
+            DB::query("CREATE TABLE IF NOT EXISTS `backup_runs` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `started_at` DATETIME NOT NULL,
+                `finished_at` DATETIME NULL,
+                `status` VARCHAR(20) NOT NULL DEFAULT 'running',
+                `run_trigger` VARCHAR(20) NOT NULL DEFAULT 'manual',
+                `bytes` BIGINT NULL,
+                `file_name` VARCHAR(191) NULL,
+                `sha256` CHAR(64) NULL,
+                `remote_path` VARCHAR(500) NULL,
+                `error` TEXT NULL,
+                `details` TEXT NULL,
+                KEY `backup_runs_started` (`started_at`)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        } catch (\Throwable $e) {
+            error_log('Schema::ensureBackups: ' . $e->getMessage());
+        }
+    }
+
     /**
      * Password-reset tokens.
      *

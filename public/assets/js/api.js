@@ -119,6 +119,11 @@ const API = {
   updateApiKey: (data) => API.req('/settings/api-keys', { method: 'PUT', body: JSON.stringify(data) }),
   deleteApiKey: (provider) => API.req('/settings/api-keys', { method: 'DELETE', body: JSON.stringify({ provider }) }),
   team: () => API.req('/settings/team'),
+  // Backups & code parity
+  backups: () => API.req('/settings/backups'),
+  runBackup: () => API.req('/settings/backups/run', { method: 'POST' }),
+  backupDownloadUrl: (id) => '/api/settings/backups/' + id + '/download',
+  versionCheck: () => API.req('/settings/version-check'),
   invite: (email, role) => API.req('/settings/invite', { method: 'POST', body: JSON.stringify({ email, role }) }),
   members: () => API.req('/settings/members'),
   crmRoleMap: () => API.req('/settings/crm-role-map'),
