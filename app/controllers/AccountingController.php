@@ -831,6 +831,18 @@ class AccountingController
                   WHERE r.deleted_at IS NULL
                ORDER BY r.started_at DESC, r.id DESC LIMIT 100"
             ),
+            'imports' => DB::fetchAll(
+                "SELECT i.id, i.account_id, i.filename, i.format, i.statement_start, i.statement_end,
+                        i.total_rows, i.imported_rows, i.duplicate_rows, i.skipped_rows, i.created_at,
+                        a.name AS account_name, u.name AS uploaded_by_name,
+                        (SELECT COUNT(*) FROM acc_bank_lines l WHERE l.import_id = i.id AND l.status = 'pending') AS pending
+                   FROM acc_bank_imports i
+              LEFT JOIN acc_accounts a ON a.id = i.account_id
+              LEFT JOIN users u ON u.id = i.uploaded_by
+                  WHERE i.deleted_at IS NULL
+               ORDER BY i.id DESC LIMIT 50"
+            ),
+            'review_pending' => BankFeedController::pendingCount(),
         ]);
     }
 
@@ -1184,12 +1196,25 @@ class AccountingController
         $tx = DB::fetch("SELECT * FROM acc_transactions WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$tx) jsonError('Transaction not found', 404);
         if ((int)$tx['is_transfer'] === 1) jsonError('Delete the transfer instead — this row is one half of it.');
+        if (!empty($tx['reconciliation_id'])) {
+            jsonError('This transaction is part of a finished reconciliation. Reopen that period before deleting it.');
+        }
 
         self::tx(function () use ($tx, $id) {
             // Reverse the ledger before the row goes away, else the trial balance
             // keeps a payment that no longer exists.
             Acc::unapplyPayment((int)$id, 'Payment deleted');
             DB::query("UPDATE acc_transactions SET deleted_at = NOW() WHERE id = ?", [(int)$id]);
+            // A statement line whose transaction is gone must go back to the
+            // review queue, or it stays "done" with nothing behind it.
+            if (!empty($tx['bank_line_id'])) {
+                DB::query(
+                    "UPDATE acc_bank_lines SET status = 'pending', transaction_id = NULL,
+                            match_confidence = NULL, decided_by = NULL, decided_at = NULL
+                      WHERE id = ?",
+                    [(int)$tx['bank_line_id']]
+                );
+            }
             Acc::recalcAccount($tx['account_id']);
             if ($tx['document_id']) Acc::syncDocumentPaymentState((int)$tx['document_id']);
         });
@@ -1257,28 +1282,72 @@ class AccountingController
         jsonResponse(['ok' => true]);
     }
 
+    /**
+     * Start a reconciliation.
+     *
+     * The beginning balance is the ending balance of the last one closed on this
+     * account, stored rather than recomputed. Recomputing it would let an edit
+     * to a years-old transaction quietly rewrite a period that was signed off —
+     * the exact failure a reconciliation exists to prevent.
+     */
     public static function createReconciliation()
     {
         self::boot('acc.banking');
         $data = input();
         $accountId = (int)($data['account_id'] ?? 0);
-        if (!DB::fetch("SELECT id FROM acc_accounts WHERE id = ? AND deleted_at IS NULL", [$accountId])) jsonError('Select an account');
+        $account = DB::fetch("SELECT * FROM acc_accounts WHERE id = ? AND deleted_at IS NULL", [$accountId]);
+        if (!$account) jsonError('Select an account');
+
+        $open = DB::fetch(
+            "SELECT id, ended_at FROM acc_reconciliations
+              WHERE account_id = ? AND deleted_at IS NULL AND reconciled = 0
+           ORDER BY id DESC LIMIT 1",
+            [$accountId]
+        );
+        if ($open) {
+            jsonResponse(['ok' => true, 'id' => (int)$open['id'], 'existing' => true]);
+        }
+
+        $prev = self::lastClosedReconciliation($accountId);
+        $opening = $prev ? Acc::money($prev['closing_balance']) : Acc::money($account['opening_balance']);
+        $startedAt = $prev && !empty($prev['ended_at'])
+            ? date('Y-m-d', strtotime($prev['ended_at'] . ' +1 day'))
+            : Acc::date($data['started_at'] ?? null, date('Y-m-01'));
 
         $id = DB::insert('acc_reconciliations', [
             'account_id' => $accountId,
-            'started_at' => Acc::date($data['started_at'] ?? null, date('Y-m-01')),
+            'started_at' => Acc::date($data['started_at'] ?? null, $startedAt),
             'ended_at' => Acc::date($data['ended_at'] ?? null, date('Y-m-t')),
+            'opening_balance' => $opening,
             'closing_balance' => Acc::money($data['closing_balance'] ?? 0),
             'reconciled' => 0,
         ]);
-        jsonResponse(['ok' => true, 'id' => (int)$id]);
+        jsonResponse(['ok' => true, 'id' => (int)$id, 'opening_balance' => $opening]);
     }
 
+    private static function lastClosedReconciliation($accountId)
+    {
+        return DB::fetch(
+            "SELECT * FROM acc_reconciliations
+              WHERE account_id = ? AND deleted_at IS NULL AND reconciled = 1
+           ORDER BY ended_at DESC, id DESC LIMIT 1",
+            [(int)$accountId]
+        );
+    }
+
+    /**
+     * The reconcile worksheet.
+     *
+     * Everything not yet locked into a closed reconciliation and dated on or
+     * before the statement end is listed — including items older than the
+     * period. A cheque written in March that only cleared in May has to be
+     * tickable in May, or the difference can never reach zero.
+     */
     public static function reconciliation($id)
     {
         self::boot('acc.banking');
         $rec = DB::fetch(
-            "SELECT r.*, a.name AS account_name, a.balance AS account_balance
+            "SELECT r.*, a.name AS account_name, a.balance AS account_balance, a.currency_code
                FROM acc_reconciliations r
           LEFT JOIN acc_accounts a ON a.id = r.account_id
               WHERE r.id = ? AND r.deleted_at IS NULL",
@@ -1286,59 +1355,185 @@ class AccountingController
         );
         if (!$rec) jsonError('Reconciliation not found', 404);
 
-        $unreconciled = DB::fetchAll(
-            "SELECT * FROM acc_transactions
-              WHERE account_id = ? AND deleted_at IS NULL AND reconciled = 0
-                AND paid_at >= ? AND paid_at <= ?
-           ORDER BY paid_at ASC, id ASC",
-            [(int)$rec['account_id'], $rec['started_at'], $rec['ended_at'] ?: date('Y-m-d')]
+        $accountId = (int)$rec['account_id'];
+        $end = $rec['ended_at'] ?: date('Y-m-d');
+        $closed = (int)$rec['reconciled'] === 1;
+
+        $scope = $closed
+            ? "t.reconciliation_id = " . (int)$id
+            : "(t.reconciliation_id IS NULL OR t.reconciliation_id = " . (int)$id . ") AND t.paid_at <= ?";
+        $params = $closed ? [$accountId] : [$accountId, $end];
+
+        $rows = DB::fetchAll(
+            "SELECT t.id, t.type, t.paid_at, t.amount, t.description, t.reference, t.is_transfer,
+                    t.cleared_at, t.reconciliation_id, t.document_id, t.bank_line_id,
+                    c.name AS contact_name, d.number AS document_number,
+                    cat.name AS category_name
+               FROM acc_transactions t
+          LEFT JOIN acc_contacts c ON c.id = t.contact_id
+          LEFT JOIN acc_documents d ON d.id = t.document_id
+          LEFT JOIN acc_categories cat ON cat.id = t.category_id
+              WHERE t.account_id = ? AND t.deleted_at IS NULL AND $scope
+           ORDER BY t.paid_at ASC, t.id ASC
+              LIMIT 2000",
+            $params
         );
 
-        $cleared = DB::fetch(
-            "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) AS v
-               FROM acc_transactions
-              WHERE account_id = ? AND deleted_at IS NULL AND reconciled = 1
-                AND paid_at >= ? AND paid_at <= ?",
-            [(int)$rec['account_id'], $rec['started_at'], $rec['ended_at'] ?: date('Y-m-d')]
+        $clearedIn = 0.0; $clearedOut = 0.0; $openIn = 0.0; $openOut = 0.0;
+        foreach ($rows as $r) {
+            $amt = (float)$r['amount'];
+            $isCleared = !empty($r['cleared_at']) || (int)$r['reconciliation_id'] === (int)$id;
+            if ($r['type'] === 'income') { $isCleared ? $clearedIn += $amt : $openIn += $amt; }
+            else { $isCleared ? $clearedOut += $amt : $openOut += $amt; }
+        }
+
+        $opening   = Acc::money($rec['opening_balance']);
+        $statement = Acc::money($rec['closing_balance']);
+        $clearedBalance = Acc::money($opening + $clearedIn - $clearedOut);
+        $difference     = Acc::money($statement - $clearedBalance);
+
+        // Statement lines still waiting on a decision would change the answer if
+        // dealt with — worth saying so before anyone signs the period off.
+        $pending = DB::fetch(
+            "SELECT COUNT(*) AS n FROM acc_bank_lines
+              WHERE account_id = ? AND status = 'pending' AND posted_at <= ?",
+            [$accountId, $end]
         );
 
         jsonResponse([
             'reconciliation' => $rec,
-            'unreconciled' => $unreconciled,
-            'cleared_total' => Acc::money($cleared['v'] ?? 0),
-            'attachments' => self::attachmentsFor('reconciliation', $rec['id']),
+            'transactions'   => $rows,
+            'summary' => [
+                'opening_balance'  => $opening,
+                'statement_balance' => $statement,
+                'cleared_in'       => Acc::money($clearedIn),
+                'cleared_out'      => Acc::money($clearedOut),
+                'cleared_balance'  => $clearedBalance,
+                'difference'       => $difference,
+                'balanced'         => abs($difference) < 0.005,
+                'uncleared_in'     => Acc::money($openIn),
+                'uncleared_out'    => Acc::money($openOut),
+                'cleared_count'    => count(array_filter($rows, fn($r) => !empty($r['cleared_at']) || (int)$r['reconciliation_id'] === (int)$id)),
+                'total_count'      => count($rows),
+            ],
+            'pending_statement_lines' => (int)($pending['n'] ?? 0),
+            // Kept for older clients that still read these two keys.
+            'unreconciled'   => array_values(array_filter($rows, fn($r) => empty($r['cleared_at']))),
+            'cleared_total'  => Acc::money($clearedIn - $clearedOut),
+            'attachments'    => self::attachmentsFor('reconciliation', $rec['id']),
         ]);
     }
 
+    /** Tick or untick transactions on the worksheet. */
     public static function reconciliationMark($id)
     {
         self::boot('acc.banking');
         $rec = DB::fetch("SELECT * FROM acc_reconciliations WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$rec) jsonError('Reconciliation not found', 404);
+        if ((int)$rec['reconciled'] === 1) jsonError('This period is closed. Reopen it before changing what is cleared.');
 
         $data = input();
         $ids = $data['transaction_ids'] ?? [];
-        if (!is_array($ids) || !count($ids)) jsonError('Select at least one transaction');
-
-        $clean = array_values(array_filter(array_map('intval', $ids)));
+        if (!is_array($ids)) $ids = [];
+        $clean = array_values(array_unique(array_filter(array_map('intval', $ids))));
         if (!$clean) jsonError('Select at least one transaction');
+        // Default is to clear, so the old call shape keeps working unchanged.
+        $cleared = !array_key_exists('cleared', $data) || (bool)$data['cleared'];
+
         $in = implode(',', array_fill(0, count($clean), '?'));
         $params = array_merge($clean, [(int)$rec['account_id']]);
-        DB::query("UPDATE acc_transactions SET reconciled = 1 WHERE id IN ($in) AND account_id = ?", $params);
+        DB::query(
+            "UPDATE acc_transactions
+                SET cleared_at = " . ($cleared ? "COALESCE(cleared_at, NOW())" : "NULL") . ",
+                    reconciled = " . ($cleared ? "1" : "0") . "
+              WHERE id IN ($in) AND account_id = ? AND deleted_at IS NULL AND reconciliation_id IS NULL",
+            $params
+        );
 
-        jsonResponse(['ok' => true, 'marked' => count($clean)]);
+        jsonResponse(['ok' => true, 'marked' => count($clean), 'cleared' => $cleared]);
     }
 
+    /**
+     * Finish the period.
+     *
+     * Refuses while the difference is not zero unless explicitly forced, and
+     * records the forced amount as an adjustment note rather than pretending
+     * the period balanced.
+     */
     public static function reconciliationClose($id)
     {
         self::boot('acc.banking');
         $rec = DB::fetch("SELECT * FROM acc_reconciliations WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$rec) jsonError('Reconciliation not found', 404);
+        if ((int)$rec['reconciled'] === 1) jsonError('This period is already closed.');
+
         $data = input();
-        DB::query(
-            "UPDATE acc_reconciliations SET ended_at = ?, reconciled = 1 WHERE id = ?",
-            [Acc::date($data['ended_at'] ?? null, date('Y-m-d')), (int)$id]
+        $endedAt = Acc::date($data['ended_at'] ?? null, $rec['ended_at'] ?: date('Y-m-d'));
+        $statement = array_key_exists('closing_balance', $data) && $data['closing_balance'] !== null && $data['closing_balance'] !== ''
+            ? Acc::money($data['closing_balance']) : Acc::money($rec['closing_balance']);
+
+        $sums = DB::fetch(
+            "SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN amount ELSE -amount END), 0) AS net,
+                    COUNT(*) AS n
+               FROM acc_transactions
+              WHERE account_id = ? AND deleted_at IS NULL AND cleared_at IS NOT NULL
+                AND reconciliation_id IS NULL AND paid_at <= ?",
+            [(int)$rec['account_id'], $endedAt]
         );
+        $clearedBalance = Acc::money(Acc::num($rec['opening_balance']) + Acc::num($sums['net'] ?? 0));
+        $difference = Acc::money($statement - $clearedBalance);
+
+        if (abs($difference) >= 0.005 && empty($data['force'])) {
+            jsonError('The difference is ' . number_format($difference, 2)
+                . '. Tick the items that appear on your statement until it reaches zero, or close it anyway and record the gap.', 409);
+        }
+
+        self::tx(function () use ($rec, $id, $endedAt, $statement, $difference, $sums, $data) {
+            DB::query(
+                "UPDATE acc_transactions SET reconciliation_id = ?, reconciled = 1
+                  WHERE account_id = ? AND deleted_at IS NULL AND cleared_at IS NOT NULL
+                    AND reconciliation_id IS NULL AND paid_at <= ?",
+                [(int)$id, (int)$rec['account_id'], $endedAt]
+            );
+            DB::query(
+                "UPDATE acc_reconciliations SET ended_at = ?, closing_balance = ?, reconciled = 1 WHERE id = ?",
+                [$endedAt, $statement, (int)$id]
+            );
+        });
+
+        jsonResponse([
+            'ok' => true,
+            'cleared_count' => (int)($sums['n'] ?? 0),
+            'difference' => $difference,
+            'forced' => abs($difference) >= 0.005,
+        ]);
+    }
+
+    /**
+     * Reopen a closed period.
+     *
+     * Only the most recent one on the account: reopening an earlier period would
+     * move the beginning balance of every period after it, and nothing would say
+     * so on screen.
+     */
+    public static function reconciliationReopen($id)
+    {
+        self::boot('acc.banking');
+        $rec = DB::fetch("SELECT * FROM acc_reconciliations WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
+        if (!$rec) jsonError('Reconciliation not found', 404);
+        if ((int)$rec['reconciled'] !== 1) jsonError('That period is already open.');
+
+        $newer = DB::fetch(
+            "SELECT id FROM acc_reconciliations
+              WHERE account_id = ? AND deleted_at IS NULL AND reconciled = 1 AND id > ? LIMIT 1",
+            [(int)$rec['account_id'], (int)$id]
+        );
+        if ($newer) jsonError('A later period has been reconciled on this account. Reopen that one first.');
+
+        self::tx(function () use ($id) {
+            DB::query("UPDATE acc_transactions SET reconciliation_id = NULL WHERE reconciliation_id = ?", [(int)$id]);
+            DB::query("UPDATE acc_reconciliations SET reconciled = 0 WHERE id = ?", [(int)$id]);
+        });
         jsonResponse(['ok' => true]);
     }
 
@@ -1875,6 +2070,11 @@ class AccountingController
         } elseif ($type === 'reconciliation') {
             if (!DB::fetch("SELECT id FROM acc_reconciliations WHERE id = ? AND deleted_at IS NULL", [$id])) {
                 jsonError('Reconciliation not found', 404);
+            }
+            Authz::requireAccModule('acc.banking');
+        } elseif ($type === 'bank_import') {
+            if (!DB::fetch("SELECT id FROM acc_bank_imports WHERE id = ? AND deleted_at IS NULL", [$id])) {
+                jsonError('Statement import not found', 404);
             }
             Authz::requireAccModule('acc.banking');
         } else {

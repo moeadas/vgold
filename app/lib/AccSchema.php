@@ -21,6 +21,7 @@ class AccSchema
 
     /** Every business table, in child → parent order (safe for bulk wipes). */
     const BUSINESS_TABLES = [
+        'acc_bank_lines', 'acc_bank_imports',
         'acc_attachments', 'acc_transaction_splits',
         'acc_document_item_taxes', 'acc_document_items', 'acc_document_totals',
         'acc_document_histories', 'acc_documents',
@@ -35,7 +36,7 @@ class AccSchema
     const ATTACHMENT_DIR = 'uploads/acc_attachments';
 
     /** Things an attachment can hang off. */
-    const ATTACHABLE = ['document', 'reconciliation', 'transaction'];
+    const ATTACHABLE = ['document', 'reconciliation', 'transaction', 'bank_import'];
 
     public static function ensure()
     {
@@ -403,11 +404,96 @@ class AccSchema
                 KEY `acc_ts_document` (`document_id`)
             )$eng");
 
+            /**
+             * Bank statement imports — one row per uploaded file.
+             *
+             * The mapping actually used is kept with the import, not just the
+             * account, so a statement can be re-read (or questioned) later
+             * exactly as it was first understood.
+             */
+            DB::query("CREATE TABLE IF NOT EXISTS `acc_bank_imports` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `account_id` INT NOT NULL,
+                `filename` VARCHAR(255) NOT NULL,
+                `format` VARCHAR(16) NOT NULL DEFAULT 'csv',
+                `statement_start` DATE NULL,
+                `statement_end` DATE NULL,
+                `closing_balance` DECIMAL(15,4) NULL,
+                `total_rows` INT NOT NULL DEFAULT 0,
+                `imported_rows` INT NOT NULL DEFAULT 0,
+                `duplicate_rows` INT NOT NULL DEFAULT 0,
+                `skipped_rows` INT NOT NULL DEFAULT 0,
+                `mapping` TEXT NULL,
+                `notes` TEXT NULL,
+                `uploaded_by` INT NULL,
+                `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+                KEY `acc_bi_account` (`account_id`),
+                KEY `acc_bi_deleted` (`deleted_at`)
+            )$eng");
+
+            /**
+             * One line off a statement. `amount` is SIGNED from the account's
+             * point of view: positive is money in.
+             *
+             * `dedupe_key` plus `occurrence` is what makes re-uploading an
+             * overlapping statement safe while still keeping two genuinely
+             * identical charges on the same day. See StatementParser::dedupeKey.
+             */
+            DB::query("CREATE TABLE IF NOT EXISTS `acc_bank_lines` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `import_id` INT NOT NULL,
+                `account_id` INT NOT NULL,
+                `posted_at` DATE NOT NULL,
+                `amount` DECIMAL(15,4) NOT NULL DEFAULT 0,
+                `description` VARCHAR(500) NULL,
+                `payee` VARCHAR(191) NULL,
+                `reference` VARCHAR(100) NULL,
+                `balance_after` DECIMAL(15,4) NULL,
+                `fitid` VARCHAR(120) NULL,
+                `dedupe_key` CHAR(40) NOT NULL,
+                `occurrence` INT NOT NULL DEFAULT 0,
+                `status` VARCHAR(16) NOT NULL DEFAULT 'pending',
+                `transaction_id` INT NULL,
+                `match_confidence` VARCHAR(16) NULL,
+                `decided_by` INT NULL,
+                `decided_at` DATETIME NULL,
+                `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                KEY `acc_bl_import` (`import_id`),
+                KEY `acc_bl_account_status` (`account_id`, `status`),
+                KEY `acc_bl_date` (`posted_at`),
+                UNIQUE KEY `uniq_acc_bl_dedupe` (`account_id`, `dedupe_key`, `occurrence`)
+            )$eng");
+
             // Sales-agent dimension. Added as ALTERs because both tables predate it.
             self::addColumnIfMissing('acc_documents', 'user_id',
                 "ALTER TABLE `acc_documents` ADD COLUMN `user_id` INT NULL, ADD KEY `acc_doc_user` (`user_id`)");
             self::addColumnIfMissing('acc_transactions', 'user_id',
                 "ALTER TABLE `acc_transactions` ADD COLUMN `user_id` INT NULL, ADD KEY `acc_tx_user` (`user_id`)");
+
+            /**
+             * Bank-feed state on a transaction. QuickBooks distinguishes cleared
+             * (C — seen on a statement) from reconciled (R — locked into a
+             * finished reconciliation), and so do we: `cleared_at` is set the
+             * moment a statement line is matched or added, `reconciliation_id`
+             * only when a period is closed. Without the distinction, the tick
+             * list on the reconcile screen has nothing to pre-tick.
+             */
+            self::addColumnIfMissing('acc_transactions', 'bank_line_id',
+                "ALTER TABLE `acc_transactions` ADD COLUMN `bank_line_id` INT NULL, ADD KEY `acc_tx_bank_line` (`bank_line_id`)");
+            $addedCleared = self::addColumnIfMissing('acc_transactions', 'cleared_at',
+                "ALTER TABLE `acc_transactions` ADD COLUMN `cleared_at` DATETIME NULL");
+            $addedRecId = self::addColumnIfMissing('acc_transactions', 'reconciliation_id',
+                "ALTER TABLE `acc_transactions` ADD COLUMN `reconciliation_id` INT NULL, ADD KEY `acc_tx_reconciliation` (`reconciliation_id`)");
+            if ($addedCleared || $addedRecId) self::backfillClearedState();
+
+            // A reconciliation's beginning balance: the ending balance of the
+            // last one closed on this account. Stored, not recomputed, so a
+            // later edit to an old transaction cannot silently rewrite history.
+            self::addColumnIfMissing('acc_reconciliations', 'opening_balance',
+                "ALTER TABLE `acc_reconciliations` ADD COLUMN `opening_balance` DECIMAL(15,4) NOT NULL DEFAULT 0");
         } catch (\Throwable $e) {
             error_log('AccSchema::ensure: ' . $e->getMessage());
         }
@@ -428,11 +514,38 @@ class AccSchema
         }
     }
 
+    /** @return bool true when the column was actually added by this call. */
     private static function addColumnIfMissing($table, $column, $ddl)
     {
-        if (self::columnExists($table, $column)) return;
-        try { DB::query($ddl); }
-        catch (\Throwable $e) { error_log("AccSchema add $table.$column: " . $e->getMessage()); }
+        if (self::columnExists($table, $column)) return false;
+        try { DB::query($ddl); return true; }
+        catch (\Throwable $e) { error_log("AccSchema add $table.$column: " . $e->getMessage()); return false; }
+    }
+
+    /**
+     * Carry the old `reconciled` flag into the new cleared/locked pair.
+     *
+     * Runs exactly once, when the columns are first added. Without it, every
+     * transaction reconciled before this release would come back onto the next
+     * worksheet unticked — and the beginning balance would then be counted
+     * twice, which is the one arithmetic error a reconciliation must not make.
+     */
+    private static function backfillClearedState()
+    {
+        try {
+            DB::query(
+                "UPDATE `acc_transactions` t
+                    SET t.cleared_at = COALESCE(t.cleared_at, t.updated_at, t.created_at, NOW()),
+                        t.reconciliation_id = COALESCE(t.reconciliation_id, (
+                            SELECT r.id FROM `acc_reconciliations` r
+                             WHERE r.account_id = t.account_id AND r.deleted_at IS NULL
+                               AND r.reconciled = 1 AND r.ended_at >= t.paid_at
+                          ORDER BY r.ended_at ASC, r.id ASC LIMIT 1))
+                  WHERE t.reconciled = 1 AND t.deleted_at IS NULL"
+            );
+        } catch (\Throwable $e) {
+            error_log('AccSchema::backfillClearedState: ' . $e->getMessage());
+        }
     }
 
     /** Absolute path of the attachment directory, created on demand. */

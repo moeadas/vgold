@@ -234,6 +234,8 @@ async function render() {
       case 'acc-form': mainContent = renderAccForm(); break;
       case 'acc-danger': mainContent = await renderAccDangerZone(); break;
       case 'acc-bill-scan': mainContent = await renderAccBillScan(); break;
+      case 'acc-bank-import': mainContent = await renderAccBankImport(); break;
+      case 'acc-bank-review': mainContent = await renderAccBankReview(); break;
       case 'acc-invoices': mainContent = await renderAccDocuments('invoice'); break;
       case 'acc-bills': mainContent = await renderAccDocuments('bill'); break;
       case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;

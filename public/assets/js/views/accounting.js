@@ -44,6 +44,9 @@ const AccState = {
   txFilter: { tx_type: 'all', account_id: '', search: '', match: 'all', page: 1 },
   account: null,
   reconciliation: null,
+  bankReview: null,          // the statement-line review queue for one account
+  bankReviewAccountId: '',
+  bankReviewStatus: 'pending',
   journal: null,
   coa: null,
   ledgerTab: 'journal',
@@ -95,7 +98,9 @@ Object.assign(API, {
   accDeleteTransfer: (id) => API.req('/acc/transfers/' + id, { method: 'DELETE' }),
   accCreateReconciliation: (d) => API.req('/acc/reconciliations', { method: 'POST', body: JSON.stringify(d) }),
   accReconciliation: (id) => API.req('/acc/reconciliations/' + id),
-  accReconciliationMark: (id, ids) => API.req('/acc/reconciliations/' + id + '/mark', { method: 'POST', body: JSON.stringify({ transaction_ids: ids }) }),
+  accReconciliationMark: (id, ids, cleared) => API.req('/acc/reconciliations/' + id + '/mark', {
+    method: 'POST', body: JSON.stringify({ transaction_ids: ids, cleared: cleared !== false }),
+  }),
   accReconciliationClose: (id, d) => API.req('/acc/reconciliations/' + id + '/close', { method: 'POST', body: JSON.stringify(d) }),
 
   accJournal: (p = {}) => API.req('/acc/journal?' + new URLSearchParams(p).toString()),

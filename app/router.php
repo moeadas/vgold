@@ -26,7 +26,10 @@ require_once __DIR__ . '/controllers/CrmSyncController.php';
 require_once __DIR__ . '/lib/AccSchema.php';
 require_once __DIR__ . '/lib/Acc.php';
 require_once __DIR__ . '/lib/AccSeed.php';
+require_once __DIR__ . '/lib/StatementParser.php';
+require_once __DIR__ . '/lib/BankMatcher.php';
 require_once __DIR__ . '/controllers/AccountingController.php';
+require_once __DIR__ . '/controllers/BankFeedController.php';
 require_once __DIR__ . '/controllers/BackupController.php';
 require_once __DIR__ . '/lib/CRMTaskBridge.php';
 require_once __DIR__ . '/lib/Mail.php';
@@ -228,6 +231,22 @@ $routes = [
     'GET acc/reconciliations/{id}' => ['AccountingController::reconciliation', true],
     'POST acc/reconciliations/{id}/mark' => ['AccountingController::reconciliationMark', true],
     'POST acc/reconciliations/{id}/close' => ['AccountingController::reconciliationClose', true],
+    'POST acc/reconciliations/{id}/reopen' => ['AccountingController::reconciliationReopen', true],
+
+    // Bank statement import and the review queue it feeds.
+    // Literal paths first — 'bank-imports/preview' must not be read as an {id}.
+    'POST acc/bank-imports/preview' => ['BankFeedController::preview', true],
+    'POST acc/bank-imports/reparse' => ['BankFeedController::reparse', true],
+    'POST acc/bank-imports' => ['BankFeedController::commit', true],
+    'GET acc/bank-imports' => ['BankFeedController::imports', true],
+    'DELETE acc/bank-imports/{id}' => ['BankFeedController::deleteImport', true],
+    'GET acc/bank-review' => ['BankFeedController::review', true],
+    'POST acc/bank-review/accept-matches' => ['BankFeedController::acceptMatches', true],
+    'GET acc/bank-lines/{id}/documents' => ['BankFeedController::lineDocuments', true],
+    'POST acc/bank-lines/{id}/match' => ['BankFeedController::matchLine', true],
+    'POST acc/bank-lines/{id}/add' => ['BankFeedController::addLine', true],
+    'POST acc/bank-lines/{id}/exclude' => ['BankFeedController::excludeLine', true],
+    'POST acc/bank-lines/{id}/undo' => ['BankFeedController::undoLine', true],
 
     // Attachments — bank statements, supplier PDFs, remittance advice.
     'POST acc/bills/extract' => ['AccountingController::extractBill', true],

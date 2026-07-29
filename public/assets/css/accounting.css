@@ -356,3 +356,106 @@
   color: var(--muted); font-size: 18px;
 }
 .acc-icon-btn:hover { background: #FDE8E8; color: #B0432B; }
+
+/* ============================================================================
+   Bank statement import and review
+   ============================================================================ */
+
+.acc-alert-ok { border-left-color: #4A7C3F; background: #F1F7EE; color: #34602B; }
+
+/* .btn-sm exists only inside .crm-native; the accounting pages need it too. */
+.acc-page .btn-sm { padding: 5px 11px; font-size: 12px; border-radius: 6px; }
+
+/* --- mapping step --- */
+.bf-file-line {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 14px; flex-wrap: wrap; padding-bottom: 12px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border); font-size: 13.5px;
+}
+.bf-map-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 14px; margin-top: 14px;
+}
+.bf-map-field .form-label { display: block; margin-bottom: 4px; }
+.bf-summary {
+  display: flex; gap: 26px; flex-wrap: wrap;
+  padding: 14px 20px; border-bottom: 1px solid var(--border); font-size: 13px;
+}
+.bf-summary > div { display: flex; flex-direction: column; gap: 2px; }
+.bf-summary span { color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: .04em; }
+.bf-summary strong { font-size: 15px; }
+
+/* --- review queue --- */
+.bf-rows { display: flex; flex-direction: column; }
+.bf-row { border-bottom: 1px solid var(--border); padding: 12px 20px; }
+.bf-row:last-child { border-bottom: 0; }
+.bf-row-open { background: var(--surface-2, #FAFAF8); }
+.bf-row-main { display: grid; grid-template-columns: 74px minmax(0, 1.5fr) 130px minmax(0, 1.5fr); gap: 14px; align-items: center; }
+.bf-row-date { font-size: 12.5px; font-weight: 700; line-height: 1.25; }
+.bf-row-desc { min-width: 0; }
+.bf-row-amount { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bf-row-action { min-width: 0; }
+.bf-suggest {
+  display: flex; align-items: center; gap: 10px; justify-content: flex-end;
+  padding: 8px 10px; border-radius: 8px; border: 1px solid transparent; font-size: 12.5px;
+}
+.bf-suggest-high { background: var(--sage-bg, #F1F7EE); border-color: #CFE3C6; }
+.bf-suggest-warn { background: #FDF6E3; border-color: #EBDCB4; }
+.bf-suggest-text { flex: 1; min-width: 0; line-height: 1.45; }
+.bf-row-links { display: flex; gap: 14px; margin: 8px 0 0 88px; }
+.bf-row-panel { margin: 12px 0 4px 88px; padding: 14px; border: 1px solid var(--border); border-radius: 10px; background: #FFF; }
+.bf-cands { display: flex; flex-direction: column; gap: 8px; }
+.bf-cand {
+  display: grid; grid-template-columns: minmax(0, 1fr) 120px 110px;
+  gap: 12px; align-items: center; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; font-size: 13px;
+}
+.bf-cand-amt { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* --- reconcile worksheet --- */
+.acc-recon-bar {
+  display: flex; align-items: stretch; gap: 4px; flex-wrap: wrap;
+  padding: 16px 18px; margin-bottom: 16px;
+  background: var(--card, #FFF); border: 1px solid var(--border); border-radius: 12px;
+}
+.acc-recon-cell { display: flex; flex-direction: column; gap: 3px; padding: 0 12px; min-width: 118px; }
+.acc-recon-cell span { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.acc-recon-cell strong { font-size: 16px; font-variant-numeric: tabular-nums; }
+.acc-recon-statement .form-input { padding: 4px 8px; font-size: 15px; font-weight: 700; max-width: 130px; }
+.acc-recon-op { display: flex; align-items: center; color: var(--muted); font-size: 16px; padding: 0 2px; }
+.acc-recon-diff {
+  margin-left: auto; display: flex; flex-direction: column; gap: 3px;
+  padding: 8px 16px; border-radius: 10px; min-width: 150px;
+}
+.acc-recon-diff span { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; opacity: .8; }
+.acc-recon-diff strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+.acc-recon-ok { background: var(--sage-bg, #F1F7EE); color: #34602B; }
+.acc-recon-bad { background: #FDF6E3; color: #7A5A11; }
+
+.acc-recon-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.acc-recon-col .acc-card-head { gap: 10px; flex-wrap: wrap; }
+.acc-recon-list { max-height: 560px; overflow-y: auto; }
+.acc-recon-row {
+  display: grid; grid-template-columns: 22px 62px minmax(0, 1fr) auto 110px;
+  gap: 10px; align-items: center; padding: 9px 20px;
+  border-top: 1px solid var(--border); font-size: 13px; cursor: pointer;
+}
+.acc-recon-row:hover { background: var(--surface-2, #FAFAF8); }
+.acc-recon-row.on { background: var(--sage-bg, #F1F7EE); }
+.acc-recon-row input { width: 16px; height: 16px; cursor: pointer; }
+.acc-recon-date { color: var(--muted); font-size: 12px; }
+.acc-recon-desc { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.acc-recon-amt { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.acc-recon-fromfeed {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px;
+}
+
+@media (max-width: 900px) {
+  .acc-recon-cols { grid-template-columns: 1fr; }
+  .bf-row-main { grid-template-columns: 64px minmax(0, 1fr) 110px; }
+  .bf-row-action { grid-column: 1 / -1; }
+  .bf-suggest { justify-content: space-between; }
+  .bf-row-links, .bf-row-panel { margin-left: 0; }
+  .acc-recon-diff { margin-left: 0; width: 100%; }
+}

@@ -73,6 +73,8 @@ function renderSidebar() {
       // A form page keeps whichever nav item it was opened from highlighted.
       'acc-form': (typeof AccState !== 'undefined' && AccState.form?.back?.screen) || 'acc-dashboard',
       'acc-reconciliation': 'acc-banking',
+      'acc-bank-import': 'acc-banking',
+      'acc-bank-review': 'acc-banking',
       'crm-lead': 'crm-leads',
       'crm-lead-new': 'crm-leads',
       'crm-lead-email': 'crm-leads',

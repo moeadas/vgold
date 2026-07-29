@@ -13,26 +13,38 @@ async function renderAccBanking() {
   const b = AccState.banking;
   const tab = AccState.bankingTab;
 
-  const tabs = ['accounts', 'transactions', 'transfers', 'reconciliations'];
-  const tabBar = `<div class="acc-tabs">${tabs.map(t => `
-    <button class="acc-tab ${tab === t ? 'active' : ''}" onclick="accBankingTab('${t}')">${esc(t.charAt(0).toUpperCase() + t.slice(1))}</button>`).join('')}</div>`;
+  const pending = Number(b.review_pending || 0);
+  const tabs = [['accounts', 'Accounts'], ['transactions', 'Transactions'], ['transfers', 'Transfers'],
+                ['statements', 'Statements'], ['reconciliations', 'Reconciliations']];
+  const tabBar = `<div class="acc-tabs">${tabs.map(([t, label]) => `
+    <button class="acc-tab ${tab === t ? 'active' : ''}" onclick="accBankingTab('${t}')">${esc(label)}${
+      t === 'statements' && pending ? `<span class="acc-tab-count">${pending}</span>` : ''}</button>`).join('')}</div>`;
 
   let body = '';
   if (tab === 'accounts') body = accBankingAccounts(b);
   else if (tab === 'transactions') body = await accBankingTransactions();
   else if (tab === 'transfers') body = accBankingTransfers(b);
+  else if (tab === 'statements') body = accBankingStatements(b);
   else body = accBankingReconciliations(b);
 
   const action = {
     accounts: `<button class="btn-primary" onclick="accAccountModal()">${I.plus} New account</button>`,
     transactions: `<button class="btn-primary" onclick="accTransactionModal()">${I.plus} New transaction</button>`,
     transfers: `<button class="btn-primary" onclick="accTransferModal()">${I.plus} New transfer</button>`,
-    reconciliations: `<button class="btn-primary" onclick="accReconciliationModal()">${I.plus} Start reconciliation</button>`,
+    statements: `<button class="btn-primary" onclick="accGoBankImport()">${I.plus} Import a statement</button>`,
+    reconciliations: `<button class="btn-primary" onclick="accReconciliationModal()">${I.plus} Start reconciling</button>`,
   }[tab];
+
+  const reviewNudge = pending ? `
+    <div class="acc-alert acc-alert-warn" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+      <span><strong>${pending} imported statement line${pending === 1 ? '' : 's'}</strong> ${pending === 1 ? 'is' : 'are'} waiting to be matched, added or excluded.</span>
+      <button class="btn-primary btn-sm" onclick="accGoBankReview()">Review them</button>
+    </div>` : '';
 
   return `
     <div class="fade-in acc-page">
-      ${accHeader('Banking', 'Accounts, money movements and statement reconciliation.', action)}
+      ${accHeader('Banking', 'Accounts, money movements, statement imports and reconciliation.', action)}
+      ${reviewNudge}
       <div class="acc-stats">
         ${accStat('Total balance', accMoney(b.total_balance), 'All enabled accounts')}
         ${(b.accounts || []).filter(a => Number(a.enabled) === 1).slice(0, 4).map(a =>
@@ -141,16 +153,44 @@ function accBankingTransfers(b) {
 function accBankingReconciliations(b) {
   const rows = (b.reconciliations || []).map(r => [
     esc(r.account_name || '—'),
-    accDate(r.started_at, { month: 'short', year: 'numeric' }) + ' – ' + (r.ended_at ? accDate(r.ended_at, { month: 'short', year: 'numeric' }) : '…'),
+    accDate(r.started_at, { month: 'short', day: 'numeric' }) + ' – ' + (r.ended_at ? accDate(r.ended_at, { month: 'short', day: 'numeric', year: 'numeric' }) : '…'),
+    accMoney(r.opening_balance),
     accMoney(r.closing_balance),
     Number(r.reconciled) === 1 ? accPill('completed') : accPill('active'),
-    `<button class="btn-secondary" style="padding:3px 9px;font-size:12px" onclick="accGoReconciliation(${r.id})">Open</button>`,
+    `<button class="btn-secondary" style="padding:3px 9px;font-size:12px" onclick="accGoReconciliation(${r.id})">${Number(r.reconciled) === 1 ? 'View' : 'Continue'}</button>`,
   ]);
   return `<div class="acc-card acc-card-flush">
     ${accTable(
       [{ label: 'Account', width: 'minmax(0,1.5fr)' }, { label: 'Period', width: 'minmax(0,1.2fr)' },
-       { label: 'Closing', width: '140px', align: 'right' }, { label: 'Status', width: '120px' }, { label: '', width: '90px', align: 'right' }],
-      rows, 'No reconciliations found.')}
+       { label: 'Beginning', width: '130px', align: 'right' }, { label: 'Ending', width: '130px', align: 'right' },
+       { label: 'Status', width: '120px' }, { label: '', width: '100px', align: 'right' }],
+      rows, 'No reconciliations yet. Start one from the button above once a statement has arrived.')}
+  </div>`;
+}
+
+/** Imported statement files, newest first. */
+function accBankingStatements(b) {
+  const imports = b.imports || [];
+  const rows = imports.map(i => [
+    accDateShort(i.created_at),
+    `<div style="min-width:0"><div class="acc-strong acc-truncate">${esc(i.filename)}</div>
+      <div class="acc-sub acc-truncate">${esc(String(i.format).toUpperCase())}${i.uploaded_by_name ? ' · ' + esc(i.uploaded_by_name) : ''}</div></div>`,
+    esc(i.account_name || '—'),
+    i.statement_start ? accDateShort(i.statement_start) + ' – ' + accDateShort(i.statement_end) : '<span class="acc-dim">—</span>',
+    `${Number(i.imported_rows)} imported${Number(i.duplicate_rows) ? `<div class="acc-sub">${Number(i.duplicate_rows)} already here</div>` : ''}${
+      Number(i.skipped_rows) ? `<div class="acc-sub">${Number(i.skipped_rows)} unreadable</div>` : ''}`,
+    Number(i.pending)
+      ? `<span class="acc-chip acc-chip-match">${Number(i.pending)} to review</span>`
+      : '<span class="acc-pos">all reviewed</span>',
+    `<button class="btn-secondary" style="padding:3px 9px;font-size:12px" onclick="accGoBankReview(${i.account_id})">Review</button>`,
+  ]);
+
+  return `<div class="acc-card acc-card-flush">
+    ${accTable(
+      [{ label: 'Imported', width: '110px' }, { label: 'File', width: 'minmax(0,1.6fr)' },
+       { label: 'Account', width: '140px' }, { label: 'Statement period', width: '190px' },
+       { label: 'Rows', width: '150px' }, { label: 'Status', width: '130px' }, { label: '', width: '90px', align: 'right' }],
+      rows, 'No statements imported yet. Download a CSV, OFX or QFX from your bank and import it here.')}
   </div>`;
 }
 
@@ -456,18 +496,21 @@ function accReconciliationModal(accountId) {
   const first = new Date(); first.setDate(1);
   const last = new Date(first.getFullYear(), first.getMonth() + 1, 0);
   accOpenForm({
-    title: 'Start reconciliation',
+    title: 'Start reconciling',
+    desc: 'Take the closing balance and closing date from the statement your bank sent, and enter them exactly as printed.',
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
         ${accField('Account', accSelect('acc-r-account', accounts.map(a => ({ value: a.id, label: a.name })), accountId || '', 'Select account…'))}
-        ${accField('Closing balance (from statement)', `<input class="form-input" type="number" step="0.01" id="acc-r-closing" style="text-align:right" placeholder="0.00">`)}
+        ${accField('Ending balance on the statement', `<input class="form-input" type="number" step="0.01" id="acc-r-closing" style="text-align:right" placeholder="0.00">`)}
       </div>
       <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
         ${accField('Period start', `<input class="form-input" type="date" id="acc-r-start" value="${first.toISOString().slice(0, 10)}">`)}
-        ${accField('Period end', `<input class="form-input" type="date" id="acc-r-end" value="${last.toISOString().slice(0, 10)}">`)}
-      </div>`,
+        ${accField('Statement ending date', `<input class="form-input" type="date" id="acc-r-end" value="${last.toISOString().slice(0, 10)}">`)}
+      </div>
+      <p class="acc-sub" style="margin-top:12px">The beginning balance is taken from the last period you reconciled on this account, so the two always join up.
+        If a reconciliation is already open on this account you will be taken to it rather than starting a second one.</p>`,
     footer: `<button class="btn-secondary" onclick="accCloseForm()">Cancel</button>
-             <button class="btn-primary" onclick="accSaveReconciliation()">Start</button>`,
+             <button class="btn-primary" onclick="accSaveReconciliation()">Start reconciling</button>`,
   });
 }
 
@@ -481,78 +524,231 @@ async function accSaveReconciliation() {
     });
     accCloseForm();
     AccState.banking = null;
-    toast('Reconciliation started', 'success');
+    toast(res.existing ? 'Continuing the reconciliation already open on this account' : 'Reconciliation started', 'success');
     accGoReconciliation(res.id);
   } catch (e) { toast(e.message, 'error'); }
 }
 
+/* ---------- The reconcile worksheet ----------
+ *
+ * Beginning balance + what you have ticked = cleared balance. The difference
+ * against the statement is the only number that matters, so it is the one
+ * rendered largest, and the finish button refuses while it is not zero.
+ *
+ * Payments and deposits are separate columns, as on the statement itself —
+ * ticking down two short lists is far easier than scanning one long mixed one.
+ */
 async function renderAccReconciliation(id) {
   await accBoot();
   if (!accHas('acc.banking')) return accDenied('banking');
   if (!AccState.reconciliation || Number(AccState.reconciliation.reconciliation.id) !== Number(id)) {
     AccState.reconciliation = await API.accReconciliation(id);
   }
-  const { reconciliation: r, unreconciled, cleared_total } = AccState.reconciliation;
-  const difference = Number(r.closing_balance) - Number(cleared_total);
+  const data = AccState.reconciliation;
+  const r = data.reconciliation;
+  const s = data.summary;
+  const closed = Number(r.reconciled) === 1;
+  const balanced = !!s.balanced;
 
-  const rows = (unreconciled || []).map(t => [
-    `<label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" class="acc-rec-check" value="${t.id}"></label>`,
-    accDateShort(t.paid_at),
-    `<span class="acc-truncate">${esc(t.description || '—')}</span>`,
-    accPill(t.type),
-    `<span class="${t.type === 'income' ? 'acc-pos' : 'acc-neg'}">${t.type === 'income' ? '+' : '−'}${accMoney(t.amount).replace('-', '')}</span>`,
-  ]);
+  const rows = data.transactions || [];
+  const payments = rows.filter(t => t.type !== 'income');
+  const deposits = rows.filter(t => t.type === 'income');
+
+  const banner = closed
+    ? `<div class="acc-alert acc-alert-ok"><strong>This period is reconciled.</strong>
+         ${esc(String(s.cleared_count))} transactions were cleared against a statement balance of ${accMoney(s.statement_balance)}.</div>`
+    : balanced
+      ? `<div class="acc-alert acc-alert-ok"><strong>The difference is zero.</strong> Everything on the statement is accounted for — finish when you are ready.</div>`
+      : `<div class="acc-alert acc-alert-warn"><strong>Difference of ${accMoney(s.difference)}.</strong>
+           Tick the items that appear on your statement until this reaches zero.
+           ${data.pending_statement_lines ? ` <button class="acc-link-btn" onclick="accGoBankReview(${r.account_id})">${Number(data.pending_statement_lines)} imported statement line(s) are still waiting to be reviewed</button> — they may be what is missing.` : ''}</div>`;
 
   return `
     <div class="fade-in acc-page">
       <div style="margin-bottom:12px">${accBackLink('Banking', "accNav('acc-banking')")}</div>
-      ${accHeader('Reconciliation · ' + (r.account_name || ''), accDate(r.started_at) + ' – ' + (r.ended_at ? accDate(r.ended_at) : 'open'),
-        Number(r.reconciled) === 1 ? '' : `<button class="btn-primary" onclick="accCloseReconciliation(${r.id})">Close reconciliation</button>`)}
-      <div class="acc-stats">
-        ${accStat('Statement balance', accMoney(r.closing_balance), 'From your bank')}
-        ${accStat('Cleared in VGold', accMoney(cleared_total), 'Marked reconciled', 'acc-pos')}
-        ${accStat('Difference', accMoney(difference), Math.abs(difference) < 0.01 ? 'Balanced' : 'Needs review', Math.abs(difference) < 0.01 ? 'acc-pos' : 'acc-warn')}
-        ${accStat('Status', Number(r.reconciled) === 1 ? 'Completed' : 'In progress', '')}
-      </div>
-      <div class="acc-card acc-card-flush">
-        <div class="acc-card-head">
-          <span class="acc-card-title">Unreconciled transactions</span>
-          ${rows.length ? `<button class="btn-secondary" style="padding:5px 11px;font-size:12.5px" onclick="accRecSelectAll()">Select all</button>
-            <button class="btn-primary" style="padding:5px 11px;font-size:12.5px" onclick="accMarkReconciled(${r.id})">Mark selected as cleared</button>` : ''}
+      ${accHeader('Reconcile · ' + (r.account_name || ''),
+        accDate(r.started_at) + ' – ' + (r.ended_at ? accDate(r.ended_at) : 'open'),
+        closed
+          ? `<button class="btn-secondary" onclick="accReopenReconciliation(${r.id})">Reopen this period</button>`
+          : `<button class="btn-secondary" onclick="accGoBankImport(${r.account_id})">Import a statement</button>
+             <button class="btn-primary" ${balanced ? '' : 'disabled title="The difference must be zero"'} onclick="accCloseReconciliation(${r.id})">Finish now</button>`)}
+
+      <div class="acc-recon-bar">
+        <div class="acc-recon-cell"><span>Beginning balance</span><strong>${accMoney(s.opening_balance)}</strong></div>
+        <div class="acc-recon-op">+</div>
+        <div class="acc-recon-cell"><span>Cleared deposits</span><strong class="acc-pos">${accMoney(s.cleared_in)}</strong></div>
+        <div class="acc-recon-op">−</div>
+        <div class="acc-recon-cell"><span>Cleared payments</span><strong class="acc-neg">${accMoney(s.cleared_out)}</strong></div>
+        <div class="acc-recon-op">=</div>
+        <div class="acc-recon-cell"><span>Cleared balance</span><strong>${accMoney(s.cleared_balance)}</strong></div>
+        <div class="acc-recon-op">vs</div>
+        <div class="acc-recon-cell acc-recon-statement">
+          <span>Statement balance</span>
+          ${closed ? `<strong>${accMoney(s.statement_balance)}</strong>`
+                   : `<input class="form-input" type="number" step="0.01" id="acc-r-stmt" value="${Number(s.statement_balance)}"
+                             style="text-align:right" onchange="accRecSetStatement(${r.id})">`}
         </div>
-        ${accTable(
-          [{ label: '', width: '44px' }, { label: 'Date', width: '100px' }, { label: 'Description', width: 'minmax(0,2fr)' },
-           { label: 'Type', width: '110px' }, { label: 'Amount', width: '130px', align: 'right' }],
-          rows, 'No unreconciled transactions remaining.')}
+        <div class="acc-recon-diff ${balanced ? 'acc-recon-ok' : 'acc-recon-bad'}">
+          <span>Difference</span><strong>${accMoney(s.difference)}</strong>
+        </div>
       </div>
-      ${accAttachmentsCard('reconciliation', r.id, AccState.reconciliation.attachments, 'Bank statements')}
+
+      ${banner}
+
+      <div class="acc-recon-cols">
+        ${accRecColumn('Payments and withdrawals', payments, r, closed, s)}
+        ${accRecColumn('Deposits and other credits', deposits, r, closed, s)}
+      </div>
+
+      ${accAttachmentsCard('reconciliation', r.id, data.attachments, 'Bank statements')}
     </div>`;
 }
 
-function accRecSelectAll() {
-  const boxes = document.querySelectorAll('.acc-rec-check');
-  const allChecked = Array.from(boxes).every(b => b.checked);
-  boxes.forEach(b => { b.checked = !allChecked; });
+function accRecColumn(title, rows, r, closed, s) {
+  const cleared = rows.filter(t => accRecIsCleared(t, r));
+  const total = cleared.reduce((n, t) => n + Number(t.amount), 0);
+
+  const body = rows.length ? rows.map(t => {
+    const on = accRecIsCleared(t, r);
+    return `
+      <label class="acc-recon-row ${on ? 'on' : ''}">
+        <input type="checkbox" ${on ? 'checked' : ''} ${closed ? 'disabled' : ''}
+               onchange="accRecToggle(${r.id}, ${t.id}, this.checked)">
+        <span class="acc-recon-date">${esc(accDateShort(t.paid_at))}</span>
+        <span class="acc-recon-desc">
+          <span class="acc-truncate">${esc(t.description || '—')}</span>
+          <span class="acc-muted acc-truncate">${esc([t.contact_name, t.document_number, t.category_name].filter(Boolean).join(' · '))}</span>
+        </span>
+        ${t.bank_line_id ? '<span class="acc-recon-fromfeed" title="Came from an imported statement">statement</span>' : ''}
+        <span class="acc-recon-amt">${accMoney(t.amount)}</span>
+      </label>`;
+  }).join('') : `<div class="acc-empty">Nothing here for this period.</div>`;
+
+  return `
+    <div class="acc-card acc-card-flush acc-recon-col">
+      <div class="acc-card-head">
+        <span class="acc-card-title">${esc(title)}</span>
+        <span class="acc-muted">${cleared.length} of ${rows.length} ticked · ${accMoney(total)}</span>
+        ${!closed && rows.length ? `<button class="btn-secondary btn-sm" onclick="accRecTickAll(${r.id}, '${title.charAt(0) === 'P' ? 'expense' : 'income'}')">
+          ${cleared.length === rows.length ? 'Untick all' : 'Tick all'}</button>` : ''}
+      </div>
+      <div class="acc-recon-list">${body}</div>
+    </div>`;
 }
 
-async function accMarkReconciled(id) {
-  const ids = Array.from(document.querySelectorAll('.acc-rec-check:checked')).map(b => Number(b.value));
-  if (!ids.length) { toast('Select at least one transaction', 'error'); return; }
+function accRecIsCleared(t, r) {
+  return !!t.cleared_at || Number(t.reconciliation_id) === Number(r.id);
+}
+
+/** Recompute the header from what is ticked, without another round trip. */
+function accRecRecalc() {
+  const d = AccState.reconciliation;
+  if (!d) return;
+  const r = d.reconciliation;
+  let inSum = 0, outSum = 0, count = 0;
+  (d.transactions || []).forEach(t => {
+    if (!accRecIsCleared(t, r)) return;
+    count++;
+    if (t.type === 'income') inSum += Number(t.amount); else outSum += Number(t.amount);
+  });
+  const round2 = (n) => Math.round(n * 100) / 100;
+  d.summary.cleared_in = round2(inSum);
+  d.summary.cleared_out = round2(outSum);
+  d.summary.cleared_count = count;
+  d.summary.cleared_balance = round2(Number(d.summary.opening_balance) + inSum - outSum);
+  d.summary.difference = round2(Number(d.summary.statement_balance) - d.summary.cleared_balance);
+  d.summary.balanced = Math.abs(d.summary.difference) < 0.005;
+}
+
+async function accRecToggle(recId, txId, checked) {
+  const d = AccState.reconciliation;
+  const t = (d.transactions || []).find(x => Number(x.id) === Number(txId));
+  if (!t) return;
+  const was = t.cleared_at;
+  t.cleared_at = checked ? (was || new Date().toISOString().slice(0, 19).replace('T', ' ')) : null;
+  accRecRecalc();
+  render();
   try {
-    await API.accReconciliationMark(id, ids);
-    AccState.reconciliation = null;
-    toast(ids.length + ' transaction(s) cleared', 'success');
+    await API.accReconciliationMark(recId, [txId], checked);
+  } catch (e) {
+    t.cleared_at = was;
+    accRecRecalc();
+    toast(e.message, 'error');
+    render();
+  }
+}
+
+async function accRecTickAll(recId, type) {
+  const d = AccState.reconciliation;
+  const r = d.reconciliation;
+  const rows = (d.transactions || []).filter(t => (type === 'income' ? t.type === 'income' : t.type !== 'income'));
+  if (!rows.length) return;
+  const allOn = rows.every(t => accRecIsCleared(t, r));
+  const target = !allOn;
+  const ids = rows.filter(t => accRecIsCleared(t, r) !== target).map(t => t.id);
+  if (!ids.length) return;
+
+  const before = rows.map(t => t.cleared_at);
+  rows.forEach(t => { t.cleared_at = target ? (t.cleared_at || new Date().toISOString().slice(0, 19).replace('T', ' ')) : null; });
+  accRecRecalc();
+  render();
+  try {
+    await API.accReconciliationMark(recId, ids, target);
+  } catch (e) {
+    rows.forEach((t, i) => { t.cleared_at = before[i]; });
+    accRecRecalc();
+    toast(e.message, 'error');
+    render();
+  }
+}
+
+async function accRecSetStatement(recId) {
+  const v = accNumVal('acc-r-stmt');
+  const d = AccState.reconciliation;
+  d.reconciliation.closing_balance = v;
+  d.summary.statement_balance = v;
+  accRecRecalc();
+  render();
+}
+
+async function accCloseReconciliation(id) {
+  const d = AccState.reconciliation;
+  const diff = d ? Number(d.summary.difference) : 0;
+  const balanced = Math.abs(diff) < 0.005;
+
+  const ok = await Modal.confirm({
+    title: balanced ? 'Finish this reconciliation' : 'Finish with a difference?',
+    message: balanced
+      ? 'The cleared items will be locked to this period. Reopening it later is possible, but only until a newer period is reconciled.'
+      : 'There is still a difference of ' + accMoney(diff) + '. Finishing now records the period as reconciled with that gap left unexplained — usually it means a transaction is missing or entered twice.',
+    confirmText: balanced ? 'Finish' : 'Finish anyway',
+    danger: !balanced,
+  });
+  if (!ok) return;
+
+  try {
+    await API.accReconciliationClose(id, {
+      ended_at: d ? d.reconciliation.ended_at : accToday(),
+      closing_balance: d ? d.summary.statement_balance : undefined,
+      force: !balanced,
+    });
+    AccState.reconciliation = null; AccState.banking = null; AccState.transactions = null;
+    toast('Reconciliation finished', 'success');
     render();
   } catch (e) { toast(e.message, 'error'); }
 }
 
-async function accCloseReconciliation(id) {
-  const ok = await Modal.confirm({ title: 'Close reconciliation', message: 'This marks the period as reconciled.', confirmText: 'Close period' });
+async function accReopenReconciliation(id) {
+  const ok = await Modal.confirm({
+    title: 'Reopen this period',
+    message: 'The cleared items stay ticked but stop being locked, so they can be edited again. Only the most recent reconciliation on an account can be reopened.',
+    confirmText: 'Reopen',
+  });
   if (!ok) return;
   try {
-    await API.accReconciliationClose(id, { ended_at: accToday() });
+    await API.accReconciliationReopen(id);
     AccState.reconciliation = null; AccState.banking = null;
-    toast('Reconciliation closed', 'success');
+    toast('Period reopened', 'success');
     render();
   } catch (e) { toast(e.message, 'error'); }
 }
