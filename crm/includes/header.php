@@ -68,6 +68,13 @@ if ($_isAdminOrImpersonating) {
     .notif-dot{width:8px;height:8px;border-radius:50%;background:#0071e3;flex-shrink:0;margin-top:4px;}
     @media(max-width:768px){.notif-bell-wrap{top:10px;right:56px;} .notif-panel{width:calc(100vw - 24px);right:-40px;}}
     </style>
+    <script>
+    // Where this CRM is mounted. Standalone it is '' and root-absolute paths
+    // work; inside the VGold shell it is '/crm', and a fetch to '/api/x.php'
+    // lands on the VGold API router instead, which 404s. Page scripts must
+    // prefix CRM_API rather than assuming they are at the document root.
+    window.CRM_API = <?php echo json_encode(defined('CRM_BASE') ? CRM_BASE : ''); ?>;
+    </script>
 </head>
 <body>
     <!-- Mobile Menu Toggle -->

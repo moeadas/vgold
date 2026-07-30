@@ -664,7 +664,7 @@ document.addEventListener('keydown', function(e) {
 // ─── VoIP Setup / Diagnostics (Manager/Admin only) ───
 function checkVoIPSetup() {
     showSetupModal('Checking Twilio configuration...');
-    fetch('/api/voip.php?action=check_webhooks')
+    fetch(CRM_API + '/api/voip.php?action=check_webhooks')
         .then(function(r){ return r.json(); })
         .then(function(data){
             if (!data.success) {
@@ -716,7 +716,7 @@ function checkVoIPSetup() {
 
 function fixWebhooks() {
     showSetupResult('<div style="text-align:center;padding:20px;"><div class="spinner-border" style="width:24px;height:24px;border:3px solid #e8e8ed;border-top-color:#007aff;border-radius:50%;animation:spin 0.6s linear infinite;display:inline-block;"></div><br><small>Configuring webhooks...</small></div>');
-    fetch('/api/voip.php?action=configure_webhooks')
+    fetch(CRM_API + '/api/voip.php?action=configure_webhooks')
         .then(function(r){ return r.json(); })
         .then(function(data){
             if (data.success) {
