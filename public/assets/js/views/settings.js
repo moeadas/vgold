@@ -91,7 +91,11 @@ async function renderSettings() {
       const res = await API.smtp();
       smtp = res.settings; State.smtpSettings = smtp;
       State.mailStatus = res.status || null;
-    } catch(e) { smtp = null; State.mailStatus = null; }
+    } catch(e) {
+      // Deliberately leaves State.smtpSettings undefined: caching a failed
+      // fetch would blank the form until a full page reload.
+      smtp = null; State.mailStatus = null;
+    }
   }
   let moduleAccess = State.moduleAccess;
   let crmConfig = State.crmSettings;
@@ -108,13 +112,14 @@ async function renderSettings() {
   let crmIntegrations = State.crmIntegrations;
   if (user.role === 'admin' && crmIntegrations === undefined) {
     try { const res = await crmApiGet('crm-settings.php'); crmIntegrations = res.data || null; State.crmIntegrations = crmIntegrations; }
-    catch(e) { crmIntegrations = null; State.crmIntegrations = null; }
+    // Blank this render, but leave the cache undefined so the next one retries.
+    catch(e) { crmIntegrations = null; }
   }
   // Automation scheduler status (admins only) — comes from the automation meta.
   let autoSched = State.autoScheduler;
   if (user.role === 'admin' && autoSched === undefined) {
     try { const res = await crmApiGet('automation.php?action=meta'); autoSched = (res.data || {}).scheduler || null; State.autoScheduler = autoSched; }
-    catch(e) { autoSched = null; State.autoScheduler = null; }
+    catch(e) { autoSched = null; }
   }
 
   const notifPref = settings.email_notify_pref || 'all';
@@ -667,7 +672,11 @@ async function saveSmtp() {
   
   try {
     const res = await API.updateSmtp(data);
-    State.smtpSettings = null; // Force reload
+    // Must be undefined, not null. The loader guards on `=== undefined`, so
+    // null reads as "already loaded, and there is nothing there" — the refetch
+    // never ran and the form redrew blank with the default From Name, making a
+    // save that had in fact succeeded look like it had been rejected.
+    State.smtpSettings = undefined;
     State.mailStatus = undefined;
     toast('SMTP settings saved', 'success');
     if (res && res.warning) toast(res.warning, 'error');
@@ -752,8 +761,10 @@ async function saveCrmRoleMap() {
   if (status) status.textContent = 'Saving…';
   try {
     const res = await API.updateCrmRoleMap({ mappings, apply_to_users: applyToUsers });
-    State.crmRoleMap = null;
-    if (applyToUsers) { State.teamData = null; }
+    // undefined, not null — the loader guards on `=== undefined`, so null would
+    // suppress the refetch and redraw the mapping as empty.
+    State.crmRoleMap = undefined;
+    if (applyToUsers) { State.teamData = null; }   // teamData is guarded on truthiness
     toast('CRM role mapping saved' + (applyToUsers ? ' and applied to users' : ''), 'success');
     render();
   } catch(e) {
@@ -1260,7 +1271,9 @@ async function renderEditUserPage(userId) {
     try { State.teamData = await API.team(); } catch (e) { State.teamData = { members: [], invites: [] }; }
   }
   if (State.moduleAccess === undefined) {
-    try { State.moduleAccess = await API.moduleAccess(); } catch (e) { State.moduleAccess = null; }
+    // Leave it undefined if the call fails, so the next render tries again.
+    // Caching the failure showed an empty module list until a full reload.
+    try { State.moduleAccess = await API.moduleAccess(); } catch (e) { /* retry next render */ }
   }
   const member = (State.teamData?.members || []).find(m => m.id === userId);
   if (!member) {

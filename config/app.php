@@ -37,12 +37,12 @@ if ($isSiteGround) {
 define('APP_HOST', parse_url(APP_URL, PHP_URL_HOST) ?: 'localhost');
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.30.8');
+define('ASSET_VERSION', '2026.07.30.9');
 
 // Human-readable build number, shown at the top of Settings so you can confirm
 // which build is actually live. Bump alongside ASSET_VERSION on every deploy.
-define('APP_VERSION', '1.14.1');
-define('APP_BUILD', '2026.07.30.8');
+define('APP_VERSION', '1.14.2');
+define('APP_BUILD', '2026.07.30.9');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');
