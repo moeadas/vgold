@@ -417,6 +417,7 @@ function routeFromHash() {
   else if (hash === 'priorities' || hash === 'agenda') { State.screen = 'priorities'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'mytasks') { State.screen = 'mytasks'; State.activeProjectId = null; State.activeProject = null; }
   else if (hash === 'messages') { State.screen = 'messages'; State.activeProjectId = null; State.activeProject = null; }
+  else if (hash === 'my-invoices') { State.screen = 'my-invoices'; State.activeProjectId = null; State.activeProject = null; }
   else if (parts[0] === 'settings' && parts[1] === 'user' && parts[2]) {
     State.screen = 'settings-user';
     State.editUserId = parseInt(parts[2]) || null;
@@ -427,11 +428,14 @@ function routeFromHash() {
     // #acc/<screen> and #acc/<detail>/<id>
     const detail = { doc: 'accDocId', contact: 'accContactId', account: 'accAccountId', reconciliation: 'accReconciliationId' };
     State.activeProjectId = null; State.activeProject = null; State.activeCategoryId = null;
-    if (detail[parts[1]] && parts[2]) {
+    if (parts[1] === 'contractor-invoices') {
+      State.screen = 'acc-contractor-invoices';
+      State.ciDetailId = parts[2] ? (parseInt(parts[2]) || null) : null;
+    } else if (detail[parts[1]] && parts[2]) {
       State.screen = 'acc-' + parts[1];
       State[detail[parts[1]]] = parseInt(parts[2]) || null;
     } else {
-      const knownAcc = ['dashboard','invoices','bills','customers','vendors','contacts','banking','ledger','catalog','recurring','reports','settings','form','bill-scan','danger'];
+      const knownAcc = ['dashboard','invoices','bills','customers','vendors','contacts','banking','ledger','catalog','recurring','reports','settings','form','bill-scan','danger','contractor-invoices','bank-import','bank-review'];
       let accScreen = knownAcc.includes(parts[1]) ? 'acc-' + parts[1] : 'acc-dashboard';
       if (accScreen === 'acc-contacts') accScreen = 'acc-customers'; // split into two screens
       State.screen = accScreen;
@@ -495,6 +499,7 @@ function updateHash() {
     const accDetailIds = {
       'acc-doc': State.accDocId, 'acc-contact': State.accContactId,
       'acc-account': State.accAccountId, 'acc-reconciliation': State.accReconciliationId,
+      'acc-contractor-invoices': State.ciDetailId,
     };
     if (accDetailIds[State.screen]) hash += '/' + accDetailIds[State.screen];
   }
