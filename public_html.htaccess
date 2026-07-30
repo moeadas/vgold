@@ -1,4 +1,4 @@
-# VGold — Main .htaccess (only if serving from a shared public_html; subdomain docroot preferred)
+# VGo — Main .htaccess (only if serving from a shared public_html; subdomain docroot preferred)
 DirectoryIndex index.php index.html
 
 RewriteEngine On

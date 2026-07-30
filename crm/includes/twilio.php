@@ -37,7 +37,7 @@ class TwilioHelper {
         $this->whatsappFromNumber = $dbSettings['whatsapp_from_number']  ?? getenv('WHATSAPP_FROM_NUMBER')  ?: '';
         $this->apiKey             = $dbSettings['twilio_api_key']        ?? getenv('TWILIO_API_KEY')        ?: '';
         $this->apiSecret          = $dbSettings['twilio_api_secret']     ?? getenv('TWILIO_API_SECRET')     ?: '';
-        // Inside the unified VGold shell, all Twilio/WhatsApp callbacks must
+        // Inside the unified VGo shell, all Twilio/WhatsApp callbacks must
         // resolve to the mounted CRM (APP_URL + CRM_BASE), regardless of any
         // stale app_url stored in the CRM settings table. Standalone CRM keeps
         // using the DB/env/default value.

@@ -4,7 +4,7 @@
  *
  * The shape is QuickBooks': a statement arrives, its rows land in a queue, and
  * each row is either MATCHED to something already recorded, ADDED as a new
- * transaction, or EXCLUDED as none of VGold's business. Only then does the
+ * transaction, or EXCLUDED as none of VGo's business. Only then does the
  * reconcile screen have a set of cleared items to tick against a closing
  * balance.
  *
@@ -370,7 +370,7 @@ class BankFeedController
         return $l;
     }
 
-    /** Link a statement line to a transaction already in VGold. */
+    /** Link a statement line to a transaction already in VGo. */
     public static function matchLine($id)
     {
         self::boot();
@@ -466,7 +466,7 @@ class BankFeedController
         jsonResponse(['ok' => true, 'transaction_id' => (int)$txId]);
     }
 
-    /** Mark a line as none of VGold's business (an internal transfer, a duplicate). */
+    /** Mark a line as none of VGo's business (an internal transfer, a duplicate). */
     public static function excludeLine($id)
     {
         self::boot();

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VGold Phase 1 migration runner.
+# VGo Phase 1 migration runner.
 #
 # Applies, in order, against the target database:
 #   1. app/migrations/011_crm_integration.sql   (users.crm_* cols, crm_role_map, crm_* tables, bridge)

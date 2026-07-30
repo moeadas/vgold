@@ -2,7 +2,7 @@
 /**
  * Victory Genomics CRM — CSRF token bridge for the native SPA.
  *
- * The native VGold SPA views call the legacy /crm/api/*.php endpoints directly
+ * The native VGo SPA views call the legacy /crm/api/*.php endpoints directly
  * (through the unified session established by mount.php). Those endpoints verify
  * a legacy CSRF token in the JSON body. This endpoint hands the current token to
  * the SPA so native module writes can authorize without an embedded page.

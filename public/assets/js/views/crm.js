@@ -1,4 +1,4 @@
-// VGold native CRM views — same shell, session, permissions, and task model as Workflow.
+// VGo native CRM views — same shell, session, permissions, and task model as Workflow.
 // Markup mirrors the original Victory Genomics CRM pages using the design-system
 // classes from style.css, which are exposed to the SPA scoped under `.crm-native`.
 // Every top-level view (and every Modal body) is wrapped in `.crm-native` so those
@@ -58,7 +58,7 @@ function crmInteractionBadge(type) {
 
 function crmAccessDenied(moduleKey) {
   const label = CRM_MODULE_COPY[moduleKey]?.title || 'CRM';
-  return `<div class="crm-native fade-in"><div class="empty-state card" style="padding:56px 24px;max-width:560px;margin:48px auto;text-align:center;"><h3>${esc(label)} access is not enabled</h3><p>Ask a VGold administrator to enable this module in Settings → Team module access.</p></div></div>`;
+  return `<div class="crm-native fade-in"><div class="empty-state card" style="padding:56px 24px;max-width:560px;margin:48px auto;text-align:center;"><h3>${esc(label)} access is not enabled</h3><p>Ask a VGo administrator to enable this module in Settings → Team module access.</p></div></div>`;
 }
 
 async function renderCrmDashboard() {
@@ -85,7 +85,7 @@ async function renderCrmDashboard() {
     </div>`;
   const allowedCards = [
     crmHas('crm.leads') ? actionCard('Customer records', 'Open leads', 'Search, prioritize, and assign every active opportunity.', 'View leads →', 'crm-leads') : '',
-    crmHas('crm.interactions') ? actionCard('Shared activity', 'Log an interaction', 'Capture a call, meeting, note, or follow-up without leaving VGold.', 'Open interactions →', 'crm-interactions') : '',
+    crmHas('crm.interactions') ? actionCard('Shared activity', 'Log an interaction', 'Capture a call, meeting, note, or follow-up without leaving VGo.', 'Open interactions →', 'crm-interactions') : '',
     actionCard('CRM ↔ Workflow', 'Follow-ups become tasks', 'Every next action appears in Workflow with the lead name and full context.', 'View my tasks →', 'mytasks'),
   ].filter(Boolean).join('');
   const email = data.email;

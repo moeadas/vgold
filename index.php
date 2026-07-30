@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold docroot bootstrap.
+ * VGo docroot bootstrap.
  *
  * The SiteGround subdomain document root is this directory, but the real front
  * controller lives in public/. Rather than depend solely on .htaccess rewrites

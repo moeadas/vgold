@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — password policy and reset tokens.
+ * VGo — password policy and reset tokens.
  *
  * One place for every password rule so the login form, the self-service change,
  * the admin set and the reset link cannot drift apart — they previously
@@ -135,11 +135,11 @@ class PasswordReset {
             $safeLink = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
             $name = htmlspecialchars((string)($user['name'] ?? ''), ENT_QUOTES, 'UTF-8');
             $intro = $byAdminName
-                ? htmlspecialchars($byAdminName, ENT_QUOTES, 'UTF-8') . ' has started a password reset for your VGold account.'
-                : 'We received a request to reset the password on your VGold account.';
+                ? htmlspecialchars($byAdminName, ENT_QUOTES, 'UTF-8') . ' has started a password reset for your VGo account.'
+                : 'We received a request to reset the password on your VGo account.';
 
             $html = '<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;line-height:1.55">'
-                . '<h2 style="font-size:18px;margin:0 0 12px">Reset your VGold password</h2>'
+                . '<h2 style="font-size:18px;margin:0 0 12px">Reset your VGo password</h2>'
                 . '<p>Hi ' . $name . ',</p>'
                 . '<p>' . $intro . '</p>'
                 . '<p style="margin:22px 0"><a href="' . $safeLink . '" '
@@ -150,10 +150,10 @@ class PasswordReset {
                 . '<p style="font-size:12px;color:#888;word-break:break-all">' . $safeLink . '</p>'
                 . '</div>';
 
-            $text = "Reset your VGold password\n\n" . strip_tags($intro) . "\n\n" . $link
+            $text = "Reset your VGo password\n\n" . strip_tags($intro) . "\n\n" . $link
                 . "\n\nThis link works once and expires in " . self::TTL_MINUTES . " minutes.\n";
 
-            return (bool)Mail::send($user['email'], $user['name'] ?? '', 'Reset your VGold password', $html, $text);
+            return (bool)Mail::send($user['email'], $user['name'] ?? '', 'Reset your VGo password', $html, $text);
         } catch (\Throwable $e) {
             error_log('PasswordReset::sendEmail: ' . $e->getMessage());
             return false;

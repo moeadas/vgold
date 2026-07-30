@@ -1,8 +1,8 @@
 <?php
 /**
- * VGold ⟷ CRM table-name rewriting layer.
+ * VGo ⟷ CRM table-name rewriting layer.
  *
- * In the unified VGold database, every CRM table is stored under a `crm_`
+ * In the unified VGo database, every CRM table is stored under a `crm_`
  * prefix (crm_leads, crm_users, crm_interactions, …) so that CRM data can live
  * in ONE database alongside the VGo workflow tables without name collisions
  * (notably `users` and `notifications`, which exist in BOTH systems).
@@ -22,7 +22,7 @@
  *     prefixed and is a standalone word (no leading `crm_`, no surrounding
  *     identifier chars).
  *
- * This is active ONLY when the VGold bridge is loaded; standalone CRM keeps
+ * This is active ONLY when the VGo bridge is loaded; standalone CRM keeps
  * using the raw PDO. Idempotent: a name already written as `crm_x` is left as is.
  */
 

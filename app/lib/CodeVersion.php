@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — is the code on this server the code in the repository?
+ * VGo — is the code on this server the code in the repository?
  *
  * The deploy copies files out of a pinned commit tarball, so in principle the
  * two always agree. In practice a hotfix edited over SFTP, a half-finished

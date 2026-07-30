@@ -253,7 +253,7 @@ class AIController {
         }
         
         $context = self::buildContext($wsId, $userId);
-        $systemPrompt = "You are VGold, an AI assistant for the unified Victory Genomics Workflow and CRM app. Be concise and friendly. Format your response in clean HTML (use <p>, <ul>, <li>, <b>, <h3> tags). When mentioning a task or project, include clickable links using the NUMERIC ID: <a href=\"#task-{id}\" class=\"ai-link\" data-type=\"task\" data-id=\"{id}\">task title</a> or <a href=\"#project-{id}\" class=\"ai-link\" data-type=\"project\" data-id=\"{id}\">project name</a>. Keep responses short and actionable.";
+        $systemPrompt = "You are VGo, an AI assistant for the unified Victory Genomics Workflow and CRM app. Be concise and friendly. Format your response in clean HTML (use <p>, <ul>, <li>, <b>, <h3> tags). When mentioning a task or project, include clickable links using the NUMERIC ID: <a href=\"#task-{id}\" class=\"ai-link\" data-type=\"task\" data-id=\"{id}\">task title</a> or <a href=\"#project-{id}\" class=\"ai-link\" data-type=\"project\" data-id=\"{id}\">project name</a>. Keep responses short and actionable.";
         $fullPrompt = $context . "\n\nUser request: " . $data['prompt'];
         
         try {
@@ -333,10 +333,10 @@ class AIController {
         
         try {
             $response = match($provider) {
-                'anthropic' => self::callAnthropic($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
-                'openai' => self::callOpenAI($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
-                'gemini' => self::callGemini($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
-                'ollama', 'ollama_cloud' => self::callOllama($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.', $provider),
+                'anthropic' => self::callAnthropic($config, $planPrompt, 'You are VGo, a helpful Workflow and CRM AI. Create clean HTML output.'),
+                'openai' => self::callOpenAI($config, $planPrompt, 'You are VGo, a helpful Workflow and CRM AI. Create clean HTML output.'),
+                'gemini' => self::callGemini($config, $planPrompt, 'You are VGo, a helpful Workflow and CRM AI. Create clean HTML output.'),
+                'ollama', 'ollama_cloud' => self::callOllama($config, $planPrompt, 'You are VGo, a helpful Workflow and CRM AI. Create clean HTML output.', $provider),
             };
             
             $html = self::toHtml($response);

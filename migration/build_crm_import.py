@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-VGold Phase 1 — CRM import builder.
+VGo Phase 1 — CRM import builder.
 
 Reads the live CRM phpMyAdmin dump and produces ONE deterministic SQL file
-(`migration/sql/crm_data_import.sql`) that, when applied to the unified VGold
+(`migration/sql/crm_data_import.sql`) that, when applied to the unified VGo
 database, imports every CRM table VERBATIM under a `crm_` prefix.
 
 Approach (lossless, exact):
@@ -49,7 +49,7 @@ def extract_create(table):
     if not m:
         return None
     body, tail = m.group(1), m.group(2)
-    # Normalise collation/charset to the unified VGold default (utf8mb4_unicode_ci).
+    # Normalise collation/charset to the unified VGo default (utf8mb4_unicode_ci).
     # The CRM dump uses utf8mb4_0900_ai_ci which conflicts with VGo's unicode_ci
     # in JOIN/= comparisons. Strip the table-level CHARSET/COLLATE from the tail
     # and any inline COLLATE on individual columns.

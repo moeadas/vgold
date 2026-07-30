@@ -1,5 +1,5 @@
 // ============================================================================
-// VGold — Accounting & Finance (native), part 2
+// VGo — Accounting & Finance (native), part 2
 // Banking, ledger, catalog, recurring, reports, accounting settings, plus the
 // two hooks the main Settings screen calls into (module chips + danger zone).
 // ============================================================================
@@ -1589,7 +1589,7 @@ async function accRecalc() {
 }
 
 /* ============================================================================
- * Hooks used by the main VGold Settings screen (settings.js)
+ * Hooks used by the main VGo Settings screen (settings.js)
  * ==========================================================================*/
 
 /**
@@ -1627,21 +1627,21 @@ function accModuleChips(modules, member) {
   }).join('');
 }
 
-/** Danger-zone entry appended to VGold Settings — links to the confirmation page. */
+/** Danger-zone entry appended to VGo Settings — links to the confirmation page. */
 function accDangerZoneCard(user) {
   if (!user || user.role !== 'admin') return '';
   if (!(State.user && (State.user.modules || []).includes('acc.settings'))) return '';
   return `
     <div class="danger-zone" style="margin-top:14px" id="settings-acc-data">
       <h4>Clear Accounting &amp; Finance data</h4>
-      <p>Permanently deletes every invoice, bill, payment, transfer, journal entry, contact, item, category, tax rate, bank account and ledger account in the Accounting app. Your company profile and the rest of VGold (Workflow, CRM) are untouched.</p>
+      <p>Permanently deletes every invoice, bill, payment, transfer, journal entry, contact, item, category, tax rate, bank account and ledger account in the Accounting app. Your company profile and the rest of VGo (Workflow, CRM) are untouched.</p>
       <button class="btn-danger" onclick="accNav('acc-danger')">Clear accounting data…</button>
     </div>`;
 }
 
 /* ===================== Clear accounting data — a page, with a real gate =====
  *
- * This used to be a form at the bottom of VGold Settings that the Accounting
+ * This used to be a form at the bottom of VGo Settings that the Accounting
  * screen linked to with nav('settings'), landing you at the top of a long page
  * with the control far below the fold. Clicking the button looked like it did
  * nothing. It is now its own page: it lists what will actually be removed, and

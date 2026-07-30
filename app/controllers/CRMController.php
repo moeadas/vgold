@@ -5,7 +5,7 @@ class CRMController {
         if (!Authz::hasAnyCrmAccess()) jsonError('You do not have access to CRM', 403);
     }
 
-    // A VGold admin, or a real CRM Admin/Sales Manager, sees all records.
+    // A VGo admin, or a real CRM Admin/Sales Manager, sees all records.
     // Everyone else is scoped to leads they own or are assigned (mirrors the
     // legacy crm/api/leads.php scoping so the native SPA endpoints don't leak).
     private static function isCrmManager() {
@@ -116,7 +116,7 @@ class CRMController {
             ))), 0, 500);
             $where[] = $ids ? ('l.lead_id IN (' . implode(',', $ids) . ')') : '1=0';
         }
-        // Owner filter: client sends a VGold user id → map to its crm_user_id.
+        // Owner filter: client sends a VGo user id → map to its crm_user_id.
         if (!empty($_GET['owner'])) {
             $where[] = 'l.assigned_to = (SELECT crm_user_id FROM users WHERE id = ? LIMIT 1)';
             $params[] = (int)$_GET['owner'];

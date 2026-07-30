@@ -28,7 +28,7 @@ if (!function_exists('def_if')) {
     function def_if($key, $value) { if (!defined($key)) define($key, $value); }
 }
 
-// Database Configuration — defer to VGold's unified config when mounted.
+// Database Configuration — defer to VGo's unified config when mounted.
 def_if('DB_HOST',    getenv('DB_HOST')    ?: 'localhost');
 def_if('DB_NAME',    getenv('DB_NAME')    ?: 'your_database_name');
 def_if('DB_USER',    getenv('DB_USER')    ?: 'your_database_user');

@@ -1,6 +1,6 @@
 <?php
-// Mounts the complete original CRM under /crm/* while sharing VGold identity,
-// database, module permissions, and the surrounding VGold application shell.
+// Mounts the complete original CRM under /crm/* while sharing VGo identity,
+// database, module permissions, and the surrounding VGo application shell.
 require_once __DIR__ . '/includes/vgold_bridge.php';
 require_once __DIR__ . '/../app/lib/Authz.php';
 
@@ -77,7 +77,7 @@ if (!$isPublicEndpoint) {
     elseif (strpos($path, 'report') !== false || strpos($path, 'export') !== false || strpos($path, 'sheets') !== false) $module = 'crm.reports';
     elseif (strpos($path, 'knowledge') !== false || strpos($path, 'quick-guides') !== false) $module = 'crm.knowledge';
     elseif (preg_match('#(?:^|/)(?:users|user-form|settings)\.php$#', $path) || $path === 'api/switch-user.php' || $path === 'api/crm-settings.php') {
-        // User management, settings, and admin impersonation require VGold admin.
+        // User management, settings, and admin impersonation require VGo admin.
         Auth::requireAdmin();
         $module = null;
     }
@@ -87,7 +87,7 @@ if (!$isPublicEndpoint) {
             header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => 'This CRM module is not enabled for your account.']);
         } else {
-            echo '<!doctype html><meta charset="utf-8"><style>body{font:15px system-ui;padding:32px;color:#3d2e22}</style><h2>Module access required</h2><p>Ask a VGold administrator to enable this CRM module.</p>';
+            echo '<!doctype html><meta charset="utf-8"><style>body{font:15px system-ui;padding:32px;color:#3d2e22}</style><h2>Module access required</h2><p>Ask a VGo administrator to enable this CRM module.</p>';
         }
         exit;
     }
@@ -95,13 +95,13 @@ if (!$isPublicEndpoint) {
     if ($vgoldUser && $vgoldUser['role'] === 'admin') {
         $_SESSION['role'] = 'Admin';
     } elseif (in_array($module, ['crm.proposals','crm.email','crm.automation','crm.reports','crm.knowledge'], true)) {
-        // The original CRM hard-coded these screens to manager roles. In VGold,
+        // The original CRM hard-coded these screens to manager roles. In VGo,
         // the explicit module grant is authoritative, so grant the minimum
         // legacy role needed to execute the already-authorized screen/API.
         $_SESSION['role'] = 'Sales Manager';
     } elseif (($_SESSION['role'] ?? '') === 'Admin') {
-        // The VGold role is authoritative: an imported legacy crm_role of
-        // 'Admin' must never grant CRM-admin powers to a non-admin VGold user.
+        // The VGo role is authoritative: an imported legacy crm_role of
+        // 'Admin' must never grant CRM-admin powers to a non-admin VGo user.
         $_SESSION['role'] = 'Sales Manager';
     }
 }
@@ -131,7 +131,7 @@ if (!empty($_GET['embedded'])) {
 $embedded = !empty($_GET['embedded']) || !empty($_SESSION['vgold_crm_embedded']);
 
 // One app, not two: a top-level (non-embedded) hit on a legacy CRM *page* bounces
-// into the native VGold SPA route, so the standalone CRM chrome can never appear
+// into the native VGo SPA route, so the standalone CRM chrome can never appear
 // as a "second app" — even from a stale cached link. Embedded editors
 // (?embedded=1) and JSON API calls (/crm/api/*) are unaffected.
 if (!$embedded && ($path === 'dashboard.php' || preg_match('#^pages/([a-z0-9-]+)\.php$#', $path, $pm))) {

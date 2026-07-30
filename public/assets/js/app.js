@@ -675,7 +675,7 @@ async function enableNotifications() {
   const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
   const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   if (isIOS && !isStandalone) {
-    toast('On iPhone: tap Share → Add to Home Screen, then open VGold from your home screen to enable notifications', 'error');
+    toast('On iPhone: tap Share → Add to Home Screen, then open VGo from your home screen to enable notifications', 'error');
     return;
   }
   const perm = await Notification.requestPermission();

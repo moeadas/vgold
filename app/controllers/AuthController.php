@@ -301,7 +301,7 @@ class AuthController {
                 DB::update('users', ['ms_oid' => $oid, 'auth_provider' => 'microsoft'], 'id = ?', [$user['id']]);
             }
         }
-        if (!$user) jsonError('No VGold account for ' . $email . '. Ask an admin to add you.', 403);
+        if (!$user) jsonError('No VGo account for ' . $email . '. Ask an admin to add you.', 403);
         
         $wm = DB::fetch("SELECT workspace_id FROM workspace_members WHERE user_id = ? ORDER BY joined_at ASC LIMIT 1", [$user['id']]);
         if (!$wm) jsonError('No workspace assigned. Ask an admin.', 403);

@@ -1,5 +1,5 @@
 // ============================================================================
-// VGold — bank statement import and the review queue that follows it.
+// VGo — bank statement import and the review queue that follows it.
 //
 // Three pages, no popups anywhere:
 //   acc-bank-import  upload a statement, confirm how it should be read
@@ -412,10 +412,10 @@ async function renderAccBankReview() {
   const status = d.status;
   const highCount = (d.lines || []).filter(l => l.match && l.match.confidence === 'high').length;
 
-  const tabs = [['pending', 'For review', c.pending], ['accepted', 'In VGold', c.accepted], ['excluded', 'Excluded', c.excluded]];
+  const tabs = [['pending', 'For review', c.pending], ['accepted', 'In VGo', c.accepted], ['excluded', 'Excluded', c.excluded]];
 
   return `<div class="fade-in acc-page">
-    ${accHeader('Review bank transactions', 'Each line is either already in VGold, or needs adding — or is none of our business.',
+    ${accHeader('Review bank transactions', 'Each line is either already in VGo, or needs adding — or is none of our business.',
       `<button class="btn-secondary" onclick="accGoBankImport(${d.account.id})">${I.plus} Import a statement</button>
        <button class="btn-secondary" onclick="accNav('acc-banking')">← Banking</button>`)}
 
@@ -471,7 +471,7 @@ function bfReviewRow(l, status) {
     } else {
       const r = l.recall;
       right = `<div class="bf-suggest">
-          <div class="bf-suggest-text acc-muted">${r ? 'Last time this was ' + esc(r.category_name || r.contact_name || 'recorded') : 'Nothing in VGold matches this'}</div>
+          <div class="bf-suggest-text acc-muted">${r ? 'Last time this was ' + esc(r.category_name || r.contact_name || 'recorded') : 'Nothing in VGo matches this'}</div>
           <button class="btn-primary btn-sm" onclick="bfOpenRow(${l.id}, 'add')">Add</button>
         </div>`;
     }
@@ -565,7 +565,7 @@ function bfAddPanel(l) {
     ${r.from ? `<p class="acc-muted" style="margin-top:8px">Suggested from “${esc(r.from)}”, recorded earlier.</p>` : ''}
     <p class="acc-muted" style="margin-top:8px">The date (${esc(accDate(l.posted_at))}) and amount (${accMoney(Math.abs(Number(l.amount)))}) come from the statement and cannot be changed here — a transaction that disagreed with its own statement line could never reconcile.</p>
     <div class="acc-form-actions" style="padding-top:10px">
-      <button class="btn-primary btn-sm" ${BankRow.busy ? 'disabled' : ''} onclick="bfAdd(${l.id})">${BankRow.busy ? 'Adding…' : 'Add to VGold'}</button>
+      <button class="btn-primary btn-sm" ${BankRow.busy ? 'disabled' : ''} onclick="bfAdd(${l.id})">${BankRow.busy ? 'Adding…' : 'Add to VGo'}</button>
       <button class="btn-secondary btn-sm" onclick="bfOpenRow(${l.id}, 'match')">Look for an existing one</button>
       <button class="btn-secondary btn-sm" onclick="bfCloseRow()">Cancel</button>
     </div>`;
@@ -631,7 +631,7 @@ async function bfAdd(lineId) {
   };
   try {
     await API.accBankLineAdd(lineId, payload);
-    toast('Added to VGold', 'success');
+    toast('Added to VGo', 'success');
     await bfReviewReload();
   } catch (e) {
     BankRow.busy = false;

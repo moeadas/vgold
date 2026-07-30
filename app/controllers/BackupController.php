@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — backup status, manual runs, downloads, and the code/repo check.
+ * VGo — backup status, manual runs, downloads, and the code/repo check.
  * Admin only: these expose the whole database and the server's file layout.
  */
 class BackupController {

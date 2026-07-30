@@ -1,5 +1,5 @@
 <?php
-// VGold — Web Push sender using minishlink/web-push
+// VGo — Web Push sender using minishlink/web-push
 require_once __DIR__ . '/../../vendor/autoload.php';
 // Push config holds the VAPID keypair. It is optional: if absent, push is disabled
 // gracefully rather than fataling the whole API (push is non-critical).

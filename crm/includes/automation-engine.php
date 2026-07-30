@@ -500,7 +500,7 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
             $pdo->prepare("UPDATE leads SET `{$field}` = ? WHERE lead_id = ?")->execute([$value, $leadId]);
             return "Set {$field} = \"{$value}\" on lead #{$leadId}";
 
-        // ── Create a Workflow task (the VGold side of the house) ───
+        // ── Create a Workflow task (the VGo side of the house) ───
         case 'create_task':
             $title = processEmailVars((string)($config['title'] ?? ''), $lead);
             if ($title === '') throw new \Exception('create_task: no title in config');
@@ -509,7 +509,7 @@ function executeAction(array $rule, ?array $lead, array $ctx, $db, $pdo): string
             $dueDays = intval($config['due_in_days'] ?? 0);
             $due = $dueDays > 0 ? date('Y-m-d', strtotime("+{$dueDays} days")) : null;
 
-            // tasks/projects are VGold tables — NOT rewritten by the crm_ bridge.
+            // tasks/projects are VGo tables — NOT rewritten by the crm_ bridge.
             $pdo->prepare("INSERT INTO tasks (project_id, title, description, status, priority, deadline_date, crm_lead_id, source_module, created_at)
                            VALUES (?, ?, ?, 'in_progress', ?, ?, ?, 'crm.automation', NOW())")
                 ->execute([

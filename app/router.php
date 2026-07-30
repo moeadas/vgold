@@ -170,7 +170,7 @@ $routes = [
     'GET settings/crm' => ['SettingsController::crmSettings', true],
     'PUT settings/crm' => ['SettingsController::updateCrmSettings', true],
 
-    // CRM — native modules inside the VGold SPA and shared session
+    // CRM — native modules inside the VGo SPA and shared session
     'GET crm/dashboard' => ['CRMController::dashboard', true],
     'GET crm/leads/export' => ['CRMController::exportLeads', true],
     'POST crm/leads/import' => ['CRMController::importLeads', true],
@@ -365,7 +365,7 @@ foreach ($routes as $pattern => $handler) {
         // scheduled rules work with no server cron configured at all; a real
         // cron just makes them punctual on days nobody opens the app.
         //
-        // The due-ness check is a single indexed SELECT through the VGold DB
+        // The due-ness check is a single indexed SELECT through the VGo DB
         // helper — the legacy CRM bridge and the rules engine are only loaded
         // once the interval has actually elapsed, so the common case costs one
         // cheap query rather than several file includes on every API call.

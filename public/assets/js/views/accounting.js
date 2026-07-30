@@ -1,5 +1,5 @@
 // ============================================================================
-// VGold — Accounting & Finance (native)
+// VGo — Accounting & Finance (native)
 // Part 1: shared helpers, API surface, dashboard, invoices, bills, contacts.
 // Part 2 (accounting2.js): banking, ledger, catalog, recurring, reports,
 // accounting settings, and the hooks the main Settings screen calls into.

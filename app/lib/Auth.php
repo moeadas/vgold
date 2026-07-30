@@ -66,7 +66,7 @@ class Auth {
     }
 
     // Populate the session vocabulary expected by the original CRM while
-    // preserving vgold_user_id as the canonical identity for all VGold APIs.
+    // preserving vgold_user_id as the canonical identity for all VGo APIs.
     public static function bridgeToCrm() {
         if (!self::check()) return false;
         $vgoldId = self::userId();

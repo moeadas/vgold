@@ -950,7 +950,7 @@ a.btn, a.btn-primary, a.btn-secondary, a.btn-ghost, a.btn-danger, a.btn-save, a.
   letter-spacing: -1px;
 }
 
-/* ===== VGOLD NATIVE CRM ===== */
+/* ===== VGO NATIVE CRM ===== */
 .crm-page { max-width: 1180px; }
 .crm-page-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 24px; }
 .crm-hero { position: relative; min-height: 228px; overflow: hidden; display: grid; grid-template-columns: minmax(0,1fr) 250px; align-items: center; gap: 42px; padding: 36px 40px; margin-bottom: 18px; border: 1px solid rgba(61,46,34,.12); border-radius: 24px; color: #fff; background: radial-gradient(circle at 78% 22%, rgba(201,149,32,.28), transparent 28%), linear-gradient(128deg, #302219, #5C4A38 72%, #7A5D31); box-shadow: 0 22px 50px -34px rgba(47,32,23,.8); }

@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — daily backups.
+ * VGo — daily backups.
  *
  * One archive per run containing, in order of usefulness when something has
  * gone wrong:
@@ -16,14 +16,14 @@
  *                    checksums — so a restored database can be matched to the
  *                    exact code that wrote it.
  *
- * The archive is copied to SharePoint through the Graph app the rest of VGold
+ * The archive is copied to SharePoint through the Graph app the rest of VGo
  * already uses, which is a different provider from the web host: losing the
  * server does not lose the backups.
  */
 class Backup {
 
     const DIR            = 'storage/backups';
-    const REMOTE_FOLDER  = 'VGoldBackups';
+    const REMOTE_FOLDER  = 'VGoBackups';
     const KEEP_LOCAL     = 7;   // days kept on the server for a fast restore
     const KEEP_REMOTE    = 14;  // daily archives kept off-server
     const KEEP_WEEKLY    = 8;   // Sunday archives kept beyond that
@@ -42,8 +42,9 @@ class Backup {
         static $resolved = null;
         if ($resolved) return $resolved;
 
-        $outside = dirname(dirname(__DIR__, 2)) . '/vgold-backups';
+        $outside = dirname(dirname(__DIR__, 2)) . '/vgo-backups';
         if (is_dir($outside) ? is_writable($outside) : @mkdir($outside, 0750, true)) {
+            self::adoptLegacyDir(dirname($outside) . '/vgold-backups', $outside);
             return $resolved = $outside;
         }
 
@@ -54,6 +55,23 @@ class Backup {
             @file_put_contents($ht, "Require all denied\nDeny from all\n");
         }
         return $resolved = $inside;
+    }
+
+    /**
+     * Move archives out of the pre-rename directory, once.
+     *
+     * The folder was called vgold-backups. Renaming it without carrying the
+     * contents across would leave real archives somewhere nothing looks, which
+     * is the same as losing them.
+     */
+    private static function adoptLegacyDir($old, $new) {
+        if (!is_dir($old) || realpath($old) === realpath($new)) return;
+        foreach (glob($old . '/*.zip') ?: [] as $f) {
+            $dest = $new . '/' . basename($f);
+            if (!file_exists($dest)) @rename($f, $dest);
+        }
+        // Only removes it when nothing is left behind.
+        if (!array_diff(scandir($old) ?: [], ['.', '..'])) @rmdir($old);
     }
 
     /** True when archives are sitting inside the document root. */
@@ -91,7 +109,7 @@ class Backup {
 
             // The random suffix means the archive cannot be found by guessing a
             // date, even if a web-server rule is ever misconfigured.
-            $name    = 'vgold-backup-' . date('Y-m-d-His') . '-' . bin2hex(random_bytes(5)) . '.zip';
+            $name    = 'vgo-backup-' . date('Y-m-d-His') . '-' . bin2hex(random_bytes(5)) . '.zip';
             $archive = self::dir() . '/' . $name;
             self::zip($work, $archive);
             self::rmdir($work);
@@ -286,15 +304,15 @@ class Backup {
     private static function restoreDoc(array $m) {
         $sha = $m['deployed_sha'] ?: '<the sha this backup was taken at>';
         return <<<MD
-# Restoring VGold from this backup
+# Restoring VGo from this backup
 
-Taken {$m['created_at']} from VGold {$m['app_version']} (build {$m['app_build']}).
+Taken {$m['created_at']} from VGo {$m['app_version']} (build {$m['app_build']}).
 Code commit: {$sha}
 
 ## 1. Put the same code back
 
-    git clone https://github.com/{$m['repo']}.git vgold
-    cd vgold
+    git clone https://github.com/{$m['repo']}.git vgo
+    cd vgo
     git checkout {$sha}
 
 Then restore `config/database.php` (or `config/database.sg.php`), `config/graph.php`
@@ -317,7 +335,7 @@ keys, triggers and auto-increment counters exactly as they were.
 
 ## 3. Restore the uploaded files
 
-    tar -xzf uploads.tar.gz -C /path/to/vgold
+    tar -xzf uploads.tar.gz -C /path/to/vgo
 
 ## 4. Check it
 
@@ -404,7 +422,8 @@ MD;
     /* ---------------------------- retention ---------------------------- */
 
     private static function pruneLocal() {
-        $files = glob(self::dir() . '/vgold-backup-*.zip') ?: [];
+        $files = array_merge(glob(self::dir() . '/vgo-backup-*.zip') ?: [],
+                             glob(self::dir() . '/vgold-backup-*.zip') ?: []);
         if (count($files) <= self::KEEP_LOCAL) return;
         usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
         foreach (array_slice($files, self::KEEP_LOCAL) as $old) @unlink($old);
@@ -427,7 +446,7 @@ MD;
             if (($r['code'] ?? 0) >= 300) continue;
             foreach (json_decode($r['body'], true)['value'] ?? [] as $item) {
                 if (empty($item['file'])) continue;
-                if (!preg_match('/vgold-backup-(\d{4})-(\d{2})-(\d{2})/', $item['name'], $m)) continue;
+                if (!preg_match('/vgo(?:ld)?-backup-(\d{4})-(\d{2})-(\d{2})/', $item['name'], $m)) continue;
                 $all[] = ['id' => $item['id'], 'name' => $item['name'], 'date' => "$m[1]-$m[2]-$m[3]"];
             }
         }

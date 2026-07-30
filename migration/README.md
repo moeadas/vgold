@@ -1,16 +1,16 @@
-# VGold Migration — CRM ➜ Unified ERP
+# VGo Migration — CRM ➜ Unified ERP
 
 This directory holds the data-migration tooling that folds the **Victory Genomics
-CRM** into the unified **VGold** database (Option B — one app, one DB).
+CRM** into the unified **VGo** database (Option B — one app, one DB).
 
 ## Phase 1 — Unified schema + CRM data migration ✅
 
 ### What it produces
 - **`app/migrations/011_crm_integration.sql`** — the canonical schema:
   - Extends `users` with `crm_user_id`, `crm_role`, `crm_username` (link to CRM).
-  - `crm_role_map` — configurable CRM➜VGold role mapping (edited in Settings, Phase 4).
+  - `crm_role_map` — configurable CRM➜VGo role mapping (edited in Settings, Phase 4).
   - All CRM tables recreated under a **`crm_` prefix** (collation normalised to
-    `utf8mb4_unicode_ci` to match VGold).
+    `utf8mb4_unicode_ci` to match VGo).
   - `crm_task_links` — bridge for Phase 5 (follow-up ➜ task).
 - **`build_crm_import.py`** — transforms a live CRM phpMyAdmin dump into
   `migration/sql/crm_data_import.sql`: every CRM table imported **verbatim**
@@ -66,7 +66,7 @@ deploys code without running SQL migrations.
 ## Next phases
 - **Phase 2** — Unified auth & session (365 + password, one session across
   workflow + CRM screens).
-- **Phase 3** — Mount CRM screens under `/crm/*` inside the VGold shell.
+- **Phase 3** — Mount CRM screens under `/crm/*` inside the VGo shell.
 - **Phase 4** — Access control + Settings-driven role mapping UI.
 - **Phase 5** — Task ↔ CRM follow-up bridge (via `crm_task_links`).
 - **Phase 6** — Integrations (SharePoint, email, VoIP/WhatsApp/Sheets → vgold).

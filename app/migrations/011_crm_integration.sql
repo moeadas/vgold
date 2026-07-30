@@ -1,10 +1,10 @@
--- 011_crm_integration.sql — VGold Phase 1: CRM data model integration
+-- 011_crm_integration.sql — VGo Phase 1: CRM data model integration
 -- ============================================================================
 -- Strategy (Option B, Layer 1):
 --   * CRM tables are imported VERBATIM under a `crm_` prefix, preserving every
 --     internal FK (they reference each other by their own integer PKs, not VGo
 --     tables) so no CRM data is lost or re-keyed.
---   * The single bridge to the VGo/VGold world is `users.crm_user_id`, which
+--   * The single bridge to the VGo/VGo world is `users.crm_user_id`, which
 --     links each unified user to their original CRM `user_id`. Reconciliation is
 --     by Microsoft/login email (case-insensitive) — see the importer.
 --   * A "CRM" root category is created so CRM-derived tasks (Phase 5) have a home.
@@ -27,7 +27,7 @@ ALTER TABLE `users`
   ADD UNIQUE KEY `uniq_crm_user_id` (`crm_user_id`);
 
 -- ---------------------------------------------------------------------------
--- 2) Configurable CRM<->VGold role mapping (Settings-driven, Phase 4 will edit)
+-- 2) Configurable CRM<->VGo role mapping (Settings-driven, Phase 4 will edit)
 -- ---------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS `crm_role_map` (
   `id` INT AUTO_INCREMENT PRIMARY KEY,

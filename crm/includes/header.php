@@ -22,8 +22,8 @@ if ($_isAdminOrImpersonating) {
     <link rel="icon" type="image/svg+xml" href="/assets/images/favicon.svg">
     <link rel="stylesheet" href="/assets/css/style.css">
     <style>
-    /* ── VGold design-system bridge ───────────────────────────────
-       Re-map the CRM's Apple-neutral palette onto VGold's warm brand
+    /* ── VGo design-system bridge ───────────────────────────────
+       Re-map the CRM's Apple-neutral palette onto VGo's warm brand
        tokens so the mounted CRM matches the VGo shell. Only overrides
        CSS custom properties — no structural/markup churn. */
     :root{
@@ -37,7 +37,7 @@ if ($_isAdminOrImpersonating) {
     body{font-family:'Lato',-apple-system,BlinkMacSystemFont,sans-serif;}
     .sidebar{background:#FBFAF7;border-right:1px solid rgba(61,46,34,.08);}
     .nav-link.active{background:var(--color-accent-bg);color:var(--color-accent);}
-    /* ── VGold shell return link ── */
+    /* ── VGo shell return link ── */
     .vgold-return{display:flex;align-items:center;gap:8px;margin:8px 12px 4px;padding:8px 12px;border-radius:8px;background:var(--color-accent-bg);color:var(--color-accent);text-decoration:none;font-size:13px;font-weight:600;}
     .vgold-return:hover{background:#E7DAC6;}
     /* ── Notification Bell ────────────────────── */
@@ -70,8 +70,8 @@ if ($_isAdminOrImpersonating) {
     </style>
     <script>
     // Where this CRM is mounted. Standalone it is '' and root-absolute paths
-    // work; inside the VGold shell it is '/crm', and a fetch to '/api/x.php'
-    // lands on the VGold API router instead, which 404s. Page scripts must
+    // work; inside the VGo shell it is '/crm', and a fetch to '/api/x.php'
+    // lands on the VGo API router instead, which 404s. Page scripts must
     // prefix CRM_API rather than assuming they are at the document root.
     window.CRM_API = <?php echo json_encode(defined('CRM_BASE') ? CRM_BASE : ''); ?>;
     </script>
@@ -108,9 +108,9 @@ if ($_isAdminOrImpersonating) {
             <img src="/assets/images/VG%20logo.svg" alt="Victory Genomics" class="sidebar-logo-img">
         </div>
 
-        <a class="vgold-return" href="/" title="Back to VGold workspace">
+        <a class="vgold-return" href="/" title="Back to VGo workspace">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
-            <span>VGold Workspace</span>
+            <span>VGo Workspace</span>
         </a>
         <ul class="nav-menu">
             <li class="nav-item">

@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — daily backup, called by SiteGround Site Tools → Cron Jobs.
+ * VGo — daily backup, called by SiteGround Site Tools → Cron Jobs.
  *
  *   curl -s "https://vgo.victorygenomics.com/backup-cron.php?secret=YOUR_SECRET&_t=$(date +%s)"
  *

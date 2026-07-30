@@ -1,4 +1,4 @@
-// VGold — read a supplier bill from a PDF or photo and turn it into a draft.
+// VGo — read a supplier bill from a PDF or photo and turn it into a draft.
 //
 // Deliberately a page, not a popup: reviewing extracted figures against the
 // original document needs room, and the review is the whole point. Nothing is

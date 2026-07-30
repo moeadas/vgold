@@ -5,7 +5,7 @@
  * SiteGround deploys code without running SQL migrations, so (exactly like
  * Schema::ensureCrm / ensureUnifiedModules) every accounting table is created
  * idempotently on first use. Everything is prefixed `acc_` so it can never
- * collide with VGold's own tables (users, tasks, projects, files…) or with the
+ * collide with VGo's own tables (users, tasks, projects, files…) or with the
  * CRM's `crm_*` tables.
  *
  * Called lazily from AccountingController::boot() — a Workflow or CRM request
@@ -469,7 +469,7 @@ class AccSchema
             )$eng");
 
             /**
-             * Invoices submitted by contractors from inside VGold.
+             * Invoices submitted by contractors from inside VGo.
              *
              * A submission is NOT a bill. It becomes one only when accounting
              * approves it — until then it must not appear in payables, or an

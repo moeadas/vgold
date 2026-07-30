@@ -224,7 +224,7 @@ function getMeta($pdo) {
         $emailLists = $pdo->query("SELECT list_id, name FROM email_lists ORDER BY name")->fetchAll(PDO::FETCH_ASSOC);
     } catch (\Exception $e) { /* table may not exist */ }
 
-    // Workflow projects (for the create_task action). These are VGold tables, so
+    // Workflow projects (for the create_task action). These are VGo tables, so
     // they are NOT touched by the crm_ rewriting bridge.
     $workflowProjects = [];
     try {

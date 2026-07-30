@@ -1,5 +1,5 @@
 // ============================================================================
-// VGold — contractors invoice the company from inside the app.
+// VGo — contractors invoice the company from inside the app.
 //
 // Two screens, both full pages:
 //   my-invoices               what a contractor sees: submit, then track
@@ -8,7 +8,7 @@
 // The approval screen puts the original PDF beside the figures rather than
 // above or behind them. That is the whole point of the screen: the numbers are
 // only worth approving if someone has compared them to the document, and bank
-// details — which VGold deliberately never stores — are read off it there.
+// details — which VGo deliberately never stores — are read off it there.
 // ============================================================================
 
 Object.assign(API, {
@@ -142,7 +142,7 @@ function ciListPage() {
       </div>
       <div class="card card-flush">${body}</div>
       <p class="ci-muted" style="margin-top:14px">
-        Approved invoices are paid by bank transfer to the details on your invoice. VGold does not store your bank details —
+        Approved invoices are paid by bank transfer to the details on your invoice. VGo does not store your bank details —
         they are read from the document you attach each time.
       </p>
     </div>`;
@@ -557,7 +557,7 @@ async function ciDetailPage() {
               : `<div class="acc-empty">No document was attached.</div>`}
           </div>
           <p class="acc-muted" style="margin-top:10px">
-            Payment details are on this document. VGold does not store bank, routing or SWIFT numbers —
+            Payment details are on this document. VGo does not store bank, routing or SWIFT numbers —
             take them from here when you make the transfer.
           </p>
         </div>

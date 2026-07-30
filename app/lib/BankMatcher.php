@@ -1,6 +1,6 @@
 <?php
 /**
- * BankMatcher — pair statement lines with transactions already in VGold.
+ * BankMatcher — pair statement lines with transactions already in VGo.
  *
  * The rule that shapes everything here: a match is only offered automatically
  * when it is the ONLY plausible one. Two £45.00 card payments on the same day
@@ -143,7 +143,7 @@ class BankMatcher
      * ================================================================ */
 
     /**
-     * What VGold did with this payee before — the basis of a suggested
+     * What VGo did with this payee before — the basis of a suggested
      * category and contact when a line has to be added rather than matched.
      *
      * Returns null rather than a weak guess: an unhelpful blank field is better

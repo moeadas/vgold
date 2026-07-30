@@ -1,4 +1,4 @@
-# VGold — SiteGround .htaccess
+# VGo — SiteGround .htaccess
 # Rewrite engine for SPA routing + API
 
 RewriteEngine On

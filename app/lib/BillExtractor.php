@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — read a supplier bill and turn it into a draft document.
+ * VGo — read a supplier bill and turn it into a draft document.
  *
  * The model is asked for one strict JSON object and nothing else. Everything it
  * returns is then treated as untrusted: numbers are coerced, dates normalised,

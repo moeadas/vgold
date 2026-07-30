@@ -1,6 +1,6 @@
-# Victory Genomics CRM — now a MOUNTED module inside the VGold unified app.
+# Victory Genomics CRM — now a MOUNTED module inside the VGo unified app.
 # The CRM is never served standalone anymore: every /crm/* request must be
-# funnelled up to the VGold front controller (../public/index.php), which
+# funnelled up to the VGo front controller (../public/index.php), which
 # boots the unified session bridge (crm/mount.php) so there is ONE login.
 #
 # This file DELIBERATELY overrides the legacy CRM routing (which used
@@ -38,7 +38,7 @@ DirectoryIndex disabled
 </FilesMatch>
 RedirectMatch 404 /\.git
 
-# ── Funnel everything through the VGold front controller ─────────────────────
+# ── Funnel everything through the VGo front controller ─────────────────────
 # Serve real static assets that physically exist under crm/ directly (css, js,
 # images, fonts, uploaded media) — the mount also handles these, but letting
 # Apache serve existing files is faster and avoids a PHP round-trip.

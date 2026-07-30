@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold Phase 1 — User reconciliation & CRM linkage.
+ * VGo Phase 1 — User reconciliation & CRM linkage.
  *
  * Run AFTER crm_data_import.sql has populated the crm_* tables.
  *

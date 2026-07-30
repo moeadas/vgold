@@ -1,6 +1,6 @@
 <?php
 /**
- * StatementParser — turn a bank's export into rows VGold can reason about.
+ * StatementParser — turn a bank's export into rows VGo can reason about.
  *
  * Banks agree on almost nothing. A statement may be CSV or OFX/QFX; the CSV may
  * carry six lines of preamble before the header, use ; or tab, write amounts as

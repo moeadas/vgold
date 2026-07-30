@@ -65,10 +65,10 @@ function createNotification($userId, $type, $title, $body = '', $link = '', $lea
         'created_at' => date('Y-m-d H:i:s'),
     ]);
 
-    // Unified bell: mirror this CRM notification into the VGold Workflow
-    // notification store (keyed by the VGold user id) so it shows in the single
+    // Unified bell: mirror this CRM notification into the VGo Workflow
+    // notification store (keyed by the VGo user id) so it shows in the single
     // app-wide bell AND triggers web-push — exactly like a Workflow notification.
-    // Guarded so the standalone CRM (no VGold bridge) is unaffected. Best-effort:
+    // Guarded so the standalone CRM (no VGo bridge) is unaffected. Best-effort:
     // a failure here must never break the CRM action that raised the notice.
     if (defined('VGOLD_BRIDGE_LOADED') && class_exists('DB')) {
         if (!class_exists('Push') && file_exists(__DIR__ . '/../../app/lib/Push.php')) {

@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — reusable AI client.
+ * VGo — reusable AI client.
  *
  * AIController's provider calls are private, text-only, hard-capped at 1024
  * output tokens, and its provider-selection loop is copy-pasted per caller.

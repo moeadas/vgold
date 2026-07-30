@@ -2,7 +2,7 @@
 // Copy this file to config/graph.php and fill in real values.
 // config/graph.php is gitignored and MUST NOT be committed.
 //
-// VGold supports TWO Microsoft identity flows:
+// VGo supports TWO Microsoft identity flows:
 //   1) User login  — OIDC authorization-code (openid/profile/email/User.Read)
 //   2) App-only     — Microsoft Graph for SharePoint file storage + Mail.Send
 //

@@ -2,8 +2,8 @@
 /**
  * CRM-side access to the shared secret helper.
  *
- * The CRM runs two ways — mounted inside VGold, and standalone — so it cannot
- * assume VGold's classes have been loaded. Pull Secrets in on demand.
+ * The CRM runs two ways — mounted inside VGo, and standalone — so it cannot
+ * assume VGo's classes have been loaded. Pull Secrets in on demand.
  *
  * If it is somehow unavailable, both functions return the value untouched.
  * That is the right failure for a read (a row saved before encryption existed

@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold one-time production setup / DB seed endpoint.
+ * VGo one-time production setup / DB seed endpoint.
  *
  * WHY THIS EXISTS: the sandbox that deploys the code cannot reach the SiteGround
  * MySQL (3306 firewalled) nor the site over HTTP (anti-bot captcha on the CI IP).
@@ -12,7 +12,7 @@
  *   2. Imports the CRM data dump into crm_* tables (INSERT ... the dump is
  *      generated with INSERT statements; re-running is guarded by a marker).
  *   3. Reconciles/links unified users + primary workspace + "CRM" category.
- *   4. Syncs CRM follow-ups -> VGold tasks.
+ *   4. Syncs CRM follow-ups -> VGo tasks.
  *
  * SECURITY: requires ?key=<setup secret>. The secret is NOT stored in the repo:
  * create the gitignored config/setup_secret.php on the server containing
@@ -44,7 +44,7 @@ function out($m) { echo $m . "\n"; @ob_flush(); @flush(); }
 function step($m) { out("\n==> " . $m); }
 
 $t0 = microtime(true);
-out("VGold setup starting — DB=" . DB_NAME . " host=" . DB_HOST . " env=" . APP_ENV);
+out("VGo setup starting — DB=" . DB_NAME . " host=" . DB_HOST . " env=" . APP_ENV);
 
 $pdo = DB::conn();
 
@@ -155,7 +155,7 @@ try {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
- * 4. Sync CRM follow-ups -> VGold tasks (idempotent, per linked workspace).
+ * 4. Sync CRM follow-ups -> VGo tasks (idempotent, per linked workspace).
  * ──────────────────────────────────────────────────────────────────────── */
 step("4/4 Sync CRM follow-ups -> tasks");
 try {

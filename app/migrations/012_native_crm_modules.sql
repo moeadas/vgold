@@ -1,4 +1,4 @@
--- VGold native CRM modules and per-user access control.
+-- VGo native CRM modules and per-user access control.
 -- Requires the prefixed CRM schema from 011_crm_integration.sql.
 
 CREATE TABLE IF NOT EXISTS `user_module_access` (

@@ -55,8 +55,15 @@ function applySettingsTab() {
   Array.from(page.children).forEach(el => {
     if (el.classList.contains('settings-index') || el.tagName === 'H1' || el.tagName === 'P'
         || el.classList.contains('page-head') || el.classList.contains('settings-head')) return;
-    const id = el.id || (el.querySelector && el.querySelector('[id^="settings-"]')?.id) || '';
-    if (id && known.has(id)) current = id;
+    // A card whose own id is not a tab id must not stop the search there —
+    // that is how the whole CRM card, Twilio and WhatsApp included, ended up
+    // filed under whichever tab happened to precede it in the markup.
+    let id = el.id && known.has(el.id) ? el.id : '';
+    if (!id && el.querySelector) {
+      const nested = el.querySelector('[id^="settings-"]');
+      if (nested && known.has(nested.id)) id = nested.id;
+    }
+    if (id) current = id;
     // A card can name its own section when document order would file it wrongly
     // — the backups and danger-zone cards sit at the end of the markup but
     // belong with Data.
@@ -213,7 +220,7 @@ async function renderSettings() {
           </div>
         </div>
         ${showUrl ? `<div class="form-row"><div class="form-field"><label>Base URL</label><input id="url-${key}" placeholder="${p.default_url}" value="${row ? (row.base_url || '') : ''}"></div></div>` : ''}
-        ${key === 'ollama' ? `<div class="ai-model-note">A self-hosted Ollama has to be reachable from the VGold server. <code>localhost</code> means the server itself, not your laptop — for a machine of your own use Ollama Cloud, or a public URL.</div>` : ''}
+        ${key === 'ollama' ? `<div class="ai-model-note">A self-hosted Ollama has to be reachable from the VGo server. <code>localhost</code> means the server itself, not your laptop — for a machine of your own use Ollama Cloud, or a public URL.</div>` : ''}
         ${key === 'ollama_cloud' ? `<div class="ai-model-note">Reading invoices and bills needs a model that can see images. Fetch the list and pick one marked <strong>vision</strong> — PDFs are converted to page images automatically.</div>` : ''}
         <div class="ai-test-result" id="ai-test-${key}" style="display:none"></div>
         <div class="actions">
@@ -229,7 +236,7 @@ async function renderSettings() {
   const smtpSection = smtp ? `
     <div class="settings-card">
       <h3>Email Notifications (SMTP)</h3>
-      <div class="desc">Configure how VGold sends email notifications to your team.</div>
+      <div class="desc">Configure how VGo sends email notifications to your team.</div>
       <div style="display:flex;align-items:center;gap:8px;margin:10px 0 14px;padding:8px 12px;background:var(--primary-bg);border-radius:8px;font-size:13px">
         <span style="font-size:16px">✅</span>
         <span>SMTP is configured — emails will be sent from <b>${esc(smtp.from_email)}</b> via <b>${esc(smtp.host)}:${smtp.port}</b></span>
@@ -267,7 +274,7 @@ async function renderSettings() {
 
   const crmSettingsSection = user.role === 'admin' && crmConfig ? `
     <div class="settings-card settings-card-wide" id="settings-crm">
-      <div class="settings-section-head"><div><span class="settings-section-kicker">CRM configuration</span><h3>Company & follow-up defaults</h3><div class="desc">CRM settings now live here with the rest of VGold administration.</div></div></div>
+      <div class="settings-section-head"><div><span class="settings-section-kicker">CRM configuration</span><h3>Company & follow-up defaults</h3><div class="desc">CRM settings now live here with the rest of VGo administration.</div></div></div>
       <div class="form-row" style="gap:12px">
         <div class="form-field" style="flex:1"><label class="form-label">Company name</label><input class="form-input" id="crm-setting-company" value="${esc(crmConfig.company_name || '')}"></div>
         <div class="form-field" style="flex:1"><label class="form-label">Company email</label><input class="form-input" id="crm-setting-email" type="email" value="${esc(crmConfig.company_email || '')}"></div>
@@ -282,7 +289,7 @@ async function renderSettings() {
       <button class="btn-primary" style="margin-top:14px" onclick="saveCrmSettings()">Save CRM settings</button>
       <div class="settings-subsection">
         <h4>Legacy CRM role mapping</h4>
-        <div class="desc">Map imported CRM roles to VGold account roles. Module permissions above remain the detailed access control.</div>
+        <div class="desc">Map imported CRM roles to VGo account roles. Module permissions above remain the detailed access control.</div>
         <div class="crm-rolemap-list">
           ${(crmRoleMap || []).map(mapping => `
             <div class="crm-rolemap-row">
@@ -297,19 +304,29 @@ async function renderSettings() {
         <label class="settings-check-row"><input type="checkbox" id="crm-rolemap-apply"><span><strong>Apply role changes to linked users now</strong><small>The last administrator is always protected.</small></span></label>
         <button class="btn-secondary" style="margin-top:12px" onclick="saveCrmRoleMap()">Save role mapping</button>
       </div>
-      <div class="settings-subsection" id="settings-integrations-native">
-        <h4>Calls, WhatsApp &amp; Email delivery</h4>
-        <div class="desc">Configure Twilio/VoIP, WhatsApp, and SMTP so the softphone, WhatsApp inbox, and email campaigns can send. These are the credentials the CRM uses at runtime.</div>
-        ${renderIntegrationSettings(crmIntegrations)}
-        ${renderSchedulerSettings(autoSched)}
-      </div>
+    </div>` : '';
+
+  // Its own top-level card, filed under Integrations by name.
+  //
+  // This used to be a subsection inside the CRM card, whose id is not one of
+  // the tab ids — so the tab filer fell back to document order and put Twilio,
+  // WhatsApp and VoIP under "Access & modules", where nobody would look for
+  // them. It is also no longer gated on the CRM settings call succeeding:
+  // these credentials must be reachable even when that request fails, which is
+  // exactly when someone needs to check them.
+  const integrationsSection = user.role === 'admin' ? `
+    <div class="settings-card settings-card-wide" id="settings-integrations-native" data-settings-for="settings-integrations">
+      <h3>Calls, WhatsApp &amp; Email delivery</h3>
+      <div class="desc">Twilio/VoIP, WhatsApp and SMTP credentials — what the softphone, the WhatsApp inbox and email campaigns use at runtime.</div>
+      ${renderIntegrationSettings(crmIntegrations)}
+      ${renderSchedulerSettings(autoSched)}
     </div>` : '';
 
   setTimeout(renderPushNotifState, 50);
   setTimeout(applySettingsTab, 0);
   return `
     <div class="fade-in settings-page">
-      <div class="section-label">VGold settings</div>
+      <div class="section-label">VGo settings</div>
       <div class="settings-title-row">
         <h1 class="page-title-sm">Account &amp; administration</h1>
         <span class="app-version-pill" title="Build currently running on this server">
@@ -350,11 +367,11 @@ async function renderSettings() {
       ${(user.auth_provider || 'password') === 'microsoft' ? `
       <div class="settings-card">
         <h3>Password</h3>
-        <div class="desc">You sign in with Microsoft, so VGold has no password of yours to change. Manage it through your Microsoft 365 account.</div>
+        <div class="desc">You sign in with Microsoft, so VGo has no password of yours to change. Manage it through your Microsoft 365 account.</div>
       </div>` : `
       <div class="settings-card">
         <h3>Change Password</h3>
-        <div class="desc">Update the password you use to sign in to VGold.</div>
+        <div class="desc">Update the password you use to sign in to VGo.</div>
         <div class="password-form">
           <div class="form-field">
             <label class="form-label">Current password</label>
@@ -382,7 +399,7 @@ async function renderSettings() {
 
       <div class="settings-card">
         <h3>Push Notifications</h3>
-        <div class="desc">Get real-time notifications on your device, even when the app is closed. Install VGold to your home screen to use it like a native app.</div>
+        <div class="desc">Get real-time notifications on your device, even when the app is closed. Install VGo to your home screen to use it like a native app.</div>
         <div id="push-notif-section">
           <div id="push-notif-state"></div>
         </div>
@@ -399,10 +416,11 @@ async function renderSettings() {
       </div>` : ''}
 
       <div id="settings-integrations">${user.role === 'admin' ? smtpSection : ''}</div>
+      ${integrationsSection}
 
       <div class="settings-card" id="settings-ai">
         <h3>AI Connections</h3>
-        <div class="desc">Connect your AI provider API keys to power VGold's AI features.</div>
+        <div class="desc">Connect your AI provider API keys to power VGo's AI features.</div>
         ${aiKeys}
       </div>
 
@@ -451,7 +469,7 @@ async function renderSettings() {
           <span style="font-size:15px;font-weight:700">CRM role mapping</span>
           <span style="font-size:11px;font-weight:700;color:var(--primary-dark);background:var(--primary-bg);border-radius:999px;padding:3px 9px">Admin</span>
         </div>
-        <div class="desc">Map each Victory Genomics CRM role onto a VGold access role. Used when linking or re-syncing CRM users.</div>
+        <div class="desc">Map each Victory Genomics CRM role onto a VGo access role. Used when linking or re-syncing CRM users.</div>
         <div style="margin-top:14px">
           ${(crmRoleMap && crmRoleMap.length) ? crmRoleMap.map(m => `
             <div class="crm-rolemap-row" style="display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--border)">
@@ -511,7 +529,7 @@ function mailStatusBanner() {
     return `<div class="mail-status mail-status-warn">
       <strong>Using the CRM's SMTP settings</strong> — <code>${esc(st.host || '')}</code>,
       sending as <code>${esc(st.from_email || '')}</code>. Nothing has been saved below,
-      so VGold falls back to the credentials already configured under CRM configuration.
+      so VGo falls back to the credentials already configured under CRM configuration.
       Saving your own here will take precedence.
     </div>`;
   }
@@ -557,7 +575,7 @@ function renderSmtpForm(smtp) {
       <div class="form-row" style="gap:12px">
         <div class="form-field" style="flex:1">
           <label class="form-label">From Name</label>
-          <input class="form-input" id="smtp-from-name" value="${esc(s.from_name || 'VGold')}" placeholder="VGold">
+          <input class="form-input" id="smtp-from-name" value="${esc(s.from_name || 'VGo')}" placeholder="VGo">
         </div>
         <div class="form-field" style="flex:1">
           <label class="form-label">From Email</label>
@@ -655,7 +673,7 @@ async function saveSmtp() {
     port: parseInt(document.getElementById('smtp-port')?.value) || 465,
     encryption: document.getElementById('smtp-encryption')?.value,
     username: document.getElementById('smtp-username')?.value.trim(),
-    from_name: document.getElementById('smtp-from-name')?.value.trim() || 'VGold',
+    from_name: document.getElementById('smtp-from-name')?.value.trim() || 'VGo',
     from_email: document.getElementById('smtp-from-email')?.value.trim(),
   };
   const pw = document.getElementById('smtp-password')?.value;
@@ -1287,7 +1305,7 @@ async function renderEditUserPage(userId) {
   const macc = (modInfo.members || []).find(m => m.id === userId);
   const isAdmin = member.role === 'admin';
   const isSelf = userId === (State.user?.id);
-  // External = signs in with a VGold password. Microsoft accounts authenticate
+  // External = signs in with a VGo password. Microsoft accounts authenticate
   // against Microsoft, so there is no local password to change.
   const isExternal = (member.auth_provider || 'password') !== 'microsoft';
   const current = new Set(isAdmin ? (modInfo.modules || []).map(m => m.key) : (macc?.access || []));
@@ -1325,7 +1343,7 @@ async function renderEditUserPage(userId) {
     </div>` : `
     <div class="settings-card">
       <h3>Password</h3>
-      <div class="desc">${esc(member.name)} signs in with Microsoft, so there is no VGold password to change. Password resets are handled in Microsoft 365.</div>
+      <div class="desc">${esc(member.name)} signs in with Microsoft, so there is no VGo password to change. Password resets are handled in Microsoft 365.</div>
     </div>`;
 
   return `<div class="settings-page fade-in">
@@ -1337,7 +1355,7 @@ async function renderEditUserPage(userId) {
         <div class="avatar" style="width:42px;height:42px;font-size:14px;background:${esc(member.avatar_color || '#9A8A78')}">${esc(member.initials || '?')}</div>
         <div style="flex:1;min-width:0">
           <h3 style="margin:0">${esc(member.name)}</h3>
-          <div class="desc" style="margin:2px 0 0">${esc(member.email)} · signs in with ${isExternal ? 'a VGold password (external)' : 'Microsoft (internal)'}</div>
+          <div class="desc" style="margin:2px 0 0">${esc(member.email)} · signs in with ${isExternal ? 'a VGo password (external)' : 'Microsoft (internal)'}</div>
         </div>
       </div>
     </div>
@@ -1365,7 +1383,7 @@ async function renderEditUserPage(userId) {
 
     <div class="settings-card" id="settings-user-contractor">
       <h3>Contractor</h3>
-      <div class="desc">People engaged on contract can submit their monthly invoice from inside VGold. Turning this on gives
+      <div class="desc">People engaged on contract can submit their monthly invoice from inside VGo. Turning this on gives
         ${esc(member.name)} a <strong>My invoices</strong> page — and nothing else. It does not grant any accounting access.</div>
       <label class="ci-switch">
         <input type="checkbox" id="edit-user-contractor" ${member.is_contractor ? 'checked' : ''}
@@ -1386,7 +1404,7 @@ async function toggleContractor(userId, on) {
     const res = await API.setContractor(userId, on);
     State.team = null;
     if (on) {
-      show('They can now submit invoices — <strong>My invoices</strong> appears in their sidebar next time they load VGold.');
+      show('They can now submit invoices — <strong>My invoices</strong> appears in their sidebar next time they load VGo.');
     } else if (res.pending_submissions) {
       show('Turned off. <strong>' + res.pending_submissions + '</strong> invoice(s) they already submitted are still waiting for approval and are unaffected.');
     } else {

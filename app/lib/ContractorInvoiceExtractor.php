@@ -1,6 +1,6 @@
 <?php
 /**
- * VGold — read a contractor's monthly invoice into a draft for review.
+ * VGo — read a contractor's monthly invoice into a draft for review.
  *
  * Close cousin of BillExtractor, and deliberately not the same class. A supplier
  * bill and a contractor's monthly invoice ask different questions: here the
@@ -11,7 +11,7 @@
  * Two things the prompt is explicit about, both deliberate:
  *
  *  - Bank account, routing and SWIFT numbers are NOT extracted. They are the
- *    highest-value target on the page and VGold has no use for them: the
+ *    highest-value target on the page and VGo has no use for them: the
  *    approver reads them off the attached PDF, which is shown beside the figures.
  *    Never asking for them is a stronger guarantee than asking and discarding.
  *

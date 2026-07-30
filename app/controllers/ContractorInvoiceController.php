@@ -1,8 +1,8 @@
 <?php
 /**
- * ContractorInvoiceController — contractors bill VGold from inside VGold.
+ * ContractorInvoiceController — contractors bill VGo from inside VGo.
  *
- * A contractor uploads their monthly invoice, VGold reads the figures off it,
+ * A contractor uploads their monthly invoice, VGo reads the figures off it,
  * they confirm and submit. Accounting sees it in a queue beside the original
  * document and either approves it — which creates the bill, ready to pay — or
  * rejects it with a reason the contractor can act on.

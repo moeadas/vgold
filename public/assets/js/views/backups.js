@@ -1,4 +1,4 @@
-// VGold — backups and code/repo parity, shown in Settings.
+// VGo — backups and code/repo parity, shown in Settings.
 //
 // The point of this panel is that a backup you have not checked is not a
 // backup. It states when the last one actually succeeded, where the off-server

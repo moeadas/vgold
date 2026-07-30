@@ -1,4 +1,4 @@
-# VGold — Root .htaccess  (SiteGround subdomain docroot = this directory)
+# VGo — Root .htaccess  (SiteGround subdomain docroot = this directory)
 # The application front controller lives in public/index.php. Everything is
 # funnelled there, which dispatches:
 #   /api/*  -> app/router.php

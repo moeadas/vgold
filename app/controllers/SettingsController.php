@@ -49,7 +49,7 @@ class SettingsController {
         $user = DB::fetch("SELECT password, auth_provider FROM users WHERE id = ?", [Auth::userId()]);
         if (!$user) jsonError('Account not found', 404);
         if (!PasswordReset::isPasswordAccount($user)) {
-            jsonError('Your account signs in with Microsoft, so it has no VGold password to change.', 400);
+            jsonError('Your account signs in with Microsoft, so it has no VGo password to change.', 400);
         }
         if (empty($user['password']) || !password_verify($current, $user['password'])) {
             jsonError('Current password is incorrect');
@@ -118,7 +118,7 @@ class SettingsController {
         );
         if (!$user) jsonError('User not found in this workspace', 404);
         if (!PasswordReset::isPasswordAccount($user)) {
-            jsonError($user['name'] . ' signs in with Microsoft, so there is no VGold password to change. Passwords apply to external users only.', 400);
+            jsonError($user['name'] . ' signs in with Microsoft, so there is no VGo password to change. Passwords apply to external users only.', 400);
         }
         return $user;
     }
@@ -127,7 +127,7 @@ class SettingsController {
         try {
             $actor  = Auth::user();
             $target = DB::fetch("SELECT name, email FROM users WHERE id = ?", [$targetId]);
-            error_log(sprintf('VGold audit: %s (#%d) %s %s (#%d)',
+            error_log(sprintf('VGo audit: %s (#%d) %s %s (#%d)',
                 $actor['name'] ?? 'unknown', Auth::userId(), $verb, $target['email'] ?? '?', $targetId));
         } catch (\Throwable $e) { /* auditing must never block the action */ }
     }
@@ -205,7 +205,7 @@ class SettingsController {
             'host' => $data['host'] ?? '',
             'port' => (int)($data['port'] ?? 465),
             'username' => $data['username'] ?? '',
-            'from_name' => $data['from_name'] ?? 'VGold',
+            'from_name' => $data['from_name'] ?? 'VGo',
             'from_email' => $data['from_email'] ?? '',
             'encryption' => $data['encryption'] ?? 'ssl',
             'is_active' => isset($data['is_active']) ? ($data['is_active'] ? 1 : 0) : 1,
@@ -252,11 +252,11 @@ class SettingsController {
         if (!filter_var($to, FILTER_VALIDATE_EMAIL)) jsonError('Enter a valid address to send the test to.');
 
         $status = Mail::status($wsId);
-        $html = '<h2>VGold SMTP test</h2>'
-            . '<p>This is a test email from VGold. If you are reading it, outgoing mail works — password resets and notifications will arrive.</p>'
+        $html = '<h2>VGo SMTP test</h2>'
+            . '<p>This is a test email from VGo. If you are reading it, outgoing mail works — password resets and notifications will arrive.</p>'
             . '<p style="color:#666;font-size:13px">Sent ' . date('Y-m-d H:i:s') . ' via ' . htmlspecialchars((string)$status['host']) . '</p>';
 
-        if (Mail::send($to, $user['name'], 'VGold SMTP test', $html)) {
+        if (Mail::send($to, $user['name'], 'VGo SMTP test', $html)) {
             jsonResponse(['ok' => true, 'message' => 'Test email sent to ' . $to . ' via ' . $status['host'] . '. Check the inbox (and the spam folder).']);
         }
         // The specific reason is the whole point of a test button — a generic
@@ -449,16 +449,16 @@ class SettingsController {
             ]);
             // Try to send notification email
             try {
-                Mail::sendNotification($userId, 'You have been invited to VGold',
-                    "<p>An admin added you to VGold. Set your password to get started:</p>" .
+                Mail::sendNotification($userId, 'You have been invited to VGo',
+                    "<p>An admin added you to VGo. Set your password to get started:</p>" .
                     "<p><a href='" . APP_URL . "/set-password?token={$token}'>Set your password</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         } else {
             // For MS users: send welcome email
             try {
-                Mail::sendNotification($userId, 'You have been added to VGold',
-                    "<p>You can now sign in to VGold using your Victory Genomics Microsoft account.</p>" .
-                    "<p><a href='" . APP_URL . "'>Open VGold</a></p>");
+                Mail::sendNotification($userId, 'You have been added to VGo',
+                    "<p>You can now sign in to VGo using your Victory Genomics Microsoft account.</p>" .
+                    "<p><a href='" . APP_URL . "'>Open VGo</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         }
         
@@ -735,7 +735,7 @@ class SettingsController {
             // Transfer file uploads (keep original uploader but mark reassigned)
             DB::query("UPDATE files SET uploaded_by = ? WHERE uploaded_by = ?", [$reassignTo, $userId]);
 
-            // CRM records use legacy CRM user IDs, not VGold user IDs.
+            // CRM records use legacy CRM user IDs, not VGo user IDs.
             if (!empty($target['crm_user_id']) && !empty($reassignUser['crm_user_id'])) {
                 DB::query("UPDATE crm_leads SET assigned_to = ? WHERE assigned_to = ?", [$reassignUser['crm_user_id'], $target['crm_user_id']]);
                 DB::query("UPDATE crm_leads SET created_by = ? WHERE created_by = ?", [$reassignUser['crm_user_id'], $target['crm_user_id']]);

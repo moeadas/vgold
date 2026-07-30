@@ -297,7 +297,7 @@ class MessageController {
                 foreach ($matches[1] as $name) {
                     $user = DB::fetch("SELECT id, name FROM users WHERE name LIKE ? LIMIT 1", ["%$name%"]);
                     if ($user && $user['id'] != Auth::userId()) {
-                        $html = "<h3>New mention in " . esc($project['name']) . "</h3><p><b>" . esc($actor['name']) . "</b> mentioned you:</p><blockquote>" . esc($data['body']) . "</blockquote><p><a href='" . APP_URL . "'>View in VGold →</a></p>";
+                        $html = "<h3>New mention in " . esc($project['name']) . "</h3><p><b>" . esc($actor['name']) . "</b> mentioned you:</p><blockquote>" . esc($data['body']) . "</blockquote><p><a href='" . APP_URL . "'>View in VGo →</a></p>";
                         Mail::sendNotification($user['id'], 'You were mentioned in ' . $project['name'], $html, 'mention');
                     }
                 }

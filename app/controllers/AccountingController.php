@@ -1,9 +1,9 @@
 <?php
 /**
- * AccountingController — native Accounting & Finance app inside VGold.
+ * AccountingController — native Accounting & Finance app inside VGo.
  *
- * A faithful port of the VGACC Laravel application onto VGold's own stack:
- * plain PHP + the DB:: PDO helper, served under /api/acc/*, sharing VGold's
+ * A faithful port of the VGACC Laravel application onto VGo's own stack:
+ * plain PHP + the DB:: PDO helper, served under /api/acc/*, sharing VGo's
  * session, CSRF and user table. No iframes, no second framework, no legacy
  * bridge — every screen in the SPA talks to these endpoints.
  *
@@ -2578,7 +2578,7 @@ class AccountingController
         return $out;
     }
 
-    /** Public counts endpoint used by the main VGold settings Danger Zone. */
+    /** Public counts endpoint used by the main VGo settings Danger Zone. */
     public static function dataSummary()
     {
         AccSchema::ensure();
@@ -2591,7 +2591,7 @@ class AccountingController
 
     /**
      * Clear all accounting data. Requires the caller to type CLEAR ACCOUNTING
-     * and re-enter their password — the same shape as VGold's master reset.
+     * and re-enter their password — the same shape as VGo's master reset.
      */
     public static function resetData()
     {

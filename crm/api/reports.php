@@ -1,6 +1,6 @@
 <?php
 /**
- * Victory Genomics CRM — Reports API (native VGold SPA).
+ * Victory Genomics CRM — Reports API (native VGo SPA).
  *
  * Aggregated pipeline metrics for the native Reports view. Runs through the
  * unified session (mount.php enforces the crm.reports module) and uses the

@@ -10,11 +10,11 @@ startSecureSession();
 requireLogin();
 
 // Only admins and sales managers can export.
-// IMPORTANT: the VGold /crm mount elevates any user holding the "reports" module
+// IMPORTANT: the VGo /crm mount elevates any user holding the "reports" module
 // to a temporary 'Sales Manager' role for the request, so hasRole('Sales Manager')
 // alone is NOT a trust boundary here — a reports-only Sales Rep would pass it and
 // dump the whole company's data. Gate on the user's REAL role instead: either a
-// true VGold admin ($_SESSION['role']==='Admin', set by the mount only for VGold
+// true VGo admin ($_SESSION['role']==='Admin', set by the mount only for VGo
 // admins) or a genuinely-assigned CRM Admin/Sales Manager (crm_role).
 $vgoldIsAdmin = (($_SESSION['role'] ?? '') === 'Admin');
 $realCrmRole  = $_SESSION['crm_role'] ?? '';

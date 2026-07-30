@@ -37,7 +37,7 @@ class Schema {
             self::addColumnIfMissing('tasks', 'source_record_id', "ALTER TABLE `tasks` ADD COLUMN `source_record_id` INT NULL");
             self::addColumnIfMissing('tasks', 'crm_lead_id', "ALTER TABLE `tasks` ADD COLUMN `crm_lead_id` INT NULL");
 
-            // People engaged on contract who bill VGold monthly. Kept on `users`
+            // People engaged on contract who bill VGo monthly. Kept on `users`
             // rather than inferred from auth_provider: whether someone signs in
             // with a password and whether they are allowed to invoice us are two
             // different questions, and conflating them would silently let every

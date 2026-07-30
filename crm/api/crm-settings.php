@@ -1,6 +1,6 @@
 <?php
 /**
- * Victory Genomics CRM — Integrations settings API (native VGold SPA).
+ * Victory Genomics CRM — Integrations settings API (native VGo SPA).
  *
  * Lets the native Settings view read and write the CRM `settings` table keys for
  * Email/SMTP, Twilio/VoIP and WhatsApp — replacing the embedded settings.php

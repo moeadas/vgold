@@ -4,10 +4,10 @@ if (!function_exists('esc')) {
     function esc($s) { return htmlspecialchars($s ?? '', ENT_QUOTES, 'UTF-8'); }
 }
 
-// VGold Application Configuration
+// VGo Application Configuration
 // Unified ERP: VGo workflow management + Victory Genomics CRM in one app.
 if (defined('APP_NAME')) { return; }
-define('APP_NAME', 'VGold');
+define('APP_NAME', 'VGo');
 
 // Auto-detect environment
 // A request on the live host is obviously production; so is a CLI run on the
@@ -37,12 +37,12 @@ if ($isSiteGround) {
 define('APP_HOST', parse_url(APP_URL, PHP_URL_HOST) ?: 'localhost');
 
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.30.10');
+define('ASSET_VERSION', '2026.07.30.11');
 
 // Human-readable build number, shown at the top of Settings so you can confirm
 // which build is actually live. Bump alongside ASSET_VERSION on every deploy.
-define('APP_VERSION', '1.15.0');
-define('APP_BUILD', '2026.07.30.10');
+define('APP_VERSION', '1.16.0');
+define('APP_BUILD', '2026.07.30.11');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

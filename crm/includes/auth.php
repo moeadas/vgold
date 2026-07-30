@@ -11,8 +11,8 @@ require_once __DIR__ . '/functions.php';
  * Start secure session with hardened settings
  */
 function startSecureSession() {
-    // When running inside the unified VGold shell, the bridge has already
-    // started the shared VGold session — do NOT start a second one.
+    // When running inside the unified VGo shell, the bridge has already
+    // started the shared VGo session — do NOT start a second one.
     if (defined('VGOLD_BRIDGE_LOADED')) {
         sendSecurityHeaders();
         return;
@@ -45,7 +45,7 @@ function isLoggedIn() {
  */
 function requireLogin() {
     if (!isLoggedIn()) {
-        // Inside the VGold shell, send unauthenticated users to the unified
+        // Inside the VGo shell, send unauthenticated users to the unified
         // login (SPA root) instead of the standalone CRM login page.
         if (defined('VGOLD_BRIDGE_LOADED')) {
             header('Location: /');

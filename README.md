@@ -1,6 +1,6 @@
-# VGold — Victory Genomics ERP
+# VGo — Victory Genomics ERP
 
-VGold is the unified Victory Genomics platform that merges **VGo** (workflow / project
+VGo is the unified Victory Genomics platform that merges **VGo** (workflow / project
 management) and the **Victory Genomics CRM** (leads, interactions, proposals, email,
 VoIP, WhatsApp) into a **single app, single database, single login** — a centralized
 ecosystem that can grow into a full ERP.
@@ -8,7 +8,7 @@ ecosystem that can grow into a full ERP.
 - **Live (target):** https://vgo.victorygenomics.com
 - **Backups (untouched):** `vgo.victorygenomics.com` (VGo) and `crm.victorygenomics.com` (CRM)
 
-> VGold is built on the **VGo design system** (same CSS, components, and SPA shell). The
+> VGo is built on the **VGo design system** (same CSS, components, and SPA shell). The
 > CRM is being folded in as a module set behind the same chrome and the same session.
 
 ---
@@ -27,7 +27,7 @@ ecosystem that can grow into a full ERP.
   role-mapping + per-module access matrix.
 
 ### Merge strategy (two layers)
-1. **Layer 1 (fast):** the existing CRM multi-page screens run inside VGold under `/crm/*`,
+1. **Layer 1 (fast):** the existing CRM multi-page screens run inside VGo under `/crm/*`,
    sharing the unified session and `users` table. Zero data-logic rewrites.
 2. **Layer 2 (progressive):** CRM screens are re-skinned to the VGo look and the
    highest-value ones (Leads, Lead detail, Interactions) are ported to native SPA views
@@ -46,15 +46,15 @@ of truth and syncs both ways.
 ```
 vgold/
 ├── config/
-│   ├── app.php              # App config (APP_NAME=VGold, vgold URL, ASSET_VERSION)
+│   ├── app.php              # App config (APP_NAME=VGo, vgold URL, ASSET_VERSION)
 │   ├── database.php         # Local dev DB (gitignored)
 │   ├── database.sg.php      # Production DB — SiteGround (gitignored)
 │   ├── graph.example.php    # Azure/Graph template (cert OR client-secret auth)
 │   └── graph.php            # Real Azure/Graph config (gitignored)
 ├── app/                     # VGo workflow backend (controllers, lib, migrations, router)
-├── public/                  # VGo SPA shell + assets (the VGold design system)
+├── public/                  # VGo SPA shell + assets (the VGo design system)
 ├── crm/                     # CRM source (mounted under /crm/* in Layer 1)
-├── migration/               # One-off scripts for the CRM → VGold data migration (Phase 1)
+├── migration/               # One-off scripts for the CRM → VGo data migration (Phase 1)
 └── storage/                 # uploads + logs (gitignored)
 ```
 
@@ -64,7 +64,7 @@ vgold/
 
 | Phase | Scope | Status |
 |------:|-------|--------|
-| 0 | Scaffold VGold from VGo, new subdomain/DB/Azure config, import CRM source | ✅ done |
+| 0 | Scaffold VGo from VGo, new subdomain/DB/Azure config, import CRM source | ✅ done |
 | 1 | Unified schema + CRM data migration (leads/interactions/users, ID reconciliation) | ⏳ |
 | 2 | Unified auth & session (365 + password) | ⏳ |
 | 3 | Mount CRM under `/crm/*` inside the shell | ⏳ |

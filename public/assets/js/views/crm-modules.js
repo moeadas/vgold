@@ -1,4 +1,4 @@
-// VGold native CRM module views (Knowledge, Proposals, Automations, Email,
+// VGo native CRM module views (Knowledge, Proposals, Automations, Email,
 // Communications, Reports). These replace the iframe-embedded legacy pages with
 // fully-native SPA views + builders, reskinned to match the original Victory
 // Genomics CRM design system (classes scoped under `.crm-native`).

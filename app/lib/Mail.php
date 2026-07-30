@@ -39,7 +39,7 @@ class Mail {
 
     /**
      * The CRM keeps its own SMTP credentials in crm_settings, and on this
-     * deployment those are the ones that were actually filled in — VGold's
+     * deployment those are the ones that were actually filled in — VGo's
      * smtp_settings table was never populated, so every Workflow email
      * (assignments, mentions, password resets) was being dropped on the floor.
      *
@@ -70,7 +70,7 @@ class Mail {
             // with two different contracts depending on where the config came
             // from. Crypto::decrypt is a no-op on legacy plaintext either way.
             'password'   => $s['smtp_password'],
-            'from_name'  => $s['email_from_name'] ?: 'VGold',
+            'from_name'  => $s['email_from_name'] ?: 'VGo',
             'from_email' => $s['email_from_address'] ?: $s['smtp_username'],
             'encryption' => strtolower($s['smtp_encryption'] ?: 'ssl'),
             'source'     => 'crm',
@@ -142,7 +142,7 @@ class Mail {
         // The one place SMTP credentials are decrypted, whichever table they
         // came from. Safe on values saved before encryption existed.
         $password = Secrets::fromStorage('smtp_password', $cfg['password']);
-        $fromName = $cfg['from_name'] ?: 'VGold';
+        $fromName = $cfg['from_name'] ?: 'VGo';
         $fromEmail = $cfg['from_email'];
         $encryption = $cfg['encryption'] ?: 'ssl';
 

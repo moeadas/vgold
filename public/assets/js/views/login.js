@@ -47,7 +47,7 @@ function renderSignIn() {
       <div class="login-right">
         <div class="login-card">
           <div class="login-logo-wrap">
-            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGold" class="login-logo-img" />
+            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGo" class="login-logo-img" />
           </div>
           <h1 class="login-title">Welcome back</h1>
           <p class="login-subtitle">Sign in to your workspace</p>
@@ -99,7 +99,7 @@ function loginShell(inner) {
       <div class="login-right">
         <div class="login-card">
           <div class="login-logo-wrap">
-            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGold" class="login-logo-img" />
+            <img src="/assets/img/vgo-login-logo.png?v=20260626c" srcset="/assets/img/vgo-login-logo@2x.png?v=20260626c 2x" alt="VGo" class="login-logo-img" />
           </div>
           ${inner}
         </div>
@@ -125,7 +125,7 @@ function renderForgotPassword() {
       </button>
     </form>
     <div class="login-alt-actions"><a href="#" class="login-link" onclick="event.preventDefault();goSignIn()">← Back to sign in</a></div>
-    <p class="login-fineprint">Signing in with Microsoft? Your password is managed by Microsoft, not VGold — use the Microsoft button on the sign-in screen.</p>
+    <p class="login-fineprint">Signing in with Microsoft? Your password is managed by Microsoft, not VGo — use the Microsoft button on the sign-in screen.</p>
   `);
   setTimeout(() => document.getElementById('forgot-email')?.focus(), 30);
 }

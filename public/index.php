@@ -1,5 +1,5 @@
 <?php
-// VGold Entry Point — routes /api/* to API router, everything else to SPA
+// VGo Entry Point — routes /api/* to API router, everything else to SPA
 require_once __DIR__ . '/../config/app.php';
 
 $uri = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
@@ -10,7 +10,7 @@ if (strpos($uri, '/api/') === 0 || $uri === '/api') {
     exit;
 }
 
-// Full CRM functionality mounted inside the unified VGold identity/database.
+// Full CRM functionality mounted inside the unified VGo identity/database.
 if ($uri === '/crm' || strpos($uri, '/crm/') === 0) {
     require __DIR__ . '/../crm/mount.php';
     exit;
@@ -47,7 +47,7 @@ echo '<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VGold — Victory Genomics ERP</title>
+<title>VGo — Victory Genomics ERP</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
@@ -61,7 +61,7 @@ echo '<!DOCTYPE html>
 <meta name="theme-color" content="#C99520">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<meta name="apple-mobile-web-app-title" content="VGold">
+<meta name="apple-mobile-web-app-title" content="VGo">
 <script>window.VAPID_PUBLIC = "BFPCZ2bBYxkoGSaaaMMRlGmDQhDPvanQIQj-Y01VCB5jIeOhIigQ7GnixutbHEuNo_f089DSZAMg5PciVAGJSJw";</script>
 </head>
 <body>

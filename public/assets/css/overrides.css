@@ -1,4 +1,4 @@
-/* VGold — targeted UI overrides.
+/* VGo — targeted UI overrides.
    Loaded AFTER app.css and crm-native.css so equal-specificity rules win by
    cascade order (no !important needed). Keep selectors minimal and reuse the
    existing class names / CSS variables from app.css. */
