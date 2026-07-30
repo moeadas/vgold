@@ -36,6 +36,14 @@ class Schema {
             self::addColumnIfMissing('tasks', 'source_module', "ALTER TABLE `tasks` ADD COLUMN `source_module` VARCHAR(40) NULL");
             self::addColumnIfMissing('tasks', 'source_record_id', "ALTER TABLE `tasks` ADD COLUMN `source_record_id` INT NULL");
             self::addColumnIfMissing('tasks', 'crm_lead_id', "ALTER TABLE `tasks` ADD COLUMN `crm_lead_id` INT NULL");
+
+            // People engaged on contract who bill VGold monthly. Kept on `users`
+            // rather than inferred from auth_provider: whether someone signs in
+            // with a password and whether they are allowed to invoice us are two
+            // different questions, and conflating them would silently let every
+            // external account submit a payable.
+            self::addColumnIfMissing('users', 'is_contractor',
+                "ALTER TABLE `users` ADD COLUMN `is_contractor` TINYINT(1) NOT NULL DEFAULT 0");
         } catch (\Throwable $e) {
             error_log('Schema::ensureUnifiedModules: ' . $e->getMessage());
         }

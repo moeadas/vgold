@@ -28,8 +28,10 @@ require_once __DIR__ . '/lib/Acc.php';
 require_once __DIR__ . '/lib/AccSeed.php';
 require_once __DIR__ . '/lib/StatementParser.php';
 require_once __DIR__ . '/lib/BankMatcher.php';
+require_once __DIR__ . '/lib/ContractorInvoiceExtractor.php';
 require_once __DIR__ . '/controllers/AccountingController.php';
 require_once __DIR__ . '/controllers/BankFeedController.php';
+require_once __DIR__ . '/controllers/ContractorInvoiceController.php';
 require_once __DIR__ . '/controllers/BackupController.php';
 require_once __DIR__ . '/lib/CRMTaskBridge.php';
 require_once __DIR__ . '/lib/Mail.php';
@@ -158,6 +160,7 @@ $routes = [
     'POST settings/users/{id}/toggle-active' => ['SettingsController::toggleUserActive', true],
     'POST settings/users/{id}/password' => ['SettingsController::setUserPassword', true],
     'POST settings/users/{id}/send-reset' => ['SettingsController::sendUserPasswordReset', true],
+    'POST settings/users/{id}/contractor' => ['SettingsController::setContractor', true],
     'DELETE settings/users' => ['SettingsController::deleteUser', true],
     'GET settings/module-access' => ['SettingsController::moduleAccess', true],
     'PUT settings/module-access' => ['SettingsController::updateModuleAccess', true],
@@ -247,6 +250,20 @@ $routes = [
     'POST acc/bank-lines/{id}/add' => ['BankFeedController::addLine', true],
     'POST acc/bank-lines/{id}/exclude' => ['BankFeedController::excludeLine', true],
     'POST acc/bank-lines/{id}/undo' => ['BankFeedController::undoLine', true],
+
+    // Contractor invoices. The contractor's own routes sit outside /acc/ on
+    // purpose: submitting one must never require an accounting grant.
+    'GET contractor/invoices' => ['ContractorInvoiceController::mine', true],
+    'POST contractor/invoices/extract' => ['ContractorInvoiceController::extractUpload', true],
+    'POST contractor/invoices' => ['ContractorInvoiceController::submit', true],
+    'POST contractor/invoices/{id}/withdraw' => ['ContractorInvoiceController::withdraw', true],
+    // Readable by the submitter or by anyone who can approve it.
+    'GET contractor/invoices/{id}/file' => ['ContractorInvoiceController::file', true],
+
+    'GET acc/contractor-invoices' => ['ContractorInvoiceController::queue', true],
+    'GET acc/contractor-invoices/{id}' => ['ContractorInvoiceController::detail', true],
+    'POST acc/contractor-invoices/{id}/approve' => ['ContractorInvoiceController::approve', true],
+    'POST acc/contractor-invoices/{id}/reject' => ['ContractorInvoiceController::reject', true],
 
     // Attachments — bank statements, supplier PDFs, remittance advice.
     'POST acc/bills/extract' => ['AccountingController::extractBill', true],

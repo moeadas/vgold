@@ -65,6 +65,12 @@ class NotificationController {
             'interaction'   => 'crm-interactions',
             'proposal'      => 'crm-proposals',
             'campaign'      => 'crm-email',
+            // Contractor invoices point at two different screens depending on
+            // which side you are: the approver's queue, or the contractor's
+            // own list. Same link_type, opposite ends of the same transaction.
+            'contractor_invoice_submitted' => 'acc-contractor-invoices',
+            'contractor_invoice_decision'  => 'my-invoices',
+            'contractor_invoice_paid'      => 'my-invoices',
         ];
 
         $type = (string)$type;

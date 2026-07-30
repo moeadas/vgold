@@ -212,7 +212,7 @@ TXT;
     }
 
     /** Best row by normalised similarity, or null. */
-    private static function bestMatch($needle, array $rows, $field) {
+    protected static function bestMatch($needle, array $rows, $field) {
         $needle = self::norm($needle);
         if ($needle === '') return null;
         $best = null;
@@ -234,31 +234,31 @@ TXT;
     }
 
     /** Lower-case, strip punctuation and the company suffixes that add no signal. */
-    private static function norm($s) {
+    protected static function norm($s) {
         $s = mb_strtolower(trim((string)$s));
         $s = preg_replace('/[^a-z0-9 ]+/u', ' ', $s);
         $s = preg_replace('/\b(ltd|limited|llc|inc|incorporated|gmbh|bv|sa|sarl|plc|co|company|corp|corporation|fz|fzco|llp|pvt)\b/', ' ', $s);
         return trim(preg_replace('/\s+/', ' ', $s));
     }
 
-    private static function str($v) {
+    protected static function str($v) {
         if (!is_scalar($v)) return null;
         $v = trim((string)$v);
         return ($v === '' || strcasecmp($v, 'null') === 0 || strcasecmp($v, 'n/a') === 0) ? null : $v;
     }
 
-    private static function email($v) {
+    protected static function email($v) {
         $v = self::str($v);
         return ($v && filter_var($v, FILTER_VALIDATE_EMAIL)) ? $v : null;
     }
 
-    private static function currency($v) {
+    protected static function currency($v) {
         $v = self::str($v);
         return ($v && preg_match('/^[A-Za-z]{3}$/', $v)) ? strtoupper($v) : null;
     }
 
     /** Accepts 1.234,56 and 1,234.56 and "$1,234.56" alike. */
-    private static function num($v) {
+    protected static function num($v) {
         if (is_int($v) || is_float($v)) return (float)$v;
         if (!is_string($v)) return null;
         $s = trim($v);
@@ -283,7 +283,7 @@ TXT;
     }
 
     /** Normalise to YYYY-MM-DD, refusing anything genuinely ambiguous. */
-    private static function date($v) {
+    protected static function date($v) {
         $v = self::str($v);
         if ($v === null) return null;
         if (preg_match('/^(\d{4})-(\d{2})-(\d{2})$/', $v, $m)) {

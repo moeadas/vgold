@@ -215,6 +215,7 @@ async function render() {
       case 'task': mainContent = await renderTaskPage(State.activeTaskId); break;
       case 'settings': mainContent = await renderSettings(); break;
       case 'settings-user': mainContent = await renderEditUserPage(State.editUserId); break;
+      case 'my-invoices': mainContent = await renderMyInvoices(); break;
       case 'crm-dashboard': mainContent = await renderCrmDashboard(); break;
       case 'crm-leads': mainContent = await renderCrmLeads(); break;
       case 'crm-lead': mainContent = await renderCrmLeadDetail(State.activeCrmLeadId); break;
@@ -236,6 +237,7 @@ async function render() {
       case 'acc-bill-scan': mainContent = await renderAccBillScan(); break;
       case 'acc-bank-import': mainContent = await renderAccBankImport(); break;
       case 'acc-bank-review': mainContent = await renderAccBankReview(); break;
+      case 'acc-contractor-invoices': mainContent = await renderAccContractorInvoices(); break;
       case 'acc-invoices': mainContent = await renderAccDocuments('invoice'); break;
       case 'acc-bills': mainContent = await renderAccDocuments('bill'); break;
       case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;
@@ -930,7 +932,10 @@ function updateNavBadges() {
 // Modules whose notifications point at a record you open from inside them.
 // Clearing these on module open would destroy the very thing the badge exists
 // to tell you — *which* leads or tasks. They clear per record instead.
-const RECORD_BACKED_NAV = ['mytasks', 'taskoverview', 'crm-leads', 'crm-customers', 'crm-interactions', 'crm-communications'];
+// Modules whose badge must survive being looked at, because the count is about
+// individual records and the list is where you see which ones.
+const RECORD_BACKED_NAV = ['mytasks', 'taskoverview', 'crm-leads', 'crm-customers', 'crm-interactions', 'crm-communications',
+  'acc-contractor-invoices'];
 
 /**
  * Opening a module with nothing to drill into is dealing with its

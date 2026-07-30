@@ -102,6 +102,38 @@ class Authz {
         return array_values(array_merge($crm, $acc));
     }
 
+    /**
+     * Everyone who currently holds one accounting module — the reverse of
+     * grantedModules(), for deciding who to notify. Includes the bootstrap
+     * owner, who holds every module implicitly and would otherwise never be
+     * told about work waiting for them.
+     */
+    public static function usersWithAccModule($moduleKey, $workspaceId = null) {
+        if (!isset(self::ACC_MODULES[$moduleKey])) return [];
+        $workspaceId = $workspaceId ?? Auth::workspaceId();
+        $ids = [];
+        try {
+            $rows = DB::fetchAll(
+                "SELECT uma.user_id
+                   FROM user_module_access uma
+                   JOIN users u ON u.id = uma.user_id
+                  WHERE uma.workspace_id = ? AND uma.module_key = ? AND uma.can_access = 1
+                    AND u.is_active = 1",
+                [$workspaceId, $moduleKey]
+            );
+            foreach ($rows as $r) $ids[(int)$r['user_id']] = true;
+
+            $owner = DB::fetch(
+                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1",
+                [self::ACC_OWNER_EMAIL]
+            );
+            if ($owner) $ids[(int)$owner['id']] = true;
+        } catch (\Throwable $e) {
+            error_log('Authz::usersWithAccModule: ' . $e->getMessage());
+        }
+        return array_keys($ids);
+    }
+
     public static function hasModuleAccess($moduleKey) {
         $all = self::allModules();
         if (!isset($all[$moduleKey])) return false;

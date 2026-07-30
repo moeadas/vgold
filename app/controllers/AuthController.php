@@ -189,6 +189,7 @@ class AuthController {
             'avatar_color' => $user['avatar_color'],
             'initials' => initials($user['name']),
             'default_screen' => $defaultScreen,
+            'is_contractor' => (int)($user['is_contractor'] ?? 0) === 1,
             'crm_user_id' => $user['crm_user_id'] ?? null,
             'crm_role' => $user['crm_role'] ?? null,
             'modules' => Authz::grantedModules((int)$user['id'], Auth::workspaceId()),

@@ -12,6 +12,11 @@ function renderSidebar() {
     { id: 'projects', label: 'Workspaces', icon: I.folder },
     { id: 'messages', label: 'Messages', icon: I.msg },
   ];
+  // Contractors bill the company from here. Shown only to the people we accept
+  // invoices from, so it stays invisible to staff.
+  if (u.is_contractor) {
+    workflowItems.push({ id: 'my-invoices', label: 'My invoices', icon: I.file || I.grid });
+  }
   const granted = new Set(u.modules || []);
   const crmItems = [
     { module: 'crm.dashboard', id: 'crm-dashboard', label: 'Overview', icon: I.grid },
@@ -33,6 +38,7 @@ function renderSidebar() {
     { module: 'acc.dashboard', id: 'acc-dashboard', label: 'Overview', icon: A.overview || I.grid },
     { module: 'acc.invoices', id: 'acc-invoices', label: 'Invoices', icon: A.invoice || I.file },
     { module: 'acc.bills', id: 'acc-bills', label: 'Bills', icon: A.bill || I.file },
+    { module: 'acc.bills', id: 'acc-contractor-invoices', label: 'Contractor invoices', icon: A.contacts || I.people },
     { module: 'acc.customers', id: 'acc-customers', label: 'Customers', icon: A.contacts || I.people },
     { module: 'acc.vendors', id: 'acc-vendors', label: 'Vendors', icon: A.contacts || I.people },
     { module: 'acc.banking', id: 'acc-banking', label: 'Banking', icon: A.bank || I.grid },
@@ -75,6 +81,7 @@ function renderSidebar() {
       'acc-reconciliation': 'acc-banking',
       'acc-bank-import': 'acc-banking',
       'acc-bank-review': 'acc-banking',
+      'acc-contractor-invoice': 'acc-contractor-invoices',
       'crm-lead': 'crm-leads',
       'crm-lead-new': 'crm-leads',
       'crm-lead-email': 'crm-leads',

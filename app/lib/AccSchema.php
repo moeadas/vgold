@@ -21,6 +21,7 @@ class AccSchema
 
     /** Every business table, in child → parent order (safe for bulk wipes). */
     const BUSINESS_TABLES = [
+        'acc_contractor_invoices',
         'acc_bank_lines', 'acc_bank_imports',
         'acc_attachments', 'acc_transaction_splits',
         'acc_document_item_taxes', 'acc_document_items', 'acc_document_totals',
@@ -36,7 +37,7 @@ class AccSchema
     const ATTACHMENT_DIR = 'uploads/acc_attachments';
 
     /** Things an attachment can hang off. */
-    const ATTACHABLE = ['document', 'reconciliation', 'transaction', 'bank_import'];
+    const ATTACHABLE = ['document', 'reconciliation', 'transaction', 'bank_import', 'contractor_invoice'];
 
     public static function ensure()
     {
@@ -466,6 +467,59 @@ class AccSchema
                 KEY `acc_bl_date` (`posted_at`),
                 UNIQUE KEY `uniq_acc_bl_dedupe` (`account_id`, `dedupe_key`, `occurrence`)
             )$eng");
+
+            /**
+             * Invoices submitted by contractors from inside VGold.
+             *
+             * A submission is NOT a bill. It becomes one only when accounting
+             * approves it — until then it must not appear in payables, or an
+             * unreviewed figure could be paid on its way through.
+             *
+             * `user_id` is the authenticated submitter and is the only identity
+             * this feature trusts. The name printed on the document is recorded
+             * for reference but never used to decide who is owed.
+             *
+             * Note what is absent: no bank account, routing or SWIFT column.
+             * Payment details are read off the attached PDF at approval time and
+             * never enter the database.
+             */
+            DB::query("CREATE TABLE IF NOT EXISTS `acc_contractor_invoices` (
+                `id` INT AUTO_INCREMENT PRIMARY KEY,
+                `user_id` INT NOT NULL,
+                `contact_id` INT NULL,
+                `status` VARCHAR(16) NOT NULL DEFAULT 'submitted',
+                `invoice_number` VARCHAR(100) NULL,
+                `issued_at` DATE NULL,
+                `period_label` VARCHAR(100) NULL,
+                `period_start` DATE NULL,
+                `period_end` DATE NULL,
+                `currency_code` VARCHAR(8) NOT NULL DEFAULT 'USD',
+                `subtotal` DECIMAL(15,4) NULL,
+                `tax_total` DECIMAL(15,4) NULL,
+                `total` DECIMAL(15,4) NOT NULL DEFAULT 0,
+                `notes` TEXT NULL,
+                `line_items` TEXT NULL,
+                `extraction` TEXT NULL,
+                `document_id` INT NULL,
+                `attachment_id` INT NULL,
+                `submitted_at` DATETIME NULL,
+                `decided_at` DATETIME NULL,
+                `decided_by` INT NULL,
+                `decision_note` TEXT NULL,
+                `paid_at` DATETIME NULL,
+                `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+                `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                `deleted_at` TIMESTAMP NULL DEFAULT NULL,
+                KEY `acc_ci_user` (`user_id`, `status`),
+                KEY `acc_ci_status` (`status`),
+                KEY `acc_ci_document` (`document_id`),
+                KEY `acc_ci_deleted` (`deleted_at`)
+            )$eng");
+
+            // One vendor record per contractor, so their invoices, payments and
+            // history all land on the same payables account year after year.
+            self::addColumnIfMissing('acc_contacts', 'user_id',
+                "ALTER TABLE `acc_contacts` ADD COLUMN `user_id` INT NULL, ADD KEY `acc_contact_user` (`user_id`)");
 
             // Sales-agent dimension. Added as ALTERs because both tables predate it.
             self::addColumnIfMissing('acc_documents', 'user_id',

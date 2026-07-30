@@ -315,7 +315,7 @@ class SettingsController {
     public static function team() {
         $wsId = Auth::workspaceId();
         $members = DB::fetchAll(
-            "SELECT u.id, u.name, u.email, u.avatar_color, u.is_active, u.auth_provider, wm.role FROM users u 
+            "SELECT u.id, u.name, u.email, u.avatar_color, u.is_active, u.auth_provider, u.is_contractor, wm.role FROM users u 
              JOIN workspace_members wm ON u.id = wm.user_id WHERE wm.workspace_id = ?
              ORDER BY wm.role DESC, u.name ASC",
             [$wsId]
@@ -336,6 +336,7 @@ class SettingsController {
                 'role' => $m['role'],
                 'auth_provider' => $m['auth_provider'],
                 'is_active' => (bool)$m['is_active'],
+                'is_contractor' => (int)($m['is_contractor'] ?? 0) === 1,
             ], $members),
             'invites' => array_map(fn($i) => [
                 'id' => (int)$i['id'],
@@ -460,6 +461,44 @@ class SettingsController {
     }
     
     // Change a user's role (admin only, with last-admin safeguard)
+    /**
+     * Mark a user as a contractor, which is what puts "My invoices" in their
+     * sidebar and lets them submit a payable.
+     *
+     * Kept separate from role and from module grants because it answers a
+     * different question: not what they may see, but whether we accept bills
+     * from them. Turning it off leaves everything already submitted intact —
+     * an invoice that has been approved is a real payable and must not vanish
+     * because someone's engagement ended.
+     */
+    public static function setContractor() {
+        Auth::requireAdmin();
+        Schema::ensureUnifiedModules();
+        $data = input();
+        $userId = (int)($data['user_id'] ?? 0);
+        $on = !empty($data['is_contractor']);
+
+        $target = DB::fetch("SELECT id, name FROM users WHERE id = ?", [$userId]);
+        if (!$target) jsonError('User not found');
+
+        DB::update('users', ['is_contractor' => $on ? 1 : 0], 'id = ?', [$userId]);
+
+        $pending = 0;
+        if (!$on) {
+            try {
+                AccSchema::ensure();
+                $row = DB::fetch(
+                    "SELECT COUNT(*) AS n FROM acc_contractor_invoices
+                      WHERE user_id = ? AND status = 'submitted' AND deleted_at IS NULL",
+                    [$userId]
+                );
+                $pending = (int)($row['n'] ?? 0);
+            } catch (\Throwable $e) { /* the table may not exist yet */ }
+        }
+
+        jsonResponse(['ok' => true, 'is_contractor' => $on, 'pending_submissions' => $pending]);
+    }
+
     public static function changeRole() {
         Auth::requireAdmin();
         $data = input();

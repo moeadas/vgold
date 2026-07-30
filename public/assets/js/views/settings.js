@@ -1154,7 +1154,42 @@ async function renderEditUserPage(userId) {
     </div>
 
     ${passwordCard}
+
+    <div class="settings-card" id="settings-user-contractor">
+      <h3>Contractor</h3>
+      <div class="desc">People engaged on contract can submit their monthly invoice from inside VGold. Turning this on gives
+        ${esc(member.name)} a <strong>My invoices</strong> page — and nothing else. It does not grant any accounting access.</div>
+      <label class="ci-switch">
+        <input type="checkbox" id="edit-user-contractor" ${member.is_contractor ? 'checked' : ''}
+               onchange="toggleContractor(${userId}, this.checked)">
+        <span>${esc(member.name)} may submit invoices to Victory Genomics</span>
+      </label>
+      <div id="contractor-result" class="pw-admin-result" style="display:none"></div>
+      <p class="desc" style="margin-top:10px">Submitted invoices go to whoever holds the <strong>Bills &amp; expenses</strong> module,
+        who approves them into payables. Turning this off later leaves everything already submitted untouched.</p>
+    </div>
   </div>`;
+}
+
+async function toggleContractor(userId, on) {
+  const out = document.getElementById('contractor-result');
+  const show = (msg) => { if (out) { out.innerHTML = msg; out.style.display = 'block'; } };
+  try {
+    const res = await API.setContractor(userId, on);
+    State.team = null;
+    if (on) {
+      show('They can now submit invoices — <strong>My invoices</strong> appears in their sidebar next time they load VGold.');
+    } else if (res.pending_submissions) {
+      show('Turned off. <strong>' + res.pending_submissions + '</strong> invoice(s) they already submitted are still waiting for approval and are unaffected.');
+    } else {
+      show('Turned off.');
+    }
+    toast(on ? 'Contractor invoicing enabled' : 'Contractor invoicing disabled', 'success');
+  } catch (e) {
+    const box = document.getElementById('edit-user-contractor');
+    if (box) box.checked = !on;
+    toast(e.message, 'error');
+  }
 }
 
 function adminPwFeedback(message, isError) {

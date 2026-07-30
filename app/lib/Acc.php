@@ -616,6 +616,15 @@ class Acc
             }
         }
         DB::query("UPDATE acc_documents SET paid_amount = ?, status = ? WHERE id = ?", [$paid, $status, (int)$documentId]);
-        return DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$documentId]);
+        $fresh = DB::fetch("SELECT * FROM acc_documents WHERE id = ?", [(int)$documentId]);
+
+        // Every route to paying a bill — a manual transaction, a payment against
+        // the document, a line accepted off a bank statement — lands here, which
+        // is why the contractor gets told from this one place.
+        if ($status !== $doc['status'] && class_exists('ContractorInvoiceController')) {
+            try { ContractorInvoiceController::onDocumentSettled($fresh, $doc['status']); }
+            catch (\Throwable $e) { error_log('Acc::syncDocumentPaymentState notify: ' . $e->getMessage()); }
+        }
+        return $fresh;
     }
 }
