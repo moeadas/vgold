@@ -26,6 +26,10 @@ RewriteRule (?i)^(config|app|migration|vendor)(/|$)          - [F,L]
 RewriteRule (?i)^storage(/|$)                                - [F,L]
 RewriteRule (?i)^crm/(config|includes|vendor|database)(/|$)  - [F,L]
 RewriteRule (?i)\.(sql|db|sqlite|env|log|lock|sh|bak|dist)$  - [F,L]
+# The rule above only matches a name ENDING in .bak, so an editor or deploy
+# leaving "settings.js.bak-2026-07-30" beside the original served the source in
+# full. Match the dated/numbered variants too.
+RewriteRule (?i)\.(bak|orig|save|old|swp|tmp)[-.][0-9a-z._-]*$ - [F,L]
 RewriteRule (?i)^(deploy|composer)\.                         - [F,L]
 RewriteRule (?i)(^|/)setup_vgold\.php$                       - [F,L]
 
