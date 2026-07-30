@@ -10,31 +10,49 @@
  * so the Ask feature cannot regress.
  */
 require_once __DIR__ . '/Crypto.php';
+require_once __DIR__ . '/PdfRaster.php';
 
 class AiClient {
 
     /** Preference order. Ollama first to match the existing Ask behaviour. */
-    const ORDER = ['ollama', 'anthropic', 'openai', 'gemini'];
+    const ORDER = ['ollama', 'ollama_cloud', 'anthropic', 'openai', 'gemini'];
 
-    /** Which providers can read an attachment, and of what kind. */
+    /**
+     * Which providers can read an attachment, and of what kind.
+     *
+     * `pdf` here means "accepts a PDF over the wire". Only two do. The rest are
+     * still usable for documents when Ghostscript is available, because a PDF is
+     * rendered to page images first — see resolveProvider() and attachmentParts().
+     */
     const CAPABILITIES = [
-        'anthropic' => ['image' => true,  'pdf' => true],
-        'gemini'    => ['image' => true,  'pdf' => true],
-        'openai'    => ['image' => true,  'pdf' => false],
-        'ollama'    => ['image' => true,  'pdf' => false],
+        'anthropic'    => ['image' => true,  'pdf' => true],
+        'gemini'       => ['image' => true,  'pdf' => true],
+        'openai'       => ['image' => true,  'pdf' => false],
+        'ollama'       => ['image' => true,  'pdf' => false],
+        'ollama_cloud' => ['image' => true,  'pdf' => false],
     ];
+
+    /** Providers that authenticate with a key rather than being open locally. */
+    const NEEDS_KEY = ['anthropic', 'openai', 'gemini', 'ollama_cloud'];
 
     /**
      * The user's active provider, optionally restricted to ones that can read a
      * given attachment kind ('image' | 'pdf' | null).
      *
+     * When a PDF is wanted and this host can rasterise, an image-only provider
+     * qualifies: a rendered page is a picture of the document, and asking
+     * someone to go and buy a second API key is not a real answer.
+     *
      * Returns ['provider' => string, 'config' => row] or null.
      */
     public static function resolveProvider($userId, $needs = null) {
+        $canRaster = ($needs === 'pdf') && PdfRaster::available();
         foreach (self::ORDER as $p) {
-            if ($needs && empty(self::CAPABILITIES[$p][$needs])) continue;
+            if ($needs && empty(self::CAPABILITIES[$p][$needs])) {
+                if (!($canRaster && !empty(self::CAPABILITIES[$p]['image']))) continue;
+            }
             $sql = "SELECT * FROM user_api_keys WHERE user_id = ? AND provider = ? AND is_active = 1";
-            if ($p !== 'ollama') $sql .= " AND api_key != ''";
+            if (in_array($p, self::NEEDS_KEY, true)) $sql .= " AND api_key != ''";
             $row = DB::fetch($sql, [$userId, $p]);
             if ($row) return ['provider' => $p, 'config' => $row];
         }
@@ -51,6 +69,87 @@ class AiClient {
     }
 
     /**
+     * The models a provider currently offers this user.
+     *
+     * Typing a model name from memory is how you discover, three screens later,
+     * that it was renamed. Ollama's cloud catalogue in particular changes with
+     * every deprecation notice.
+     *
+     * @return array ['models' => [['id'=>string,'label'=>string,'vision'=>bool]], 'source' => string]
+     */
+    public static function listModels($provider, array $cfg, $timeout = 20) {
+        $key = !empty($cfg['api_key']) ? Crypto::decrypt($cfg['api_key']) : '';
+
+        switch ($provider) {
+            case 'ollama_cloud':
+            case 'ollama': {
+                $base = self::baseFor($provider, $cfg);
+                $json = self::get(rtrim($base, '/') . '/api/tags',
+                    $key !== '' ? ['Authorization: Bearer ' . $key] : [], $timeout,
+                    $provider === 'ollama' ? 'Ollama' : 'Ollama Cloud');
+                $out = [];
+                foreach ($json['models'] ?? [] as $m) {
+                    $id = $m['name'] ?? $m['model'] ?? null;
+                    if (!$id) continue;
+                    $fams = array_map('strtolower', (array)($m['details']['families'] ?? []));
+                    $size = $m['details']['parameter_size'] ?? null;
+                    $out[] = [
+                        'id'     => $id,
+                        'label'  => $id . ($size ? '  ·  ' . $size : ''),
+                        'vision' => in_array('clip', $fams, true) || in_array('mllama', $fams, true)
+                                    || (bool)preg_match('/(vl|vision|llava|kimi|gemma|minimax|qwen3\.5)/i', $id),
+                    ];
+                }
+                return ['models' => $out, 'source' => rtrim($base, '/') . '/api/tags'];
+            }
+            case 'openai': {
+                $base = ($cfg['base_url'] ?? null) ?: 'https://api.openai.com';
+                $json = self::get(rtrim($base, '/') . '/v1/models', ['Authorization: Bearer ' . $key], $timeout, 'OpenAI');
+                $out = [];
+                foreach ($json['data'] ?? [] as $m) {
+                    $id = $m['id'] ?? null;
+                    if (!$id || !preg_match('/^(gpt|o\d|chatgpt)/i', $id)) continue;
+                    $out[] = ['id' => $id, 'label' => $id, 'vision' => (bool)preg_match('/(4o|4\.1|4\.5|o[34]|5)/i', $id)];
+                }
+                usort($out, fn($a, $b) => strcmp($a['id'], $b['id']));
+                return ['models' => $out, 'source' => rtrim($base, '/') . '/v1/models'];
+            }
+            case 'anthropic': {
+                $base = ($cfg['base_url'] ?? null) ?: 'https://api.anthropic.com';
+                $json = self::get(rtrim($base, '/') . '/v1/models?limit=100',
+                    ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01'], $timeout, 'Anthropic');
+                $out = [];
+                foreach ($json['data'] ?? [] as $m) {
+                    if (empty($m['id'])) continue;
+                    $out[] = ['id' => $m['id'], 'label' => $m['display_name'] ?? $m['id'], 'vision' => true];
+                }
+                return ['models' => $out, 'source' => rtrim($base, '/') . '/v1/models'];
+            }
+            case 'gemini': {
+                $base = ($cfg['base_url'] ?? null) ?: 'https://generativelanguage.googleapis.com/v1beta';
+                $json = self::get(rtrim($base, '/') . '/models?pageSize=200&key=' . urlencode($key), [], $timeout, 'Gemini');
+                $out = [];
+                foreach ($json['models'] ?? [] as $m) {
+                    $id = isset($m['name']) ? preg_replace('#^models/#', '', $m['name']) : null;
+                    if (!$id) continue;
+                    $methods = (array)($m['supportedGenerationMethods'] ?? []);
+                    if ($methods && !in_array('generateContent', $methods, true)) continue;
+                    $out[] = ['id' => $id, 'label' => $m['displayName'] ?? $id, 'vision' => true];
+                }
+                return ['models' => $out, 'source' => rtrim($base, '/') . '/models'];
+            }
+        }
+        throw new Exception('Unknown provider: ' . $provider);
+    }
+
+    /** Where a provider's API lives, honouring an override. */
+    private static function baseFor($provider, array $cfg) {
+        $custom = trim((string)($cfg['base_url'] ?? ''));
+        if ($custom !== '') return $custom;
+        return $provider === 'ollama_cloud' ? 'https://ollama.com' : 'http://localhost:11434';
+    }
+
+    /**
      * Run a completion.
      *
      * $opts:
@@ -59,7 +158,9 @@ class AiClient {
      *   max_tokens  — default 4096; document extraction needs far more than the
      *                 1024 the older code allowed
      *   timeout     — seconds, default 120
-     *   attachment  — ['mime' => string, 'data' => base64 string, 'name' => string]
+     *   attachment  — ['mime' => string, 'data' => base64 string, 'name' => string,
+     *                  'path' => optional absolute path, saves re-encoding a PDF
+     *                  that is already on disk before it is rasterised]
      *
      * Returns the model's text. Throws with the provider's own error body,
      * because "API error (400)" alone is not debuggable.
@@ -81,9 +182,12 @@ class AiClient {
             $active = self::activeProviders($userId);
             if ($needs === 'pdf' && $active) {
                 throw new Exception(
-                    'Reading a PDF needs Anthropic or Google Gemini, and you have '
-                    . implode(' / ', $active) . ' connected. Either add one of those keys in '
-                    . 'Settings → AI Connections, or upload a photo or screenshot of the bill instead.'
+                    PdfRaster::available()
+                        ? 'None of the connected providers (' . implode(' / ', $active) . ') can read this document.'
+                          . ' Check the key is still valid in Settings → AI Connections.'
+                        : 'Reading a PDF needs Anthropic or Google Gemini, and you have '
+                          . implode(' / ', $active) . ' connected. Either add one of those keys in '
+                          . 'Settings → AI Connections, or upload a photo or screenshot instead.'
                 );
             }
             throw new Exception('No AI provider is connected. Add a key in Settings → AI Connections.');
@@ -91,14 +195,53 @@ class AiClient {
 
         $maxTokens = (int)($opts['max_tokens'] ?? 4096);
         $timeout   = (int)($opts['timeout'] ?? 120);
+        $parts     = self::attachmentParts($att, $sel['provider']);
 
         switch ($sel['provider']) {
-            case 'anthropic': return self::anthropic($sel['config'], $prompt, $systemPrompt, $att, $maxTokens, $timeout);
-            case 'openai':    return self::openai($sel['config'], $prompt, $systemPrompt, $att, $maxTokens, $timeout);
-            case 'gemini':    return self::gemini($sel['config'], $prompt, $systemPrompt, $att, $maxTokens, $timeout);
-            case 'ollama':    return self::ollama($sel['config'], $prompt, $systemPrompt, $att, $maxTokens, $timeout);
+            case 'anthropic':    return self::anthropic($sel['config'], $prompt, $systemPrompt, $parts, $maxTokens, $timeout);
+            case 'openai':       return self::openai($sel['config'], $prompt, $systemPrompt, $parts, $maxTokens, $timeout);
+            case 'gemini':       return self::gemini($sel['config'], $prompt, $systemPrompt, $parts, $maxTokens, $timeout);
+            case 'ollama':
+            case 'ollama_cloud': return self::ollamaChat($sel['provider'], $sel['config'], $prompt, $systemPrompt, $parts, $maxTokens, $timeout);
         }
         throw new Exception('Unsupported AI provider: ' . $sel['provider']);
+    }
+
+    /**
+     * Turn one attachment into the list of parts a provider can actually take.
+     *
+     * A PDF stays a PDF for Anthropic and Gemini. For everyone else it becomes
+     * page images, which is the whole reason a key for a vision model is enough
+     * to read an invoice here.
+     */
+    private static function attachmentParts($att, $provider) {
+        if (!$att) return [];
+        if (!self::isPdf($att['mime'] ?? '')) {
+            return [['mime' => $att['mime'], 'data' => $att['data']]];
+        }
+        if (!empty(self::CAPABILITIES[$provider]['pdf'])) {
+            return [['mime' => 'application/pdf', 'data' => $att['data']]];
+        }
+        if (!PdfRaster::available()) {
+            throw new Exception('This provider cannot read PDFs, and this server cannot convert them to images. '
+                . 'Connect an Anthropic or Google Gemini key, or upload a photo instead.');
+        }
+
+        // Rasterise from the file where one exists; otherwise stage the bytes we
+        // were handed, and clean up either way.
+        $path = $att['path'] ?? null;
+        $temp = null;
+        if (!$path || !is_readable($path)) {
+            $temp = tempnam(sys_get_temp_dir(), 'vgpdf');
+            if ($temp === false) throw new Exception('Could not stage the PDF for conversion.');
+            file_put_contents($temp, base64_decode($att['data']));
+            $path = $temp;
+        }
+        try {
+            return PdfRaster::pages($path);
+        } finally {
+            if ($temp) @unlink($temp);
+        }
     }
 
     public static function isPdf($mime) {
@@ -129,15 +272,39 @@ class AiClient {
         return $json ?: [];
     }
 
-    private static function anthropic($cfg, $prompt, $system, $att, $maxTokens, $timeout) {
+    /** GET JSON and return the decoded body, or throw with what the API said. */
+    private static function get($url, array $headers, $timeout, $label) {
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => array_merge(['Accept: application/json'], $headers),
+            CURLOPT_TIMEOUT        => $timeout,
+        ]);
+        $body = curl_exec($ch);
+        $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $cerr = curl_error($ch);
+        curl_close($ch);
+
+        if ($body === false) throw new Exception("$label could not be reached: " . ($cerr ?: 'connection failed'));
+        $json = json_decode($body, true);
+        if ($code !== 200) {
+            $msg = $json['error']['message'] ?? $json['error'] ?? $json['message'] ?? substr((string)$body, 0, 300);
+            if (is_array($msg)) $msg = json_encode($msg);
+            throw new Exception("$label refused the request ($code): $msg");
+        }
+        if (!is_array($json)) throw new Exception("$label returned something that is not JSON.");
+        return $json;
+    }
+
+    private static function anthropic($cfg, $prompt, $system, $parts, $maxTokens, $timeout) {
         $base  = $cfg['base_url'] ?: 'https://api.anthropic.com';
         $model = $cfg['model'] ?: 'claude-sonnet-4-20250514';
 
         $content = [];
-        if ($att) {
-            $content[] = self::isPdf($att['mime'])
-                ? ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $att['data']]]
-                : ['type' => 'image',    'source' => ['type' => 'base64', 'media_type' => $att['mime'],      'data' => $att['data']]];
+        foreach ($parts as $part) {
+            $content[] = self::isPdf($part['mime'])
+                ? ['type' => 'document', 'source' => ['type' => 'base64', 'media_type' => 'application/pdf', 'data' => $part['data']]]
+                : ['type' => 'image',    'source' => ['type' => 'base64', 'media_type' => $part['mime'],     'data' => $part['data']]];
         }
         $content[] = ['type' => 'text', 'text' => $prompt];
 
@@ -160,20 +327,21 @@ class AiClient {
         return $out !== '' ? $out : 'No response';
     }
 
-    private static function openai($cfg, $prompt, $system, $att, $maxTokens, $timeout) {
+    private static function openai($cfg, $prompt, $system, $parts, $maxTokens, $timeout) {
         $base  = $cfg['base_url'] ?: 'https://api.openai.com';
         $model = $cfg['model'] ?: 'gpt-4o';
 
-        if ($att && self::isPdf($att['mime'])) {
-            throw new Exception('OpenAI chat models cannot read PDFs directly. Upload a photo or screenshot of the bill, or connect an Anthropic or Gemini key.');
+        $userContent = $prompt;
+        if ($parts) {
+            $userContent = [];
+            foreach ($parts as $part) {
+                if (self::isPdf($part['mime'])) {
+                    throw new Exception('OpenAI chat models cannot read PDFs directly.');
+                }
+                $userContent[] = ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $part['mime'] . ';base64,' . $part['data']]];
+            }
+            $userContent[] = ['type' => 'text', 'text' => $prompt];
         }
-
-        $userContent = $att
-            ? [
-                ['type' => 'image_url', 'image_url' => ['url' => 'data:' . $att['mime'] . ';base64,' . $att['data']]],
-                ['type' => 'text', 'text' => $prompt],
-              ]
-            : $prompt;
 
         $messages = [];
         if ($system !== '') $messages[] = ['role' => 'system', 'content' => $system];
@@ -188,17 +356,17 @@ class AiClient {
         return $json['choices'][0]['message']['content'] ?? 'No response';
     }
 
-    private static function gemini($cfg, $prompt, $system, $att, $maxTokens, $timeout) {
+    private static function gemini($cfg, $prompt, $system, $parts, $maxTokens, $timeout) {
         $base  = $cfg['base_url'] ?: 'https://generativelanguage.googleapis.com/v1beta';
         $model = $cfg['model'] ?: 'gemini-2.0-flash';
 
-        $parts = [];
-        if ($att) $parts[] = ['inline_data' => ['mime_type' => $att['mime'], 'data' => $att['data']]];
-        $parts[] = ['text' => ($system !== '' ? $system . "\n\n" : '') . $prompt];
+        $body = [];
+        foreach ($parts as $part) $body[] = ['inline_data' => ['mime_type' => $part['mime'], 'data' => $part['data']]];
+        $body[] = ['text' => ($system !== '' ? $system . "\n\n" : '') . $prompt];
 
         $json = self::post(
             "$base/models/" . rawurlencode($model) . ':generateContent?key=' . urlencode(Crypto::decrypt($cfg['api_key'])),
-            ['contents' => [['parts' => $parts]], 'generationConfig' => ['maxOutputTokens' => $maxTokens]],
+            ['contents' => [['parts' => $body]], 'generationConfig' => ['maxOutputTokens' => $maxTokens]],
             [], $timeout, 'Gemini'
         );
 
@@ -207,24 +375,56 @@ class AiClient {
         return $out !== '' ? $out : 'No response';
     }
 
-    private static function ollama($cfg, $prompt, $system, $att, $maxTokens, $timeout) {
-        $base  = $cfg['base_url'] ?: 'http://localhost:11434';
-        $model = $cfg['model'] ?: 'glm-5.1:cloud';
+    /**
+     * Ollama, local or cloud. Same wire protocol either way — the cloud is the
+     * same server on someone else's machine, behind a Bearer token.
+     *
+     * /api/chat rather than /api/generate so the system prompt is a real system
+     * message and images attach to the message that refers to them.
+     */
+    private static function ollamaChat($provider, $cfg, $prompt, $system, $parts, $maxTokens, $timeout) {
+        $isCloud = ($provider === 'ollama_cloud');
+        $base    = self::baseFor($provider, $cfg);
+        $model   = $cfg['model'] ?: ($isCloud ? 'kimi-k2.5' : 'llama3.2');
+        $label   = $isCloud ? 'Ollama Cloud' : 'Ollama';
 
-        if ($att && self::isPdf($att['mime'])) {
-            throw new Exception('The local model cannot read PDFs. Upload a photo or screenshot of the bill instead.');
+        $images = [];
+        foreach ($parts as $part) {
+            if (self::isPdf($part['mime'])) {
+                throw new Exception($label . ' cannot read PDFs directly, and this server could not convert it to images.');
+            }
+            $images[] = $part['data'];
         }
 
-        $payload = [
-            'model'   => $model,
-            'prompt'  => ($system !== '' ? $system . "\n\n" : '') . $prompt,
-            'stream'  => false,
-            'options' => ['num_predict' => $maxTokens],
-        ];
-        if ($att) $payload['images'] = [$att['data']];
+        $messages = [];
+        if ($system !== '') $messages[] = ['role' => 'system', 'content' => $system];
+        $user = ['role' => 'user', 'content' => $prompt];
+        if ($images) $user['images'] = $images;
+        $messages[] = $user;
 
-        $json = self::post("$base/api/generate", $payload, [], $timeout, 'Ollama');
-        return $json['response'] ?? 'No response';
+        $headers = [];
+        if ($isCloud) {
+            $key = !empty($cfg['api_key']) ? Crypto::decrypt($cfg['api_key']) : '';
+            if ($key === '') throw new Exception('Ollama Cloud needs an API key. Add one in Settings → AI Connections.');
+            $headers[] = 'Authorization: Bearer ' . $key;
+        } elseif (!empty($cfg['api_key'])) {
+            // A self-hosted Ollama behind a reverse proxy may still want one.
+            $headers[] = 'Authorization: Bearer ' . Crypto::decrypt($cfg['api_key']);
+        }
+
+        $json = self::post(rtrim($base, '/') . '/api/chat', [
+            'model'    => $model,
+            'messages' => $messages,
+            'stream'   => false,
+            'options'  => ['num_predict' => $maxTokens],
+        ], $headers, $timeout, $label);
+
+        $text = $json['message']['content'] ?? '';
+        // Reasoning models put their answer after a thinking block; some return
+        // it in a separate field entirely.
+        if ($text === '' && isset($json['message']['thinking'])) $text = (string)$json['message']['thinking'];
+        if ($text === '' && isset($json['response'])) $text = (string)$json['response'];
+        return $text !== '' ? $text : 'No response';
     }
 
     /**

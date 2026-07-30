@@ -110,9 +110,13 @@ async function renderSettings() {
     </div>
   `).join('');
 
-  const providerIcons = { gemini: '✨', anthropic: '🧠', openai: '🤖', ollama: '🐑' };
+  const providerIcons = { gemini: '✨', anthropic: '🧠', openai: '🤖', ollama: '🐑', ollama_cloud: '☁️' };
   const aiKeys = Object.entries(providers).map(([key, p]) => {
-    const connected = keys.find(k => k.provider === key && k.has_key);
+    const row = keys.find(k => k.provider === key);
+    const connected = keys.find(k => k.provider === key && k.has_key)
+      || (key === 'ollama' && row && row.is_active);
+    const needsKey = p.needs_key !== false && key !== 'ollama';
+    const showUrl = key === 'ollama' || key === 'ollama_cloud';
     return `
       <div class="api-provider">
         <div class="provider-icon" style="background:var(--primary-bg);color:var(--primary-dark)">${providerIcons[key] || '🔌'}</div>
@@ -125,10 +129,19 @@ async function renderSettings() {
       </div>
       <div class="api-key-form" id="form-${key}">
         <div class="form-row">
-          <div class="form-field"><label>API Key</label><input type="password" id="key-${key}" placeholder="${key === 'ollama' ? 'Not required for local' : 'sk-...'}" value="${connected ? '••••••••' : ''}"></div>
-          <div class="form-field"><label>Model (optional)</label><input id="model-${key}" placeholder="${p.default_model}" value="${connected ? (keys.find(k => k.provider === key)?.model || '') : ''}"></div>
+          <div class="form-field"><label>API Key</label><input type="password" id="key-${key}" placeholder="${needsKey ? (key === 'ollama_cloud' ? 'Paste the key from ollama.com/settings/keys' : 'sk-...') : 'Not required'}" value="${connected && row && row.has_key ? '••••••••' : ''}"></div>
+          <div class="form-field">
+            <label>Model</label>
+            <div class="ai-model-pick">
+              <span id="model-wrap-${key}"><input id="model-${key}" placeholder="${p.default_model}" value="${row ? (row.model || '') : ''}"></span>
+              ${p.can_list_models !== false ? `<button type="button" class="btn-cancel ai-fetch-btn" id="fetch-${key}" onclick="fetchAiModels('${key}')">Fetch models</button>` : ''}
+            </div>
+            <div class="ai-model-note" id="model-note-${key}"></div>
+          </div>
         </div>
-        ${key === 'ollama' ? `<div class="form-row"><div class="form-field"><label>Base URL</label><input id="url-${key}" placeholder="${p.default_url}" value="${connected ? (keys.find(k => k.provider === key)?.base_url || '') : ''}"></div></div>` : ''}
+        ${showUrl ? `<div class="form-row"><div class="form-field"><label>Base URL</label><input id="url-${key}" placeholder="${p.default_url}" value="${row ? (row.base_url || '') : ''}"></div></div>` : ''}
+        ${key === 'ollama' ? `<div class="ai-model-note">A self-hosted Ollama has to be reachable from the VGold server. <code>localhost</code> means the server itself, not your laptop — for a machine of your own use Ollama Cloud, or a public URL.</div>` : ''}
+        ${key === 'ollama_cloud' ? `<div class="ai-model-note">Reading invoices and bills needs a model that can see images. Fetch the list and pick one marked <strong>vision</strong> — PDFs are converted to page images automatically.</div>` : ''}
         <div class="actions">
           <button class="btn-cancel" onclick="closeApiKeyForm('${key}')">Cancel</button>
           <button class="btn-save" onclick="saveApiKey('${key}')">Save</button>
@@ -798,17 +811,65 @@ function closeApiKeyForm(provider) {
   document.getElementById('form-' + provider).classList.remove('show');
 }
 
+/**
+ * Replace the free-text Model box with the provider's actual catalogue.
+ *
+ * The key can still be sitting unsaved in the box above — it is sent with the
+ * request so the list works before anything is stored, rather than making you
+ * save a guessed model name first and correct it afterwards.
+ */
+async function fetchAiModels(provider) {
+  const btn = document.getElementById('fetch-' + provider);
+  const note = document.getElementById('model-note-' + provider);
+  const wrap = document.getElementById('model-wrap-' + provider);
+  const typedKey = document.getElementById('key-' + provider)?.value || '';
+  const typedUrl = document.getElementById('url-' + provider)?.value || '';
+  const current = document.getElementById('model-' + provider)?.value || '';
+
+  if (btn) { btn.disabled = true; btn.textContent = 'Fetching…'; }
+  if (note) { note.className = 'ai-model-note'; note.textContent = 'Asking the provider what it offers…'; }
+
+  try {
+    const res = await API.aiModels({
+      provider,
+      api_key: typedKey && typedKey !== '••••••••' ? typedKey : '',
+      base_url: typedUrl || '',
+    });
+    const chosen = current || res.current || '';
+    const known = res.models.some(m => m.id === chosen);
+    if (wrap) {
+      wrap.innerHTML = `<select id="model-${provider}">
+        ${res.models.map(m => `<option value="${esc(m.id)}" ${m.id === chosen ? 'selected' : ''}>${esc(m.label)}${m.vision ? '  — vision' : ''}</option>`).join('')}
+        ${chosen && !known ? `<option value="${esc(chosen)}" selected>${esc(chosen)}  — not in the list</option>` : ''}
+      </select>`;
+    }
+    if (note) {
+      const vision = res.models.filter(m => m.vision).length;
+      note.className = 'ai-model-note ok';
+      note.textContent = res.models.length + ' model(s) available'
+        + (vision ? ', ' + vision + ' of which can read images' : ' — none of them can read images, so invoices will not be readable with this provider')
+        + '. Remember to Save.';
+    }
+  } catch (e) {
+    if (note) { note.className = 'ai-model-note bad'; note.textContent = e.message; }
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Fetch models'; }
+  }
+}
+
 async function saveApiKey(provider) {
   const key = document.getElementById('key-' + provider)?.value || '';
   const model = document.getElementById('model-' + provider)?.value || '';
   const url = document.getElementById('url-' + provider)?.value || null;
-  if (key === '••••••••') return;
+  // An untouched masked field means "keep the stored key", not "set it to dots".
+  const payload = { provider, model: model || null, base_url: url };
+  if (key !== '••••••••') payload.api_key = key;
   try {
-    await API.updateApiKey({ provider, api_key: key, model: model || null, base_url: url });
+    await API.updateApiKey(payload);
     State.apiKeys = null;
     closeApiKeyForm(provider);
     render();
-    toast(esc(providers[provider]?.label || provider) + ' connected', 'success');
+    toast(esc(providers[provider]?.label || provider) + ' saved', 'success');
   } catch(e) { toast(e.message, 'error'); }
 }
 

@@ -21,13 +21,70 @@ class AIController {
             'default_model' => 'gpt-4o',
             'docs' => 'Get your API key from platform.openai.com',
         ],
+        'ollama_cloud' => [
+            'label' => 'Ollama Cloud',
+            'default_url' => 'https://ollama.com',
+            'default_model' => 'kimi-k2.5',
+            'docs' => 'Create a key at ollama.com/settings/keys',
+            'needs_key' => true,
+            'can_list_models' => true,
+        ],
         'ollama' => [
-            'label' => 'Ollama (Local)',
+            'label' => 'Ollama (self-hosted)',
             'default_url' => 'http://localhost:11434',
-            'default_model' => 'glm-5.1:cloud',
-            'docs' => 'Run Ollama locally — no API key needed',
+            'default_model' => 'llama3.2',
+            'docs' => 'Your own Ollama server — must be reachable from this app, not from your laptop',
+            'needs_key' => false,
+            'can_list_models' => true,
         ],
     ];
+
+    /**
+     * The models a provider currently offers.
+     *
+     * A key may be supplied in the request so the list can be fetched before it
+     * is saved — otherwise setting one up means saving a guess, discovering it
+     * was wrong, and coming back.
+     */
+    public static function models() {
+        $data = input();
+        $provider = trim((string)($data['provider'] ?? $_GET['provider'] ?? ''));
+        if (!isset(self::$providers[$provider])) jsonError('Unknown provider');
+
+        $cfg = DB::fetch(
+            "SELECT * FROM user_api_keys WHERE user_id = ? AND provider = ?",
+            [Auth::userId(), $provider]
+        ) ?: ['api_key' => '', 'base_url' => null, 'model' => null];
+
+        // An unsaved key arrives in plain text; encrypt it in memory only, so
+        // listModels() can decrypt it the same way it would a stored one.
+        $typed = trim((string)($data['api_key'] ?? ''));
+        if ($typed !== '') $cfg['api_key'] = Crypto::encrypt($typed);
+        $typedUrl = trim((string)($data['base_url'] ?? ''));
+        if ($typedUrl !== '') $cfg['base_url'] = $typedUrl;
+
+        $needsKey = !empty(self::$providers[$provider]['needs_key']);
+        if ($needsKey && empty($cfg['api_key'])) {
+            jsonError('Enter the API key first, then fetch the models.');
+        }
+
+        require_once __DIR__ . '/../lib/AiClient.php';
+        try {
+            $res = AiClient::listModels($provider, $cfg);
+        } catch (\Throwable $e) {
+            jsonError($e->getMessage(), 502);
+        }
+        if (!count($res['models'])) {
+            jsonError('That provider returned no models. Check the key and the base URL.', 502);
+        }
+        jsonResponse([
+            'ok' => true,
+            'provider' => $provider,
+            'models' => $res['models'],
+            'source' => $res['source'],
+            'current' => $cfg['model'] ?: self::$providers[$provider]['default_model'],
+        ]);
+    }
     
     public static function providers() {
         jsonResponse(['providers' => self::$providers]);
@@ -41,7 +98,7 @@ class AIController {
         $wsId = Auth::workspaceId();
         
         // Find active provider (ollama first per Moe's request)
-        $providers = ['ollama', 'anthropic', 'openai', 'gemini'];
+        $providers = ['ollama', 'ollama_cloud', 'anthropic', 'openai', 'gemini'];
         $config = null;
         $provider = null;
         
@@ -71,7 +128,7 @@ class AIController {
                 'anthropic' => self::callAnthropic($config, $fullPrompt, $systemPrompt),
                 'openai' => self::callOpenAI($config, $fullPrompt, $systemPrompt),
                 'gemini' => self::callGemini($config, $fullPrompt, $systemPrompt),
-                'ollama' => self::callOllama($config, $fullPrompt, $systemPrompt),
+                'ollama', 'ollama_cloud' => self::callOllama($config, $fullPrompt, $systemPrompt, $provider),
             };
             
             // Convert markdown to HTML if the response looks like markdown
@@ -111,7 +168,7 @@ class AIController {
         );
         
         // Find active provider
-        $providers = ['ollama', 'anthropic', 'openai', 'gemini'];
+        $providers = ['ollama', 'ollama_cloud', 'anthropic', 'openai', 'gemini'];
         $config = null;
         $provider = null;
         foreach ($providers as $p) {
@@ -146,7 +203,7 @@ class AIController {
                 'anthropic' => self::callAnthropic($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
                 'openai' => self::callOpenAI($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
                 'gemini' => self::callGemini($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
-                'ollama' => self::callOllama($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.'),
+                'ollama', 'ollama_cloud' => self::callOllama($config, $planPrompt, 'You are VGold, a helpful Workflow and CRM AI. Create clean HTML output.', $provider),
             };
             
             $html = self::toHtml($response);
@@ -593,29 +650,35 @@ class AIController {
         return $data['candidates'][0]['content']['parts'][0]['text'] ?? 'No response';
     }
     
-    private static function callOllama($config, $prompt, $systemPrompt) {
-        $baseUrl = $config['base_url'] ?: 'http://localhost:11434';
-        $model = $config['model'] ?: 'glm-5.1:cloud';
-        
-        $fullPrompt = $systemPrompt . "\n\n" . $prompt;
-        $payload = json_encode([
-            'model' => $model,
-            'prompt' => $fullPrompt,
-            'stream' => false,
-        ]);
-        
-        $ch = curl_init("$baseUrl/api/generate");
+    /**
+     * Ollama, local or cloud — one call for both, because the only difference
+     * is the host and a Bearer token.
+     */
+    private static function callOllama($config, $prompt, $systemPrompt, $provider = 'ollama') {
+        $isCloud = ($provider === 'ollama_cloud');
+        $baseUrl = $config['base_url'] ?: ($isCloud ? 'https://ollama.com' : 'http://localhost:11434');
+        $model   = $config['model'] ?: ($isCloud ? 'kimi-k2.5' : 'llama3.2');
+        $label   = $isCloud ? 'Ollama Cloud' : 'Ollama';
+
+        $messages = [];
+        if ($systemPrompt !== '') $messages[] = ['role' => 'system', 'content' => $systemPrompt];
+        $messages[] = ['role' => 'user', 'content' => $prompt];
+
+        $headers = ['Content-Type: application/json'];
+        if (!empty($config['api_key'])) $headers[] = 'Authorization: Bearer ' . Crypto::decrypt($config['api_key']);
+        elseif ($isCloud) throw new Exception('Ollama Cloud needs an API key. Add one in Settings → AI Connections.');
+
+        $ch = curl_init(rtrim($baseUrl, '/') . '/api/chat');
         curl_setopt_array($ch, [
-            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload,
-            CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 60,
+            CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
+            CURLOPT_POSTFIELDS => json_encode(['model' => $model, 'messages' => $messages, 'stream' => false]),
+            CURLOPT_HTTPHEADER => $headers, CURLOPT_TIMEOUT => 60,
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
-        if ($httpCode !== 200) throw new Exception("Ollama API error ($httpCode)");
+        if ($httpCode !== 200) throw new Exception("$label API error ($httpCode)");
         $data = json_decode($response, true);
-        $text = $data['response'] ?? 'No response';
-        
-        return $text;
+        return $data['message']['content'] ?? ($data['response'] ?? 'No response');
     }
 }

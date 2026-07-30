@@ -92,6 +92,7 @@ TXT;
                 'mime' => $mime,
                 'data' => base64_encode(file_get_contents($absPath)),
                 'name' => basename($absPath),
+                'path' => $absPath,
             ],
         ]);
 

@@ -168,6 +168,7 @@ const API = {
   notifications: () => API.req('/notifications'),
   unreadCount: () => API.req('/notifications/unread-count'),
   moduleCounts: () => API.req('/notifications/module-counts'),
+  aiModels: (d) => API.req('/ai/models', { method: 'POST', body: JSON.stringify(d) }),
   readModuleNotifs: (module) => API.req('/notifications/read-module', { method: 'POST', body: JSON.stringify({ module }) }),
   readRecordNotifs: (link_type, link_id) => API.req('/notifications/read-record', { method: 'POST', body: JSON.stringify({ link_type, link_id }) }),
   // Passwords

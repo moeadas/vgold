@@ -76,6 +76,9 @@ TXT;
                 'mime' => $mime,
                 'data' => base64_encode(file_get_contents($absPath)),
                 'name' => basename($absPath),
+                // Given the file, a PDF can be rasterised straight from disk for
+                // providers that only take images — no needless re-encode.
+                'path' => $absPath,
             ],
         ]);
 

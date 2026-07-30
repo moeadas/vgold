@@ -287,11 +287,16 @@ class SettingsController {
         );
         
         $update = [
-            'api_key' => isset($data['api_key']) && $data['api_key'] !== '' ? Crypto::encrypt($data['api_key']) : ($data['api_key'] ?? ''),
             'base_url' => $data['base_url'] ?? null,
             'model' => $data['model'] ?? null,
             'is_active' => isset($data['is_active']) ? ($data['is_active'] ? 1 : 0) : 1,
         ];
+        // An absent api_key means "leave the stored one alone" — otherwise
+        // changing only the model would silently disconnect the provider.
+        // An explicit empty string still clears it.
+        if (array_key_exists('api_key', $data)) {
+            $update['api_key'] = $data['api_key'] !== '' ? Crypto::encrypt($data['api_key']) : '';
+        }
         
         if ($existing) {
             DB::update('user_api_keys', $update, 'user_id = ? AND provider = ?', [Auth::userId(), $data['provider']]);

@@ -8,6 +8,7 @@ require_once __DIR__ . '/lib/Csrf.php';
 require_once __DIR__ . '/lib/Schema.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
+require_once __DIR__ . '/lib/PdfRaster.php';
 require_once __DIR__ . '/lib/AiClient.php';
 require_once __DIR__ . '/lib/BillExtractor.php';
 require_once __DIR__ . '/lib/CodeVersion.php';
@@ -188,6 +189,7 @@ $routes = [
     
     // AI
     'GET ai/providers' => ['AIController::providers', true],
+    'POST ai/models' => ['AIController::models', true],
     'POST ai/ask' => ['AIController::ask', true],
     'POST ai/plan-my-day' => ['AIController::planMyDay', true],
     'POST ai/delete-plan' => ['AIController::deletePlan', true],
