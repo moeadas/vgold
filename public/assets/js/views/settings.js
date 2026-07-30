@@ -1,4 +1,72 @@
 // VGo — Settings view (profile, email, notifications, SMTP, AI keys, team, user management)
+/* ===================== Settings tabs =====================
+ *
+ * Settings is one long page of cards. The section links used to be anchors, so
+ * clicking one scrolled — which on a page this long means hunting for where you
+ * landed. These are real tabs: only the chosen section's cards are in the page.
+ *
+ * Rather than tagging every card, the sections are derived from the DOM at
+ * mount: each card belongs to the last section marker above it. New cards are
+ * therefore filed automatically, wherever they are added.
+ */
+const SETTINGS_TABS = [
+  { id: 'settings-account',      label: 'Account' },
+  { id: 'settings-access',       label: 'Access & modules', admin: true },
+  { id: 'settings-integrations', label: 'Integrations',     admin: true },
+  { id: 'settings-data',         label: 'Data & backups',   admin: true },
+  { id: 'settings-team',         label: 'Team' },
+];
+
+function settingsTabsFor(user) {
+  return SETTINGS_TABS.filter(t => !t.admin || (user && user.role === 'admin'));
+}
+
+function settingsTabBar(user) {
+  const tabs = settingsTabsFor(user);
+  if (!tabs.some(t => t.id === State.settingsTab)) State.settingsTab = tabs[0].id;
+  return `<nav class="settings-index" role="tablist" aria-label="Settings sections">
+    ${tabs.map(t => `<button role="tab" aria-selected="${State.settingsTab === t.id}"
+      class="${State.settingsTab === t.id ? 'active' : ''}" onclick="setSettingsTab('${t.id}')">${esc(t.label)}</button>`).join('')}
+  </nav>`;
+}
+
+function setSettingsTab(id) {
+  State.settingsTab = id;
+  document.querySelectorAll('.settings-index button').forEach(b => {
+    const on = b.getAttribute('onclick') === `setSettingsTab('${id}')`;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-selected', String(on));
+  });
+  applySettingsTab();
+  document.querySelector('.main')?.scrollTo(0, 0);
+}
+
+/** Show only the cards belonging to the active tab. */
+function applySettingsTab() {
+  const page = document.querySelector('.settings-page');
+  if (!page) return;
+  const user = State.user || {};
+  const tabs = settingsTabsFor(user);
+  if (!tabs.some(t => t.id === State.settingsTab)) State.settingsTab = tabs[0].id;
+  const known = new Set(tabs.map(t => t.id));
+
+  // Walk the cards in order, filing each under the most recent section marker.
+  let current = tabs[0].id;
+  Array.from(page.children).forEach(el => {
+    if (el.classList.contains('settings-index') || el.tagName === 'H1' || el.tagName === 'P'
+        || el.classList.contains('page-head') || el.classList.contains('settings-head')) return;
+    const id = el.id || (el.querySelector && el.querySelector('[id^="settings-"]')?.id) || '';
+    if (id && known.has(id)) current = id;
+    // A card can name its own section when document order would file it wrongly
+    // — the backups and danger-zone cards sit at the end of the markup but
+    // belong with Data.
+    const forced = el.getAttribute && el.getAttribute('data-settings-for');
+    const section = (forced && known.has(forced)) ? forced : current;
+    el.dataset.settingsSection = section;
+    el.style.display = (section === State.settingsTab) ? '' : 'none';
+  });
+}
+
 async function renderSettings() {
   let user = State.user || {};
   let settings = State.notifSettings;
@@ -231,6 +299,7 @@ async function renderSettings() {
     </div>` : '';
 
   setTimeout(renderPushNotifState, 50);
+  setTimeout(applySettingsTab, 0);
   return `
     <div class="fade-in settings-page">
       <div class="section-label">VGold settings</div>
@@ -243,7 +312,7 @@ async function renderSettings() {
         </span>
       </div>
       <p class="page-desc" style="margin-bottom:20px">Manage Workflow, CRM, integrations, and team access from one place.</p>
-      <nav class="settings-index" aria-label="Settings sections"><a href="#settings-account">Account</a>${user.role === 'admin' ? '<a href="#settings-crm">CRM</a><a href="#settings-data">Data</a><a href="#settings-integrations">Integrations</a>' : ''}<a href="#settings-team">Team</a></nav>
+      ${settingsTabBar(user)}
       
       <div class="settings-card" id="settings-account">
         <div style="display:flex;align-items:center;gap:16px;margin-bottom:18px">
@@ -401,7 +470,7 @@ async function renderSettings() {
       ` : ''}
 
       ${user.role === 'admin' ? `
-      <div class="settings-card">
+      <div class="settings-card" data-settings-for="settings-data">
         <h3 style="color:var(--red)">Danger Zone</h3>
         <div class="desc">Irreversible actions. Proceed with caution.</div>
         <div class="danger-zone">
@@ -411,7 +480,7 @@ async function renderSettings() {
         </div>
         ${typeof accDangerZoneCard === 'function' ? accDangerZoneCard(user) : ''}
       </div>
-      ${backupsCardHtml}
+      <div data-settings-for="settings-data">${backupsCardHtml}</div>
       ` : ''}
     </div>
   `;

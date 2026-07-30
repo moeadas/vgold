@@ -44,6 +44,8 @@ class Schema {
             // external account submit a payable.
             self::addColumnIfMissing('users', 'is_contractor',
                 "ALTER TABLE `users` ADD COLUMN `is_contractor` TINYINT(1) NOT NULL DEFAULT 0");
+
+            self::widenApiKeyProvider();
         } catch (\Throwable $e) {
             error_log('Schema::ensureUnifiedModules: ' . $e->getMessage());
         }
@@ -114,6 +116,34 @@ class Schema {
             return (bool)$row;
         } catch (\Throwable $e) {
             return true; // assume present on error, so we don't loop on ALTERs
+        }
+    }
+
+    /**
+     * `user_api_keys.provider` was an ENUM of the four providers that existed
+     * when it was written. Adding a fifth silently stored an empty string —
+     * MySQL truncates an out-of-range ENUM value rather than refusing it — so
+     * the key looked saved, was invisible to every lookup, and a second attempt
+     * collided on the unique index. A VARCHAR means adding a provider is a code
+     * change and nothing else.
+     */
+    private static function widenApiKeyProvider() {
+        try {
+            $col = DB::fetch(
+                "SELECT DATA_TYPE FROM information_schema.COLUMNS
+                  WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'user_api_keys' AND COLUMN_NAME = 'provider'"
+            );
+            if (!$col || strtolower($col['DATA_TYPE']) !== 'enum') return;
+
+            DB::query("ALTER TABLE `user_api_keys` MODIFY COLUMN `provider` VARCHAR(40) NOT NULL");
+
+            // Rows the old ENUM blanked out hold an encrypted key against no
+            // provider: unreachable, and they block a clean re-save. Clear them
+            // so the connection simply reads as not connected and can be redone.
+            $orphans = DB::query("DELETE FROM `user_api_keys` WHERE provider = ''")->rowCount();
+            if ($orphans) error_log("Schema: widened user_api_keys.provider, removed $orphans unusable row(s)");
+        } catch (\Throwable $e) {
+            error_log('Schema::widenApiKeyProvider: ' . $e->getMessage());
         }
     }
 

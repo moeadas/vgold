@@ -89,7 +89,7 @@ async function renderMyInvoices() {
       CInv.mine = await API.ciMine();
     } catch (e) {
       return `<div class="fade-in"><div class="page-head"><h1>My invoices</h1></div>
-        <div class="card"><div class="empty-state">${esc(e.message)}</div></div></div>`;
+        <div class="card card-pad"><div class="empty-state">${esc(e.message)}</div></div></div>`;
     }
   }
   if (CInv.step === 'upload' || CInv.step === 'review') return ciSubmitPage();
@@ -132,11 +132,13 @@ function ciListPage() {
   return `
     <div class="fade-in">
       <div class="page-head">
-        <div>
+        <div class="page-head-main">
           <h1>My invoices</h1>
           <p class="page-desc">Send Victory Genomics your monthly invoice and follow what happens to it.</p>
         </div>
-        <button class="btn-primary" onclick="ciStartSubmit()">${I.plus || '+'} Submit an invoice</button>
+        <div class="page-head-actions">
+          <button class="btn-primary" onclick="ciStartSubmit()">${I.plus || '+'} Submit an invoice</button>
+        </div>
       </div>
       <div class="card card-flush">${body}</div>
       <p class="ci-muted" style="margin-top:14px">
@@ -162,11 +164,13 @@ function ciSubmitPage() {
   return `
     <div class="fade-in">
       <div class="page-head">
-        <div>
+        <div class="page-head-main">
           <h1>Submit an invoice</h1>
           <p class="page-desc">Attach your invoice as a PDF. The details are read off it and you check them before anything is sent.</p>
         </div>
-        <button class="btn-secondary" onclick="ciBackToList()">← My invoices</button>
+        <div class="page-head-actions">
+          <button class="btn-secondary" onclick="ciBackToList()">← My invoices</button>
+        </div>
       </div>
       ${CInv.step === 'review' ? ciReviewCard() : ciUploadCard()}
     </div>`;
@@ -176,7 +180,7 @@ function ciUploadCard() {
   const f = CInv.file;
   const ai = CInv.mine && CInv.mine.ai_available !== false;
   return `
-    <div class="card">
+    <div class="card card-pad">
       <div class="billscan-drop"
            ondragover="event.preventDefault();this.classList.add('over')"
            ondragleave="this.classList.remove('over')"
@@ -192,7 +196,7 @@ function ciUploadCard() {
                <p class="ci-muted">PDF preferred · photos also work · up to 12MB</p>`}
       </div>
       ${CInv.error ? `<div class="ci-alert ci-alert-bad">${esc(CInv.error)}</div>` : ''}
-      <div class="ci-actions">
+      <div class="form-actions">
         <button class="btn-primary" ${!f || CInv.busy ? 'disabled' : ''} onclick="ciRead()">
           ${CInv.busy ? 'Reading your invoice…' : 'Continue'}
         </button>
@@ -265,7 +269,7 @@ function ciReviewCard() {
 
   return `
     ${warnings}
-    <div class="card">
+    <div class="card card-pad">
       <div class="ci-file-strip">
         <span>From <strong>${esc(d.staged_name || 'your file')}</strong></span>
         <span class="ci-muted">The original is attached to this invoice and is what accounting pays against.</span>
@@ -323,7 +327,7 @@ function ciReviewCard() {
         </div>`
         : (CInv.error ? `<div class="ci-alert ci-alert-bad">${esc(CInv.error)}</div>` : '')}
 
-      <div class="ci-actions">
+      <div class="form-actions">
         <button class="btn-primary" ${CInv.busy ? 'disabled' : ''} onclick="ciSubmit()">${CInv.busy ? 'Submitting…' : 'Submit to accounting'}</button>
         <button class="btn-secondary" onclick="ciStartSubmit()">Use a different file</button>
         <button class="btn-secondary" onclick="ciBackToList()">Cancel</button>
