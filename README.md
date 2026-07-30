@@ -5,7 +5,7 @@ management) and the **Victory Genomics CRM** (leads, interactions, proposals, em
 VoIP, WhatsApp) into a **single app, single database, single login** — a centralized
 ecosystem that can grow into a full ERP.
 
-- **Live (target):** https://vgold.victorygenomics.com
+- **Live (target):** https://vgo.victorygenomics.com
 - **Backups (untouched):** `vgo.victorygenomics.com` (VGo) and `crm.victorygenomics.com` (CRM)
 
 > VGold is built on the **VGo design system** (same CSS, components, and SPA shell). The

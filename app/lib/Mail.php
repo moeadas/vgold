@@ -175,7 +175,7 @@ class Mail {
         }
 
         // EHLO
-        self::sendCmd($socket, 'EHLO vgold.victorygenomics.com');
+        self::sendCmd($socket, 'EHLO ' . APP_HOST);
 
         // STARTTLS upgrade for explicit-TLS connections
         if ($useStartTls) {
@@ -193,7 +193,7 @@ class Mail {
                 return self::fail('The TLS handshake with ' . $host . ' failed.');
             }
             // Re-issue EHLO over the now-encrypted channel
-            self::sendCmd($socket, 'EHLO vgold.victorygenomics.com');
+            self::sendCmd($socket, 'EHLO ' . APP_HOST);
         }
 
         // AUTH LOGIN

@@ -451,14 +451,14 @@ class SettingsController {
             try {
                 Mail::sendNotification($userId, 'You have been invited to VGold',
                     "<p>An admin added you to VGold. Set your password to get started:</p>" .
-                    "<p><a href='https://vgold.victorygenomics.com/set-password?token={$token}'>Set your password</a></p>");
+                    "<p><a href='" . APP_URL . "/set-password?token={$token}'>Set your password</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         } else {
             // For MS users: send welcome email
             try {
                 Mail::sendNotification($userId, 'You have been added to VGold',
                     "<p>You can now sign in to VGold using your Victory Genomics Microsoft account.</p>" .
-                    "<p><a href='https://vgold.victorygenomics.com'>Open VGold</a></p>");
+                    "<p><a href='" . APP_URL . "'>Open VGold</a></p>");
             } catch (Exception $e) { /* email is best-effort */ }
         }
         

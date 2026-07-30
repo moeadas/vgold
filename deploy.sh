@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# VGold — FTP(S) deploy to vgold.victorygenomics.com  (SiteGround)
+# VGold — FTP(S) deploy to vgo.victorygenomics.com  (SiteGround)
 # Mirrors the repo into public_html/ so the root .htaccess routes to public/.
 # vendor/ and crm/vendor/ are NOT in git and ARE uploaded here because this is
 # a direct FTP deploy, not a git checkout.

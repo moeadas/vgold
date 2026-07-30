@@ -66,7 +66,7 @@ class TaskController {
                     'task', $id, $data['project_id']
                 );
                 // Send email notification
-                $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a new task:</p><p style='font-size:16px'><b>{$data['title']}</b></p><p><a href='https://vgold.victorygenomics.com'>View in VGold →</a></p>";
+                $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a new task:</p><p style='font-size:16px'><b>{$data['title']}</b></p><p><a href='" . APP_URL . "'>View in VGold →</a></p>";
                 Mail::sendNotification($uid, 'New task assigned: ' . $data['title'], $html, 'assignment');
             }
         }
@@ -132,7 +132,7 @@ class TaskController {
                             $task['title'],
                             'task', $id, $task['project_id']
                         );
-                        $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a task:</p><p style='font-size:16px'><b>{$task['title']}</b></p><p><a href='https://vgold.victorygenomics.com'>View in VGold →</a></p>";
+                        $html = "<h3>New task assigned</h3><p><b>{$actor['name']}</b> assigned you a task:</p><p style='font-size:16px'><b>{$task['title']}</b></p><p><a href='" . APP_URL . "'>View in VGold →</a></p>";
                         Mail::sendNotification($aid, 'New task assigned: ' . $task['title'], $html, 'assignment');
                     }
                 }

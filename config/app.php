@@ -10,10 +10,18 @@ if (defined('APP_NAME')) { return; }
 define('APP_NAME', 'VGold');
 
 // Auto-detect environment
-$isSiteGround = file_exists(__DIR__ . '/database.sg.php') && isset($_SERVER['HTTP_HOST']) && strpos($_SERVER['HTTP_HOST'], 'victorygenomics.com') !== false;
+// A request on the live host is obviously production; so is a CLI run on the
+// server, where there is no HTTP_HOST at all. The old test required HTTP_HOST
+// and so fell through to the dev branch on CLI, fataling on a database.php
+// that does not exist in production.
+$isSiteGround = file_exists(__DIR__ . '/database.sg.php')
+    && (!isset($_SERVER['HTTP_HOST']) || strpos($_SERVER['HTTP_HOST'], 'victorygenomics.com') !== false);
 
 if ($isSiteGround) {
-    define('APP_URL', 'https://vgold.victorygenomics.com');
+    // Canonical host. Deliberately explicit rather than read from HTTP_HOST:
+    // links in outgoing email must point here even when the request arrived
+    // on the old vgold host, which now 301s to this one.
+    define('APP_URL', 'https://vgo.victorygenomics.com');
     define('APP_ENV', 'production');
     define('APP_DEBUG', false);
     $dbConfig = require __DIR__ . '/database.sg.php';
@@ -24,13 +32,17 @@ if ($isSiteGround) {
     $dbConfig = require __DIR__ . '/database.php';
 }
 
+// Bare hostname, for the places that need a host rather than a URL (SMTP EHLO,
+// Message-ID domains). Derived, so it can never drift out of step with APP_URL.
+define('APP_HOST', parse_url(APP_URL, PHP_URL_HOST) ?: 'localhost');
+
 // Bump this on each deploy to bust browser caches for CSS/JS (M4).
-define('ASSET_VERSION', '2026.07.30.6');
+define('ASSET_VERSION', '2026.07.30.7');
 
 // Human-readable build number, shown at the top of Settings so you can confirm
 // which build is actually live. Bump alongside ASSET_VERSION on every deploy.
-define('APP_VERSION', '1.13.4');
-define('APP_BUILD', '2026.07.30.6');
+define('APP_VERSION', '1.14.0');
+define('APP_BUILD', '2026.07.30.7');
 
 define('SESSION_LIFETIME', 604800); // 7 days
 define('UPLOAD_PATH', __DIR__ . '/../storage/uploads');

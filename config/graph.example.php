@@ -30,7 +30,7 @@ return [
  'drive_id' => 'YOUR_DRIVE_ID', // resolve once at setup and paste here
 
  // OAuth / login
- 'redirect_uri' => 'https://vgold.victorygenomics.com/api/auth/microsoft/callback',
+ 'redirect_uri' => 'https://vgo.victorygenomics.com/api/auth/microsoft/callback',
  'login_authority' => 'https://login.microsoftonline.com/YOUR_TENANT_ID',
 
  'graph_base' => 'https://graph.microsoft.com/v1.0',

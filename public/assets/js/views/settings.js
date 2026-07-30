@@ -1161,7 +1161,7 @@ function renderIntegrationSettings(integ) {
     <h4>Twilio / VoIP</h4>
     <div class="desc">Credentials for browser calling and call recording.</div>
     <div class="form-row" style="gap:12px;margin-top:10px">
-      <div class="form-field" style="flex:1"><label class="form-label">Application URL (webhooks)</label><input class="form-input" id="set-app_url" value="${val('app_url')}" placeholder="https://vgold.victorygenomics.com"></div>
+      <div class="form-field" style="flex:1"><label class="form-label">Application URL (webhooks)</label><input class="form-input" id="set-app_url" value="${val('app_url')}" placeholder="https://vgo.victorygenomics.com"></div>
       <div class="form-field" style="flex:1"><label class="form-label">VoIP number (Caller ID)</label><input class="form-input" id="set-twilio_phone_number" value="${val('twilio_phone_number')}" placeholder="+1..."></div>
     </div>
     <div class="form-row" style="gap:12px;margin-top:10px">
