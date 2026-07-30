@@ -1,6 +1,7 @@
 <?php
 // VGo Mail — SMTP email sending using raw socket
 require_once __DIR__ . '/Crypto.php';
+require_once __DIR__ . '/Secrets.php';
 class Mail {
     private static $cache = [];
     /** Why the last send failed, verbatim from the server where possible. */
@@ -63,8 +64,11 @@ class Mail {
             'host'       => $s['smtp_host'],
             'port'       => (int)($s['smtp_port'] ?? 465) ?: 465,
             'username'   => $s['smtp_username'],
-            // Crypto::decrypt passes plaintext through unchanged, so this covers
-            // both the encrypted and the legacy plaintext form.
+            // Stored form, exactly like the workspace path above it. send() is
+            // the single place that decrypts, so both sources must hand it the
+            // same thing; decrypting here as well would leave loadSettings()
+            // with two different contracts depending on where the config came
+            // from. Crypto::decrypt is a no-op on legacy plaintext either way.
             'password'   => $s['smtp_password'],
             'from_name'  => $s['email_from_name'] ?: 'VGold',
             'from_email' => $s['email_from_address'] ?: $s['smtp_username'],
@@ -135,7 +139,9 @@ class Mail {
         $host = $cfg['host'];
         $port = (int)$cfg['port'];
         $username = $cfg['username'];
-        $password = Crypto::decrypt($cfg['password']); // encrypted at rest (H6)
+        // The one place SMTP credentials are decrypted, whichever table they
+        // came from. Safe on values saved before encryption existed.
+        $password = Secrets::fromStorage('smtp_password', $cfg['password']);
         $fromName = $cfg['from_name'] ?: 'VGold';
         $fromEmail = $cfg['from_email'];
         $encryption = $cfg['encryption'] ?: 'ssl';

@@ -636,10 +636,15 @@ class SettingsController {
                     [Auth::workspaceId(), $key, $value, Auth::userId()]
                 );
             } else {
+                // No key in crmSettingDefaults() is a credential today, so both
+                // of these are pass-throughs. They are here so that adding one
+                // to that list later cannot quietly store it in the clear, or
+                // wipe it when the form posts an empty box for "unchanged".
+                if (Secrets::isSecret($key) && $value === '') continue;
                 DB::query(
                     "INSERT INTO crm_settings (setting_key, setting_value, setting_type)
                      VALUES (?, ?, 'text') ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)",
-                    [$key, $value]
+                    [$key, Secrets::forStorage($key, $value)]
                 );
             }
         }

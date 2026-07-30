@@ -487,7 +487,9 @@ function sendEmailViaSMTP($to, $subject, $html, $fromName = null, $fromEmail = n
     $smtpHost = getSettingValue('smtp_host');
     $smtpPort = getSettingValue('smtp_port') ?: 465;
     $smtpUser = getSettingValue('smtp_username');
-    $smtpPass = getSettingValue('smtp_password');
+    require_once __DIR__ . '/../includes/secrets.php';
+    // Stored encrypted; decrypt is a no-op on values saved before that.
+    $smtpPass = crmSecretValue('smtp_password', getSettingValue('smtp_password'));
     $smtpEnc  = getSettingValue('smtp_encryption') ?: 'ssl';
     $defaultFrom = getSettingValue('email_from_address');
     $defaultName = getSettingValue('email_from_name') ?: 'Victory Genomics';

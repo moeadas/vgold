@@ -49,15 +49,11 @@ if (!function_exists('crmSendEmail')) {
         $smtpPass = crmMailerGetSetting('smtp_password');
         $smtpEnc  = strtolower(crmMailerGetSetting('smtp_encryption', 'ssl'));
 
-        // Settings may hold an encrypted value (enc:v1:...) — decrypt when the
-        // VGold Crypto helper is available; plaintext passes through unchanged.
-        if ($smtpPass !== '' && strpos($smtpPass, 'enc:') === 0) {
-            $cryptoFile = dirname(__DIR__, 2) . '/app/lib/Crypto.php';
-            if (is_file($cryptoFile)) {
-                require_once $cryptoFile;
-                try { $smtpPass = Crypto::decrypt($smtpPass); } catch (\Throwable $e) { /* keep as-is */ }
-            }
-        }
+        // Stored encrypted; plaintext passes through unchanged. Was hand-rolled
+        // here, which meant this was the only read path that got it right —
+        // now it shares the helper with the rest so they cannot drift apart.
+        require_once __DIR__ . '/secrets.php';
+        $smtpPass = crmSecretValue('smtp_password', $smtpPass);
 
         $fromEmail = $fromEmail ?: crmMailerGetSetting('email_from_address', $smtpUser);
         $fromName  = $fromName  ?: crmMailerGetSetting('email_from_name', 'Victory Genomics');

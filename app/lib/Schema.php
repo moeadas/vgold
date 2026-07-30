@@ -46,8 +46,31 @@ class Schema {
                 "ALTER TABLE `users` ADD COLUMN `is_contractor` TINYINT(1) NOT NULL DEFAULT 0");
 
             self::widenApiKeyProvider();
+            self::encryptLegacySecrets();
         } catch (\Throwable $e) {
             error_log('Schema::ensureUnifiedModules: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * The SMTP password and the Twilio auth token and API secret were stored
+     * in the clear. Every read path now decrypts, and decrypting a plaintext
+     * value is a no-op, so this can run at any point after the code is live
+     * without a window where either form is unreadable.
+     *
+     * Runs on every boot and does nothing once the values carry the prefix.
+     */
+    private static function encryptLegacySecrets() {
+        try {
+            if (!class_exists('Secrets')) {
+                $f = __DIR__ . '/Secrets.php';
+                if (!is_file($f)) return;
+                require_once $f;
+            }
+            $n = Secrets::encryptStoredSettings('crm_settings');
+            if ($n) error_log('Schema: encrypted ' . $n . ' credential(s) that were stored in plaintext');
+        } catch (\Throwable $e) {
+            error_log('Schema::encryptLegacySecrets: ' . $e->getMessage());
         }
     }
 

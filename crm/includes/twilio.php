@@ -66,6 +66,13 @@ class TwilioHelper {
                 'voip_recording_enabled','whatsapp_sandbox_mode',
                 'voip_enabled','whatsapp_enabled','wa_lead_assignment_notify'
             )")->fetchAll(\PDO::FETCH_KEY_PAIR);
+            // The auth token and API secret are encrypted at rest. Decrypt on
+            // the way out — every caller below expects a usable credential, and
+            // decrypt passes through anything saved before encryption existed.
+            require_once __DIR__ . '/secrets.php';
+            foreach ($rows as $k => $v) {
+                if (crmIsSecret($k)) $rows[$k] = crmSecretValue($k, $v);
+            }
             // Only return keys that have non-empty values (so env fallback works)
             return array_filter($rows, function($v) { return $v !== '' && $v !== null; });
         } catch (\Exception $e) {

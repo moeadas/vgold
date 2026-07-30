@@ -38,6 +38,7 @@ $ALLOWED = [
 // Secret keys are never sent back in plaintext; only a "set" flag is returned,
 // and a write only updates them when a non-empty value is supplied.
 $SECRETS = ['twilio_auth_token', 'twilio_api_secret', 'smtp_password'];
+require_once __DIR__ . '/../includes/secrets.php';
 
 $db = Database::getInstance();
 
@@ -55,11 +56,14 @@ try {
             $value = (string) $input[$key];
             // Don't overwrite a stored secret with a blank/masked value.
             if (in_array($key, $SECRETS, true) && ($value === '' || $value === '********')) continue;
+            // Credentials are encrypted at rest. Everything else is stored
+            // as typed; forStorage() only touches the keys in $SECRETS.
+            $stored = crmSecretForStorage($key, $value);
             $existing = $db->findOne('settings', ['setting_key' => $key]);
             if ($existing) {
-                $db->update('settings', ['setting_value' => $value], ['setting_key' => $key]);
+                $db->update('settings', ['setting_value' => $stored], ['setting_key' => $key]);
             } else {
-                $db->insert('settings', ['setting_key' => $key, 'setting_value' => $value]);
+                $db->insert('settings', ['setting_key' => $key, 'setting_value' => $stored]);
             }
             $saved++;
         }

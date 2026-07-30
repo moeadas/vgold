@@ -59,14 +59,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             } else {
                 $settingsToUpdate = ['company_name','company_email','company_phone','timezone','date_format','leads_per_page','auto_assign_leads','email_notifications'];
             }
+            require_once __DIR__ . '/../includes/secrets.php';
             foreach ($settingsToUpdate as $key) {
                 if (isset($_POST[$key])) {
                     $value = $_POST[$key];
+                    // The credential fields no longer render their stored value,
+                    // so an empty box means "leave it alone", not "clear it".
+                    if (crmIsSecret($key) && $value === '') continue;
+                    $stored = crmSecretForStorage($key, $value);
                     $existing = $db->findOne('settings', ['setting_key' => $key]);
                     if ($existing) {
-                        $db->update('settings', ['setting_value' => $value], ['setting_key' => $key]);
+                        $db->update('settings', ['setting_value' => $stored], ['setting_key' => $key]);
                     } else {
-                        $db->insert('settings', ['setting_key' => $key, 'setting_value' => $value]);
+                        $db->insert('settings', ['setting_key' => $key, 'setting_value' => $stored]);
                     }
                 }
             }
@@ -238,7 +243,7 @@ $csrf_token = generateCSRFToken();
                 </div>
                 <div class="form-group">
                     <label class="form-label">Twilio Auth Token</label>
-                    <input type="password" name="twilio_auth_token" class="form-control" placeholder="Your auth token" value="<?php echo htmlspecialchars($settings['twilio_auth_token'] ?? ''); ?>">
+                    <input type="password" name="twilio_auth_token" class="form-control" autocomplete="new-password" placeholder="<?php echo !empty($settings['twilio_auth_token']) ? '•••••••• (leave blank to keep)' : 'Your auth token'; ?>">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Twilio API Key <small style="color:var(--text-muted);">(for VoIP tokens)</small></label>
@@ -246,7 +251,7 @@ $csrf_token = generateCSRFToken();
                 </div>
                 <div class="form-group">
                     <label class="form-label">Twilio API Secret <small style="color:var(--text-muted);">(for VoIP tokens)</small></label>
-                    <input type="password" name="twilio_api_secret" class="form-control" placeholder="Your API secret" value="<?php echo htmlspecialchars($settings['twilio_api_secret'] ?? ''); ?>">
+                    <input type="password" name="twilio_api_secret" class="form-control" autocomplete="new-password" placeholder="<?php echo !empty($settings['twilio_api_secret']) ? '•••••••• (leave blank to keep)' : 'Your API secret'; ?>">
                 </div>
                 <div class="form-group">
                     <label class="form-label">VoIP Phone Number <small style="color:var(--text-muted);">(for voice calls)</small></label>
@@ -315,7 +320,7 @@ $csrf_token = generateCSRFToken();
                 </div>
                 <div class="form-group">
                     <label class="form-label">SMTP Password</label>
-                    <input type="password" name="smtp_password" class="form-control" placeholder="••••••••" value="<?php echo htmlspecialchars($settings['smtp_password'] ?? ''); ?>">
+                    <input type="password" name="smtp_password" class="form-control" autocomplete="new-password" placeholder="<?php echo !empty($settings['smtp_password']) ? '•••••••• (leave blank to keep)' : 'Password'; ?>">
                 </div>
                 <div class="form-group">
                     <label class="form-label">Encryption</label>
