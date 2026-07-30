@@ -2,7 +2,7 @@
 /**
  * VGold — daily backup, called by SiteGround Site Tools → Cron Jobs.
  *
- *   curl -s "https://vgo.victorygenomics.com/api/backup-cron.php?secret=YOUR_SECRET&_t=$(date +%s)"
+ *   curl -s "https://vgo.victorygenomics.com/backup-cron.php?secret=YOUR_SECRET&_t=$(date +%s)"
  *
  * The &_t cache-buster matters: LiteSpeed will otherwise serve a cached
  * response and the job will look like it ran when it did not.
