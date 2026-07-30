@@ -139,10 +139,11 @@ class AIController {
         }
 
         /* --- 2. can it read a document? --- */
-        $visionToken = '';
-        $png = self::probeImage($visionToken);
+        $visionToken = ''; $why = null;
+        $png = self::probeImage($visionToken, $why);
         if ($png === null) {
-            $out['vision'] = ['ok' => null, 'note' => 'This server cannot generate a test image, so reading was not checked.'];
+            $out['vision'] = ['ok' => null, 'note' => 'Reading was not checked: this server could not generate a test image'
+                . ($why ? ' (' . $why . ')' : '') . '.'];
             jsonResponse($out);
         }
         $t1 = microtime(true);
@@ -167,31 +168,54 @@ class AIController {
         jsonResponse($out);
     }
 
-    /** A small PNG containing a short code, for checking a model can read. */
-    private static function probeImage(&$token) {
+    /**
+     * A small PNG containing a short code, for checking a model can read.
+     *
+     * Deliberately built with imagecopyresampled rather than imagescale: the
+     * latter needs the IMG_BICUBIC constant and a GD build that exposes it, and
+     * when either is missing PHP 8 raises an Error that a catch-all turns into a
+     * silent "cannot generate an image". Resampling is in every GD there is.
+     *
+     * $why carries the reason out when it fails, because a diagnostic that will
+     * not say what went wrong is not a diagnostic.
+     */
+    private static function probeImage(&$token, &$why = null) {
+        $why = null;
         $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no look-alikes
         $token = '';
         for ($i = 0; $i < 5; $i++) $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
-        if (!function_exists('imagecreatetruecolor') || !function_exists('imagescale')) return null;
+
+        foreach (['imagecreatetruecolor', 'imagecopyresampled', 'imagestring', 'imagepng'] as $fn) {
+            if (!function_exists($fn)) { $why = 'GD is missing ' . $fn . '() on this server.'; return null; }
+        }
+
+        $im = $big = null;
         try {
-            $w = 200; $h = 60;
+            $w = 200; $h = 60; $scale = 3;
             $im = imagecreatetruecolor($w, $h);
+            if (!$im) { $why = 'GD could not create the canvas.'; return null; }
             $white = imagecolorallocate($im, 255, 255, 255);
             $black = imagecolorallocate($im, 17, 17, 17);
             imagefilledrectangle($im, 0, 0, $w, $h, $white);
-            // Built-in font 5 is 9x15px; the image is scaled up afterwards so the
-            // result is comfortably legible rather than a row of grey smudges.
+            // Built-in font 5 is 9x15px, so the canvas is drawn small and then
+            // resampled up — the result is legible rather than a row of smudges.
             imagestring($im, 5, 58, 22, $token, $black);
-            $big = imagescale($im, $w * 3, $h * 3, IMG_BICUBIC);
-            imagedestroy($im);
-            if (!$big) return null;
+
+            $big = imagecreatetruecolor($w * $scale, $h * $scale);
+            if (!$big) { $why = 'GD could not create the scaled canvas.'; return null; }
+            imagecopyresampled($big, $im, 0, 0, 0, 0, $w * $scale, $h * $scale, $w, $h);
+
             ob_start();
-            imagepng($big, null, 6);
+            $encoded = imagepng($big, null, 6);
             $bytes = ob_get_clean();
-            imagedestroy($big);
-            return $bytes ?: null;
+            if (!$encoded || !$bytes) { $why = 'GD could not encode a PNG.'; return null; }
+            return $bytes;
         } catch (\Throwable $e) {
+            $why = $e->getMessage();
             return null;
+        } finally {
+            if ($im)  @imagedestroy($im);
+            if ($big) @imagedestroy($big);
         }
     }
 

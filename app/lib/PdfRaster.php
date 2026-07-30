@@ -132,18 +132,26 @@ class PdfRaster
         $edge = max($w, $h);
         if ($edge <= self::MAX_EDGE) return $bytes;
 
+        if (!function_exists('imagecopyresampled') || !function_exists('imagecreatetruecolor')) return $bytes;
         $img = @imagecreatefromstring($bytes);
         if (!$img) return $bytes;
         $scale = self::MAX_EDGE / $edge;
-        $small = @imagescale($img, (int)round($w * $scale), (int)round($h * $scale), IMG_BICUBIC);
+        $nw = max(1, (int)round($w * $scale));
+        $nh = max(1, (int)round($h * $scale));
+
+        // imagecopyresampled rather than imagescale: the latter depends on the
+        // IMG_BICUBIC constant, and a GD build without it turns a resize into a
+        // fatal rather than a slightly larger image.
+        $small = @imagecreatetruecolor($nw, $nh);
+        if (!$small) { imagedestroy($img); return $bytes; }
+        @imagecopyresampled($small, $img, 0, 0, 0, 0, $nw, $nh, $w, $h);
         imagedestroy($img);
-        if (!$small) return $bytes;
 
         ob_start();
-        imagepng($small, null, 6);
+        $encoded = @imagepng($small, null, 6);
         $outBytes = ob_get_clean();
         imagedestroy($small);
-        return $outBytes !== false && $outBytes !== '' ? $outBytes : $bytes;
+        return ($encoded && $outBytes) ? $outBytes : $bytes;
     }
 
     private static function tempDir()
