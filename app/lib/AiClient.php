@@ -154,6 +154,7 @@ class AiClient {
      *
      * $opts:
      *   provider    — force one, otherwise resolved from the user's keys
+     *   config      — use this row rather than looking one up (with `provider`)
      *   user_id     — whose keys to use (default: current user)
      *   max_tokens  — default 4096; document extraction needs far more than the
      *                 1024 the older code allowed
@@ -171,7 +172,11 @@ class AiClient {
         $needs  = null;
         if ($att) $needs = self::isPdf($att['mime']) ? 'pdf' : 'image';
 
-        if (!empty($opts['provider'])) {
+        if (!empty($opts['provider']) && !empty($opts['config'])) {
+            // A caller that already holds the configuration — the connection
+            // test, which must be able to try settings before they are saved.
+            $sel = ['provider' => $opts['provider'], 'config' => $opts['config']];
+        } elseif (!empty($opts['provider'])) {
             $cfg = DB::fetch("SELECT * FROM user_api_keys WHERE user_id = ? AND provider = ? AND is_active = 1", [$userId, $opts['provider']]);
             $sel = $cfg ? ['provider' => $opts['provider'], 'config' => $cfg] : null;
         } else {

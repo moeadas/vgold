@@ -210,8 +210,10 @@ async function renderSettings() {
         ${showUrl ? `<div class="form-row"><div class="form-field"><label>Base URL</label><input id="url-${key}" placeholder="${p.default_url}" value="${row ? (row.base_url || '') : ''}"></div></div>` : ''}
         ${key === 'ollama' ? `<div class="ai-model-note">A self-hosted Ollama has to be reachable from the VGold server. <code>localhost</code> means the server itself, not your laptop — for a machine of your own use Ollama Cloud, or a public URL.</div>` : ''}
         ${key === 'ollama_cloud' ? `<div class="ai-model-note">Reading invoices and bills needs a model that can see images. Fetch the list and pick one marked <strong>vision</strong> — PDFs are converted to page images automatically.</div>` : ''}
+        <div class="ai-test-result" id="ai-test-${key}" style="display:none"></div>
         <div class="actions">
           <button class="btn-cancel" onclick="closeApiKeyForm('${key}')">Cancel</button>
+          ${connected ? `<button class="btn-cancel" id="test-${key}" onclick="testAiConnection('${key}')">Test connection</button>` : ''}
           <button class="btn-save" onclick="saveApiKey('${key}')">Save</button>
         </div>
       </div>
@@ -926,6 +928,17 @@ async function fetchAiModels(provider) {
   }
 }
 
+function aiProviderLabel(provider) {
+  return (State.aiProviders && State.aiProviders[provider] && State.aiProviders[provider].label) || provider;
+}
+
+/**
+ * Save, then prove it works.
+ *
+ * "Connected" used to mean nothing more than "a row was written". The save now
+ * runs a real round trip, so a wrong key or a model that cannot read a document
+ * is discovered here rather than the first time someone submits an invoice.
+ */
 async function saveApiKey(provider) {
   const key = document.getElementById('key-' + provider)?.value || '';
   const model = document.getElementById('model-' + provider)?.value || '';
@@ -936,10 +949,62 @@ async function saveApiKey(provider) {
   try {
     await API.updateApiKey(payload);
     State.apiKeys = null;
-    closeApiKeyForm(provider);
-    render();
-    toast(esc(providers[provider]?.label || provider) + ' saved', 'success');
-  } catch(e) { toast(e.message, 'error'); }
+    toast(aiProviderLabel(provider) + ' saved — testing the connection…', 'success');
+    await testAiConnection(provider);
+  } catch (e) {
+    aiTestBox(provider, `<strong>Not saved.</strong> ${esc(e.message)}`, 'bad');
+    toast(e.message, 'error');
+  }
+}
+
+function aiTestBox(provider, html, tone) {
+  const box = document.getElementById('ai-test-' + provider);
+  if (!box) { toast(String(html).replace(/<[^>]+>/g, ''), tone === 'bad' ? 'error' : 'success'); return; }
+  box.className = 'ai-test-result' + (tone ? ' ' + tone : '');
+  box.innerHTML = html;
+  box.style.display = 'block';
+}
+
+/** Round-trip the provider: one text reply, then one image it has to read. */
+async function testAiConnection(provider) {
+  const btn = document.getElementById('test-' + provider);
+  if (btn) { btn.disabled = true; btn.textContent = 'Testing…'; }
+  aiTestBox(provider, 'Asking the model to answer, then to read a test image…', '');
+
+  try {
+    const res = await API.aiTest({
+      provider,
+      model: document.getElementById('model-' + provider)?.value || '',
+      base_url: document.getElementById('url-' + provider)?.value || '',
+    });
+
+    const lines = [];
+    const t = res.text || {};
+    if (t.ok) {
+      lines.push(`<div class="ai-test-line ok"><strong>Replies.</strong> ${esc(res.model)} answered in ${esc(String(t.ms))}ms.</div>`);
+    } else {
+      lines.push(`<div class="ai-test-line bad"><strong>No reply.</strong> ${esc(t.error || 'The provider did not answer.')}</div>`);
+    }
+
+    const v = res.vision;
+    if (v && v.ok === true) {
+      lines.push(`<div class="ai-test-line ok"><strong>Reads documents.</strong> It read “${esc(v.expected)}” out of a test image in ${esc(String(v.ms))}ms — invoices and bills will work.</div>`);
+    } else if (v && v.ok === false && v.error) {
+      lines.push(`<div class="ai-test-line bad"><strong>Cannot read documents.</strong> ${esc(v.error)}</div>`);
+    } else if (v && v.ok === false) {
+      lines.push(`<div class="ai-test-line warn"><strong>Could not read the test image.</strong> It was shown “${esc(v.expected)}” and answered “${esc(v.reply || '')}”. Pick a model marked <strong>vision</strong> if you want invoices read automatically — everything else still works.</div>`);
+    } else if (v && v.note) {
+      lines.push(`<div class="ai-test-line warn">${esc(v.note)}</div>`);
+    }
+
+    const good = t.ok && (!v || v.ok !== false);
+    aiTestBox(provider, lines.join(''), good ? 'ok' : (t.ok ? 'warn' : 'bad'));
+    if (t.ok) toast(aiProviderLabel(provider) + ' connected', 'success');
+  } catch (e) {
+    aiTestBox(provider, `<div class="ai-test-line bad"><strong>Test failed.</strong> ${esc(e.message)}</div>`, 'bad');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = 'Test connection'; }
+  }
 }
 
 async function changePassword() {

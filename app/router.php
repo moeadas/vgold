@@ -190,6 +190,7 @@ $routes = [
     // AI
     'GET ai/providers' => ['AIController::providers', true],
     'POST ai/models' => ['AIController::models', true],
+    'POST ai/test' => ['AIController::testConnection', true],
     'POST ai/ask' => ['AIController::ask', true],
     'POST ai/plan-my-day' => ['AIController::planMyDay', true],
     'POST ai/delete-plan' => ['AIController::deletePlan', true],

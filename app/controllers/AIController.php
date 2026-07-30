@@ -86,6 +86,115 @@ class AIController {
         ]);
     }
     
+    /**
+     * Prove the connection actually works, rather than reporting "connected"
+     * because a row was written.
+     *
+     * Two round trips, because they answer different questions. The first says
+     * the key and model are real. The second renders a short code into an image
+     * and asks the model to read it back — the only way to know whether this
+     * model can do the job invoices and bills need. A model that answers
+     * fluently and cannot read a picture fails at exactly the wrong moment.
+     */
+    public static function testConnection() {
+        $data = input();
+        $provider = trim((string)($data['provider'] ?? ''));
+        if (!isset(self::$providers[$provider])) jsonError('Unknown provider');
+
+        $cfg = DB::fetch("SELECT * FROM user_api_keys WHERE user_id = ? AND provider = ?", [Auth::userId(), $provider]);
+        if (!$cfg) jsonError('Nothing is saved for this provider yet.');
+
+        // The form sends the masked placeholder when the key was left untouched;
+        // that means "use the stored one", not "the key is a row of bullets".
+        $typed = trim((string)($data['api_key'] ?? ''));
+        if ($typed !== '' && strpos($typed, "\u{2022}") === false) $cfg['api_key'] = Crypto::encrypt($typed);
+        if (!empty($data['base_url'])) $cfg['base_url'] = trim((string)$data['base_url']);
+        if (!empty($data['model']))    $cfg['model']    = trim((string)$data['model']);
+
+        require_once __DIR__ . '/../lib/AiClient.php';
+        $model = $cfg['model'] ?: self::$providers[$provider]['default_model'];
+        $out = ['ok' => true, 'provider' => $provider, 'model' => $model, 'text' => null, 'vision' => null];
+
+        /* --- 1. can it answer at all? --- */
+        $token = 'VG' . strtoupper(bin2hex(random_bytes(2)));
+        $t0 = microtime(true);
+        try {
+            $reply = AiClient::complete(
+                'Reply with exactly this and nothing else: ' . $token,
+                'You are a connection test. Answer with the exact text asked for.',
+                ['user_id' => Auth::userId(), 'provider' => $provider, 'config' => $cfg,
+                 'max_tokens' => 64, 'timeout' => 45]
+            );
+            $hit = stripos(preg_replace('/[^A-Za-z0-9]/', '', (string)$reply), $token) !== false;
+            $out['text'] = [
+                'ok' => true,
+                'echoed' => $hit,
+                'ms' => (int)round((microtime(true) - $t0) * 1000),
+                'reply' => mb_substr(trim((string)$reply), 0, 140),
+            ];
+        } catch (\Throwable $e) {
+            $out['ok'] = false;
+            $out['text'] = ['ok' => false, 'error' => $e->getMessage()];
+            jsonResponse($out);
+        }
+
+        /* --- 2. can it read a document? --- */
+        $visionToken = '';
+        $png = self::probeImage($visionToken);
+        if ($png === null) {
+            $out['vision'] = ['ok' => null, 'note' => 'This server cannot generate a test image, so reading was not checked.'];
+            jsonResponse($out);
+        }
+        $t1 = microtime(true);
+        try {
+            $reply = AiClient::complete(
+                'What characters are written in this image? Reply with those characters only.',
+                'You read text out of images. Answer with only the characters you see.',
+                ['user_id' => Auth::userId(), 'provider' => $provider, 'config' => $cfg,
+                 'max_tokens' => 64, 'timeout' => 60,
+                 'attachment' => ['mime' => 'image/png', 'data' => base64_encode($png), 'name' => 'test.png']]
+            );
+            $clean = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string)$reply));
+            $out['vision'] = [
+                'ok' => strpos($clean, $visionToken) !== false,
+                'ms' => (int)round((microtime(true) - $t1) * 1000),
+                'expected' => $visionToken,
+                'reply' => mb_substr(trim((string)$reply), 0, 140),
+            ];
+        } catch (\Throwable $e) {
+            $out['vision'] = ['ok' => false, 'error' => $e->getMessage()];
+        }
+        jsonResponse($out);
+    }
+
+    /** A small PNG containing a short code, for checking a model can read. */
+    private static function probeImage(&$token) {
+        $alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // no look-alikes
+        $token = '';
+        for ($i = 0; $i < 5; $i++) $token .= $alphabet[random_int(0, strlen($alphabet) - 1)];
+        if (!function_exists('imagecreatetruecolor') || !function_exists('imagescale')) return null;
+        try {
+            $w = 200; $h = 60;
+            $im = imagecreatetruecolor($w, $h);
+            $white = imagecolorallocate($im, 255, 255, 255);
+            $black = imagecolorallocate($im, 17, 17, 17);
+            imagefilledrectangle($im, 0, 0, $w, $h, $white);
+            // Built-in font 5 is 9x15px; the image is scaled up afterwards so the
+            // result is comfortably legible rather than a row of grey smudges.
+            imagestring($im, 5, 58, 22, $token, $black);
+            $big = imagescale($im, $w * 3, $h * 3, IMG_BICUBIC);
+            imagedestroy($im);
+            if (!$big) return null;
+            ob_start();
+            imagepng($big, null, 6);
+            $bytes = ob_get_clean();
+            imagedestroy($big);
+            return $bytes ?: null;
+        } catch (\Throwable $e) {
+            return null;
+        }
+    }
+
     public static function providers() {
         jsonResponse(['providers' => self::$providers]);
     }

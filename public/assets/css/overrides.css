@@ -574,3 +574,14 @@
 .ai-model-note code {
   background: var(--gold-bg, #FDF6E3); padding: 1px 5px; border-radius: 4px; font-size: 11.5px;
 }
+
+/* ---- AI Connections: what the connection test reports ------------------- */
+.ai-test-result {
+  margin: 14px 0 0; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); border-left-width: 3px;
+  background: var(--bg); font-size: 13px; line-height: 1.55;
+}
+.ai-test-result.ok   { border-left-color: #4A7C3F; background: #F1F7EE; color: #34602B; }
+.ai-test-result.warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
+.ai-test-result.bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
+.ai-test-line + .ai-test-line { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(0,0,0,.07); }
