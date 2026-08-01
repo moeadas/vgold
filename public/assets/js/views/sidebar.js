@@ -95,7 +95,7 @@ function renderSidebar() {
     <aside class="sidebar">
       <div class="sidebar-logo">
         <a href="#mytasks" class="sidebar-logo-link" onclick="event.preventDefault();goHome()" title="Go to home" aria-label="VGo — go to home">
-          <img src="/assets/img/vgo-logo.png" alt="VGo">
+          <img src="/assets/img/vgo-logo.png?v=${window.ASSET_V || '1'}" alt="VGo">
         </a>
       </div>
       <nav class="nav-section" aria-label="VGo modules">

@@ -62,7 +62,8 @@ echo '<!DOCTYPE html>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="VGo">
-<script>window.VAPID_PUBLIC = "BFPCZ2bBYxkoGSaaaMMRlGmDQhDPvanQIQj-Y01VCB5jIeOhIigQ7GnixutbHEuNo_f089DSZAMg5PciVAGJSJw";</script>
+<script>window.VAPID_PUBLIC = "BFPCZ2bBYxkoGSaaaMMRlGmDQhDPvanQIQj-Y01VCB5jIeOhIigQ7GnixutbHEuNo_f089DSZAMg5PciVAGJSJw";
+window.ASSET_V = "' . ASSET_VERSION . '";</script>
 </head>
 <body>
 <div id="app"></div>

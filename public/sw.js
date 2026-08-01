@@ -1,10 +1,11 @@
 // VGo Service Worker
 // Bump CACHE_VERSION whenever the shell assets change to invalidate old caches.
-const CACHE_VERSION = 'vgold-v4';
+const CACHE_VERSION = 'vgo-v5';
 const APP_SHELL = [
   '/',
   '/manifest.json',
   '/assets/img/vgo-logo.png',
+  '/assets/img/vgo-logo-cream.png',
   '/assets/img/icon-192.png',
   '/assets/img/icon-512.png',
 ];
@@ -79,9 +80,16 @@ self.addEventListener('fetch', function(event) {
 
   event.respondWith(
     fetch(req).then(function(res) {
-      if (res && res.status === 200 && res.type === 'basic') {
+      // Cache-busting query strings made every reload its own cache entry —
+      // "/?cb=1", "/?cb=2" and so on, 123 of them at last count, none of which
+      // is ever read back because the offline fallback looks for "/". Store
+      // navigations under the bare path and skip anything else with a query.
+      var cacheable = res && res.status === 200 && res.type === 'basic'
+                   && (!url.search || req.mode !== 'navigate');
+      if (cacheable) {
+        var key = req.mode === 'navigate' ? '/' : req;
         var copy = res.clone();
-        caches.open(CACHE_VERSION).then(function(cache){ cache.put(req, copy); });
+        caches.open(CACHE_VERSION).then(function(cache){ cache.put(key, copy); });
       }
       return res;
     }).catch(function() {
