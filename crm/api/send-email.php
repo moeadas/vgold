@@ -48,13 +48,20 @@ function emailAttachmentLimits($usesGraph) {
     return ['per_file' => $perFile, 'total' => $total, 'method' => $usesGraph ? 'graph' : 'smtp'];
 }
 
-/** Does this user send through Microsoft Graph rather than SMTP? */
+/**
+ * Does this user send through Microsoft Graph rather than workspace SMTP?
+ *
+ * The tokens live on VGo's `users` table, keyed by VGo's own id. They cannot be
+ * read through Database::findOne('users', ...) — the CrmRewritingPDO bridge
+ * rewrites the bare name `users` to `crm_users`, which is a different table with
+ * a different key. Go straight to DB:: instead.
+ */
 function emailUserUsesGraph($userId) {
     try {
-        $db = Database::getInstance();
-        $u  = $db->findOne('users', ['user_id' => $userId]);
-        return !empty($u['ms_access_token']) && !empty($u['ms_refresh_token']);
-    } catch (Exception $e) {
+        require_once __DIR__ . '/../../app/lib/MsMail.php';
+        $st = MsMail::status($userId);
+        return !empty($st['connected']);
+    } catch (Throwable $e) {
         return false;
     }
 }
@@ -114,10 +121,12 @@ function autoLinkUrls($text) {
     );
 }
 
-// Get user settings
+// $_SESSION['user_id'] is VGo's users.id (Auth::login sets it), so the legacy
+// findOne('users', ...) was querying crm_users by the wrong key. Only the lead
+// lookup still needs the bridge.
+require_once __DIR__ . '/../../app/lib/MsMail.php';
 try {
     $db = Database::getInstance();
-    $user = $db->findOne('users', ['user_id' => $userId]);
 } catch (Exception $e) {
     jsonError('Error loading user settings: ' . $e->getMessage(), 500);
 }
@@ -130,14 +139,14 @@ try {
     jsonError('Error loading lead', 500);
 }
 
-// Determine send method: Microsoft Graph (OAuth2) or SMTP fallback
-$msAccessToken  = $user['ms_access_token'] ?? '';
-$msRefreshToken = $user['ms_refresh_token'] ?? '';
-$msTokenExpires = $user['ms_token_expires'] ?? '';
+// Determine send method: the user's own mailbox via Graph, else workspace SMTP.
+// accessToken() refreshes silently when the stored one has expired.
+$msAccessToken = MsMail::accessToken($userId);
+$usesGraph     = !empty($msAccessToken);
 
 // Process file attachments. Done here, after the send method is known, because
 // Graph and SMTP have very different size ceilings.
-$limits      = emailAttachmentLimits(!empty($msAccessToken) && !empty($msRefreshToken));
+$limits      = emailAttachmentLimits($usesGraph);
 $attachments = [];
 if (!empty($_FILES['attachments'])) {
     $files     = $_FILES['attachments'];
@@ -175,52 +184,35 @@ if (!empty($_FILES['attachments'])) {
     }
 }
 
-if (!empty($msAccessToken) && !empty($msRefreshToken)) {
-    // ===== MICROSOFT GRAPH API =====
-    // Check if token is expired and refresh if needed
-    if (!empty($msTokenExpires) && strtotime($msTokenExpires) <= time()) {
-        $newTokens = refreshMicrosoftToken($msRefreshToken);
-        if ($newTokens === false) {
-            jsonError('Microsoft token expired. Please reconnect your Office 365 account in Profile > Email Settings.', 401);
-        }
-        $msAccessToken = $newTokens['access_token'];
-        // Update stored tokens
-        $db->update('users', [
-            'ms_access_token'  => $newTokens['access_token'],
-            'ms_refresh_token' => $newTokens['refresh_token'] ?? $msRefreshToken,
-            'ms_token_expires' => date('Y-m-d H:i:s', time() + intval($newTokens['expires_in'] ?? 3600)),
-        ], ['user_id' => $userId]);
-    }
-
+if ($usesGraph) {
+    // ===== The user's own Microsoft 365 mailbox =====
+    // Lands in their Outlook Sent Items, and replies come back to them.
     try {
-        $result = sendViaGraph($msAccessToken, $to, $subject, $body, $currentUser['full_name'], $cc, $attachments);
-        if ($result !== true) {
-            jsonError('Failed to send email: ' . $result, 500);
-        }
-    } catch (Exception $e) {
+        $result = MsMail::send($msAccessToken, $to, $subject, $body, $cc, $attachments);
+        if ($result !== true) jsonError('Failed to send email: ' . $result, 500);
+    } catch (Throwable $e) {
         jsonError('Error sending email: ' . $e->getMessage(), 500);
     }
 } else {
-    // ===== SMTP FALLBACK =====
-    $smtpHost  = $user['smtp_host'] ?? '';
-    $smtpPort  = intval($user['smtp_port'] ?? 587);
-    $smtpEmail = $user['smtp_email'] ?? '';
-    $smtpPass  = $user['smtp_password'] ?? '';
-    $smtpEnc   = $user['smtp_encryption'] ?? 'tls';
-
-    if (empty($smtpEmail) || empty($smtpPass)) {
-        jsonError('Email not configured. Go to Profile > Email Settings to connect your Microsoft Office 365 account.', 400);
+    // ===== Workspace SMTP fallback =====
+    // Nobody has per-user SMTP credentials any more (those columns went away in
+    // the migration), so fall back to the workspace mail account rather than
+    // refusing to send. The message carries the rep's name and their address as
+    // Reply-To, so the lead still replies to a person.
+    require_once __DIR__ . '/../includes/mailer.php';
+    // crmSendEmail() has no attachment support. Say so rather than silently
+    // dropping the files the user just picked.
+    if (!empty($attachments)) {
+        jsonError('Attachments need your own mailbox. Sign out and sign back in with Microsoft, '
+            . 'then try again — or send this one without attachments.', 400);
     }
-
-    $smtpPass = base64_decode($smtpPass);
-
-    try {
-        $result = sendSmtpEmail($smtpHost, $smtpPort, $smtpEmail, $smtpPass, $smtpEnc, $to, $subject, $body, $currentUser['full_name'], $cc, $attachments);
-        if ($result !== true) {
-            jsonError('Failed to send email: ' . $result, 500);
-        }
-    } catch (Exception $e) {
-        jsonError('Error sending email: ' . $e->getMessage(), 500);
+    $replyTo = $currentUser['email'] ?? null;
+    $res = crmSendEmail($to, $subject, $body, $currentUser['full_name'] ?? null, null, $replyTo);
+    if (empty($res['success'])) {
+        $err = is_array($res) ? (string)($res['error'] ?? '') : '';
+        jsonError($err !== ''
+            ? 'Failed to send email: ' . $err
+            : 'Email is not configured yet. Sign out and sign back in with Microsoft to send from your own mailbox.', 500);
     }
 }
 
@@ -252,282 +244,6 @@ try {
 }
 
 
-/**
- * Send email via Microsoft Graph API
- */
-function sendViaGraph($accessToken, $toEmail, $subject, $body, $fromName, $cc = '', $attachments = []) {
-    // Build recipient list
-    $toRecipients = [['emailAddress' => ['address' => $toEmail]]];
-    
-    $ccRecipients = [];
-    if ($cc) {
-        $ccParts = array_map('trim', explode(',', $cc));
-        foreach ($ccParts as $ccAddr) {
-            if (filter_var($ccAddr, FILTER_VALIDATE_EMAIL)) {
-                $ccRecipients[] = ['emailAddress' => ['address' => $ccAddr]];
-            }
-        }
-    }
-
-    // Build the email message
-    $message = [
-        'message' => [
-            'subject' => $subject,
-            'body' => [
-                'contentType' => 'HTML',
-                'content' => '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;">'
-                    . nl2br(autoLinkUrls(htmlspecialchars($body)))
-                    . '</body></html>',
-            ],
-            'toRecipients' => $toRecipients,
-        ],
-        'saveToSentItems' => true,  // Saves to Outlook Sent Items
-    ];
-
-    if (!empty($ccRecipients)) {
-        $message['message']['ccRecipients'] = $ccRecipients;
-    }
-
-    // Add attachments (Graph API supports base64 inline attachments up to 3MB each)
-    if (!empty($attachments)) {
-        $graphAttachments = [];
-        foreach ($attachments as $att) {
-            $graphAttachments[] = [
-                '@odata.type'  => '#microsoft.graph.fileAttachment',
-                'name'         => $att['name'],
-                'contentType'  => $att['type'],
-                'contentBytes' => $att['content'], // already base64-encoded
-            ];
-        }
-        $message['message']['attachments'] = $graphAttachments;
-    }
-
-    // Send via Microsoft Graph
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL            => 'https://graph.microsoft.com/v1.0/me/sendMail',
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => json_encode($message),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 60,
-        CURLOPT_HTTPHEADER     => [
-            'Authorization: Bearer ' . $accessToken,
-            'Content-Type: application/json',
-        ],
-    ]);
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $curlError = curl_error($ch);
-    curl_close($ch);
-
-    if ($curlError) {
-        return "Network error: " . $curlError;
-    }
-
-    // 202 Accepted = success for sendMail
-    if ($httpCode === 202 || $httpCode === 200) {
-        return true;
-    }
-
-    // Parse error
-    $errorData = json_decode($response, true);
-    $errorMsg = $errorData['error']['message'] ?? "HTTP $httpCode";
-    error_log("Microsoft Graph sendMail error ($httpCode): " . $response);
-    return $errorMsg;
-}
 
 
-/**
- * Refresh Microsoft OAuth2 access token using refresh token
- */
-function refreshMicrosoftToken($refreshToken) {
-    $tokenUrl = 'https://login.microsoftonline.com/' . MS_TENANT_ID . '/oauth2/v2.0/token';
 
-    $postData = [
-        'client_id'     => MS_CLIENT_ID,
-        'client_secret' => MS_CLIENT_SECRET,
-        'refresh_token' => $refreshToken,
-        'grant_type'    => 'refresh_token',
-        'scope'         => 'https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read offline_access',
-    ];
-
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL            => $tokenUrl,
-        CURLOPT_POST           => true,
-        CURLOPT_POSTFIELDS     => http_build_query($postData),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT        => 30,
-        CURLOPT_HTTPHEADER     => ['Content-Type: application/x-www-form-urlencoded'],
-    ]);
-    $response = curl_exec($ch);
-    curl_close($ch);
-
-    $data = json_decode($response, true);
-    if (isset($data['access_token'])) {
-        return $data;
-    }
-
-    error_log("Microsoft token refresh failed: " . $response);
-    return false;
-}
-
-
-/**
- * Send email via raw SMTP socket (fallback when OAuth2 not configured).
- */
-function sendSmtpEmail($host, $port, $fromEmail, $password, $encryption, $toEmail, $subject, $body, $fromName, $cc = '', $attachments = []) {
-    $timeout = 30;
-    $crlf = "\r\n";
-
-    if ($encryption === 'ssl') {
-        $sock = @fsockopen('ssl://' . $host, $port, $errno, $errstr, $timeout);
-    } else {
-        $sock = @fsockopen($host, $port, $errno, $errstr, $timeout);
-    }
-
-    if (!$sock) {
-        return "Could not connect to $host:$port — $errstr ($errno)";
-    }
-
-    $readResponse = function() use ($sock) {
-        $response = '';
-        while ($line = fgets($sock, 4096)) {
-            $response .= $line;
-            if (substr($line, 3, 1) === ' ') break;
-        }
-        return $response;
-    };
-
-    $sendCmd = function($cmd, $expectedCode) use ($sock, $readResponse, $crlf) {
-        fwrite($sock, $cmd . $crlf);
-        $resp = $readResponse();
-        $code = intval(substr($resp, 0, 3));
-        if ($code !== $expectedCode) {
-            return "SMTP error ($code): " . trim($resp);
-        }
-        return true;
-    };
-
-    $banner = $readResponse();
-    if (intval(substr($banner, 0, 3)) !== 220) {
-        fclose($sock);
-        return "SMTP banner error: " . trim($banner);
-    }
-
-    $r = $sendCmd("EHLO " . gethostname(), 250);
-    if ($r !== true) { fclose($sock); return $r; }
-
-    if ($encryption === 'tls') {
-        $r = $sendCmd("STARTTLS", 220);
-        if ($r !== true) { fclose($sock); return $r; }
-        $crypto = stream_socket_enable_crypto($sock, true, STREAM_CRYPTO_METHOD_TLSv1_2_CLIENT);
-        if (!$crypto) { fclose($sock); return "TLS handshake failed"; }
-        $r = $sendCmd("EHLO " . gethostname(), 250);
-        if ($r !== true) { fclose($sock); return $r; }
-    }
-
-    $r = $sendCmd("AUTH LOGIN", 334);
-    if ($r !== true) { fclose($sock); return $r; }
-    $r = $sendCmd(base64_encode($fromEmail), 334);
-    if ($r !== true) { fclose($sock); return $r; }
-    $r = $sendCmd(base64_encode($password), 235);
-    if ($r !== true) { fclose($sock); return "Authentication failed. Check email/password."; }
-
-    $r = $sendCmd("MAIL FROM:<$fromEmail>", 250);
-    if ($r !== true) { fclose($sock); return $r; }
-    $r = $sendCmd("RCPT TO:<$toEmail>", 250);
-    if ($r !== true) { fclose($sock); return $r; }
-
-    $ccAddresses = [];
-    if ($cc) {
-        $ccParts = array_map('trim', explode(',', $cc));
-        foreach ($ccParts as $ccAddr) {
-            if (filter_var($ccAddr, FILTER_VALIDATE_EMAIL)) {
-                $r = $sendCmd("RCPT TO:<$ccAddr>", 250);
-                if ($r !== true) { fclose($sock); return $r; }
-                $ccAddresses[] = $ccAddr;
-            }
-        }
-    }
-
-    $r = $sendCmd("DATA", 354);
-    if ($r !== true) { fclose($sock); return $r; }
-
-    $mixedBoundary = md5(uniqid(time() . 'mixed'));
-    $altBoundary   = md5(uniqid(time() . 'alt'));
-    $messageId = '<' . uniqid('vgcrm_', true) . '@' . parse_url(APP_URL, PHP_URL_HOST) . '>';
-    $date = date('r');
-    $encodedFrom = '=?UTF-8?B?' . base64_encode($fromName) . '?= <' . $fromEmail . '>';
-
-    $headers  = "Date: $date" . $crlf;
-    $headers .= "From: $encodedFrom" . $crlf;
-    $headers .= "To: <$toEmail>" . $crlf;
-    if (!empty($ccAddresses)) {
-        $headers .= "Cc: " . implode(', ', array_map(function($a) { return "<$a>"; }, $ccAddresses)) . $crlf;
-    }
-    $headers .= "Subject: =?UTF-8?B?" . base64_encode($subject) . "?=" . $crlf;
-    $headers .= "Message-ID: $messageId" . $crlf;
-    $headers .= "MIME-Version: 1.0" . $crlf;
-    $headers .= "X-Mailer: VictoryGenomicsCRM/2.0" . $crlf;
-
-    $plainBody = strip_tags(str_replace(['<br>', '<br/>', '<br />', '</p>'], "\n", $body));
-    $htmlBody = '<html><body style="font-family:Arial,Helvetica,sans-serif;font-size:14px;color:#333;">'
-        . nl2br(autoLinkUrls(htmlspecialchars($body))) . '</body></html>';
-
-    if (!empty($attachments)) {
-        // multipart/mixed (contains multipart/alternative + attachments)
-        $headers .= "Content-Type: multipart/mixed; boundary=\"$mixedBoundary\"" . $crlf;
-
-        $message  = $headers . $crlf;
-        $message .= "--$mixedBoundary" . $crlf;
-        $message .= "Content-Type: multipart/alternative; boundary=\"$altBoundary\"" . $crlf . $crlf;
-
-        // Plain text part
-        $message .= "--$altBoundary" . $crlf;
-        $message .= "Content-Type: text/plain; charset=UTF-8" . $crlf;
-        $message .= "Content-Transfer-Encoding: 8bit" . $crlf . $crlf;
-        $message .= $plainBody . $crlf . $crlf;
-
-        // HTML part
-        $message .= "--$altBoundary" . $crlf;
-        $message .= "Content-Type: text/html; charset=UTF-8" . $crlf;
-        $message .= "Content-Transfer-Encoding: 8bit" . $crlf . $crlf;
-        $message .= $htmlBody . $crlf . $crlf;
-        $message .= "--$altBoundary--" . $crlf . $crlf;
-
-        // Attachment parts
-        foreach ($attachments as $att) {
-            $message .= "--$mixedBoundary" . $crlf;
-            $message .= "Content-Type: " . $att['type'] . "; name=\"" . $att['name'] . "\"" . $crlf;
-            $message .= "Content-Disposition: attachment; filename=\"" . $att['name'] . "\"" . $crlf;
-            $message .= "Content-Transfer-Encoding: base64" . $crlf . $crlf;
-            $message .= chunk_split($att['content'], 76, $crlf);
-        }
-        $message .= "--$mixedBoundary--" . $crlf;
-    } else {
-        // No attachments — simple multipart/alternative
-        $headers .= "Content-Type: multipart/alternative; boundary=\"$altBoundary\"" . $crlf;
-
-        $message  = $headers . $crlf;
-        $message .= "--$altBoundary" . $crlf;
-        $message .= "Content-Type: text/plain; charset=UTF-8" . $crlf;
-        $message .= "Content-Transfer-Encoding: 8bit" . $crlf . $crlf;
-        $message .= $plainBody . $crlf . $crlf;
-        $message .= "--$altBoundary" . $crlf;
-        $message .= "Content-Type: text/html; charset=UTF-8" . $crlf;
-        $message .= "Content-Transfer-Encoding: 8bit" . $crlf . $crlf;
-        $message .= $htmlBody . $crlf . $crlf;
-        $message .= "--$altBoundary--" . $crlf;
-    }
-
-    $message = str_replace("\r\n.\r\n", "\r\n..\r\n", $message);
-    fwrite($sock, $message);
-
-    $r = $sendCmd(".", 250);
-    if ($r !== true) { fclose($sock); return $r; }
-
-    fwrite($sock, "QUIT" . $crlf);
-    fclose($sock);
-    return true;
-}

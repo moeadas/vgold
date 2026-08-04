@@ -8,6 +8,7 @@ require_once __DIR__ . '/lib/Csrf.php';
 require_once __DIR__ . '/lib/Schema.php';
 require_once __DIR__ . '/lib/Secrets.php';
 require_once __DIR__ . '/lib/Mail.php';
+require_once __DIR__ . '/lib/MsMail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
 require_once __DIR__ . '/lib/PdfRaster.php';
 require_once __DIR__ . '/lib/AiClient.php';
@@ -155,6 +156,8 @@ $routes = [
     'GET settings/members' => ['SettingsController::workspaceMembers', true],
     'GET settings/crm-role-map' => ['SettingsController::crmRoleMap', true],
     'PUT settings/crm-role-map' => ['SettingsController::updateCrmRoleMap', true],
+    'GET settings/my-mail' => ['SettingsController::myMailConnection', true],
+    'DELETE settings/my-mail' => ['SettingsController::disconnectMyMail', true],
     'GET settings/smtp' => ['SettingsController::smtp', true],
     'PUT settings/smtp' => ['SettingsController::updateSmtp', true],
     'POST settings/smtp/test' => ['SettingsController::testSmtp', true],

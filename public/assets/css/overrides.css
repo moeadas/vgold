@@ -653,3 +653,18 @@ span.acc-truncate { display: inline-block; vertical-align: bottom; }
   overflow-wrap: anywhere; word-break: break-word;
 }
 .crm-native .detail-value a { display: inline-block; max-width: 100%; }
+
+
+/* ---- Settings: per-user CRM mailbox connection ------------------------- */
+.mailconn {
+  display: flex; align-items: center; gap: 12px;
+  margin: 10px 0 4px; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--border); border-left-width: 3px; font-size: 13px;
+}
+.mailconn-ok   { border-left-color: #4A7C3F; background: #F1F7EE; }
+.mailconn-warn { border-left-color: #C99520; background: #FDF6E3; }
+.mailconn-dot  { font-size: 16px; line-height: 1; }
+.mailconn > div { min-width: 0; }
+.mailconn-sub  { color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.45; }
+.mailconn-btn  { margin-left: auto; flex: none; padding: 6px 12px; font-size: 12px;
+                 text-decoration: none; white-space: nowrap; }

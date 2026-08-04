@@ -196,6 +196,26 @@ class SettingsController {
         }
     }
     
+    /**
+     * Whether the signed-in user can send CRM email from their own mailbox.
+     * Deliberately returns no token material — just enough for the card.
+     */
+    public static function myMailConnection() {
+        $uid = Auth::userId();
+        if (!$uid) jsonError('Not signed in', 401);
+        $st = MsMail::status($uid);
+        $st['provider'] = $_SESSION['auth_provider'] ?? null;
+        jsonResponse(['connection' => $st]);
+    }
+
+    /** Drop the stored tokens; the next Microsoft sign-in re-grants them. */
+    public static function disconnectMyMail() {
+        $uid = Auth::userId();
+        if (!$uid) jsonError('Not signed in', 401);
+        MsMail::forget($uid);
+        jsonResponse(['ok' => true]);
+    }
+
     public static function updateSmtp() {
         Auth::requireAdmin();
         $data = input();

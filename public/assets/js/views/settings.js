@@ -92,6 +92,11 @@ async function renderSettings() {
   if (!providers) {
     try { const res = await API.providers(); providers = res.providers; State.aiProviders = providers; } catch(e) { providers = {}; }
   }
+  let myMail = State.myMailConn;
+  if (myMail === undefined) {
+    try { myMail = (await API.myMail()).connection; State.myMailConn = myMail; }
+    catch (e) { myMail = null; }
+  }
   let smtp = State.smtpSettings;
   if (smtp === undefined) {
     try {
@@ -231,6 +236,33 @@ async function renderSettings() {
       </div>
     `;
   }).join('');
+
+  // Per-user CRM mail. Distinct from the SMTP card: this decides which mailbox a
+  // lead email leaves from, not how VGo notifies the team — so unlike SMTP it is
+  // shown to everyone, not just admins.
+  const myMailSection = `
+    <div class="settings-card">
+      <h3>Your CRM email</h3>
+      <div class="desc">Emails you send to a lead go out of your own Victory Genomics mailbox and land in your Outlook Sent Items.</div>
+      ${myMail && myMail.connected ? `
+        <div class="mailconn mailconn-ok">
+          <span class="mailconn-dot">\u2705</span>
+          <div>
+            <div><b>Connected as ${esc(myMail.email || 'your Microsoft account')}</b></div>
+            <div class="mailconn-sub">Access renews automatically${myMail.expires_at ? ' \u00b7 current token valid to ' + esc(String(myMail.expires_at).slice(0, 16).replace('T', ' ')) : ''}</div>
+          </div>
+          <button class="btn-secondary mailconn-btn" onclick="disconnectMyMail()">Disconnect</button>
+        </div>` : `
+        <div class="mailconn mailconn-warn">
+          <span class="mailconn-dot">\u26a0\ufe0f</span>
+          <div>
+            <div><b>Not connected</b></div>
+            <div class="mailconn-sub">Connect to send from your own address. Until then your lead emails go from the workspace address, with your name and your address as reply-to.</div>
+          </div>
+          <a class="btn-secondary mailconn-btn" href="/api/auth/microsoft">Connect</a>
+        </div>`}
+    </div>
+  `;
 
   // SMTP section
   const smtpSection = smtp ? `
@@ -415,6 +447,7 @@ async function renderSettings() {
         <div class="crm-native" style="margin-top:4px">${typeof crmExportCenterHtml === 'function' ? crmExportCenterHtml() : '<div class="text-muted">Export tools are unavailable — reload the app.</div>'}</div>
       </div>` : ''}
 
+      ${myMailSection}
       <div id="settings-integrations">${user.role === 'admin' ? smtpSection : ''}</div>
       ${integrationsSection}
 
@@ -695,6 +728,7 @@ async function saveSmtp() {
     // never ran and the form redrew blank with the default From Name, making a
     // save that had in fact succeeded look like it had been rejected.
     State.smtpSettings = undefined;
+    State.myMailConn = undefined;
     State.mailStatus = undefined;
     toast('SMTP settings saved', 'success');
     if (res && res.warning) toast(res.warning, 'error');
@@ -1490,4 +1524,22 @@ async function saveEditUser(userId) {
     // Stay on the page — the admin may still want the password controls below.
     render();
   } catch(e) { if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; } else toast(e.message, 'error'); }
+}
+
+
+async function disconnectMyMail() {
+  const ok = await Modal.confirm({
+    title: 'Disconnect your mailbox',
+    message: 'Lead emails will go from the workspace address until you sign in with Microsoft again. Continue?',
+    confirmText: 'Disconnect', danger: true,
+  });
+  if (!ok) return;
+  try {
+    await API.disconnectMyMail();
+    State.myMailConn = undefined;
+    toast('Mailbox disconnected', 'success');
+    render();
+  } catch (e) {
+    toast(e.message || 'Could not disconnect', 'error');
+  }
 }

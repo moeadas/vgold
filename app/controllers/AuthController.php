@@ -205,12 +205,16 @@ class AuthController {
         Auth::init();
         $_SESSION['oauth_state'] = bin2hex(random_bytes(16));
         $_SESSION['oauth_nonce'] = bin2hex(random_bytes(16));
+        // Mail.Send + offline_access ride along with sign-in so a CRM user can
+        // email a lead from their own mailbox without a separate Connect step.
+        // See app/lib/MsMail.php.
+        require_once __DIR__ . '/../lib/MsMail.php';
         header('Location: ' . $cfg['login_authority'] . '/oauth2/v2.0/authorize?' . http_build_query([
             'client_id' => $cfg['client_id'],
             'response_type' => 'code',
             'redirect_uri' => $cfg['redirect_uri'],
             'response_mode' => 'query',
-            'scope' => 'openid profile email User.Read',
+            'scope' => MsMail::SCOPES,
             'state' => $_SESSION['oauth_state'],
             'nonce' => $_SESSION['oauth_nonce'],
         ]));
@@ -233,12 +237,13 @@ class AuthController {
         // certificate (client-assertion) OR a client secret, matching config 'app_auth'.
         $tokenUrl = $cfg['login_authority'] . '/oauth2/v2.0/token';
         $now = time();
+        require_once __DIR__ . '/../lib/MsMail.php';
         $tokenParams = [
             'client_id'    => $cfg['client_id'],
             'grant_type'   => 'authorization_code',
             'code'         => $code,
             'redirect_uri' => $cfg['redirect_uri'],
-            'scope'        => 'openid profile email User.Read',
+            'scope'        => MsMail::SCOPES,
         ];
         $authMethod = $cfg['app_auth'] ?? 'certificate';
         if ($authMethod === 'secret' && !empty($cfg['client_secret'])) {
@@ -306,6 +311,17 @@ class AuthController {
         $wm = DB::fetch("SELECT workspace_id FROM workspace_members WHERE user_id = ? ORDER BY joined_at ASC LIMIT 1", [$user['id']]);
         if (!$wm) jsonError('No workspace assigned. Ask an admin.', 403);
         
+        // Keep the delegated mail tokens. Absent consent Microsoft simply returns
+        // no refresh_token; store() no-ops and CRM email falls back, so a login
+        // must never fail because of this.
+        try {
+            if (!empty($d['access_token'])) {
+                MsMail::store($user['id'], $d, $claims['email'] ?? $claims['preferred_username'] ?? $email);
+            }
+        } catch (\Throwable $e) {
+            error_log('microsoftCallback: storing mail token: ' . $e->getMessage());
+        }
+
         $_SESSION['auth_provider'] = 'microsoft'; // drives edit-button visibility
         $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
         $_SESSION['crm_role'] = $user['crm_role'] ?? null;

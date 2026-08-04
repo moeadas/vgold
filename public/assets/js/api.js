@@ -130,6 +130,8 @@ const API = {
   updateCrmRoleMap: (data) => API.req('/settings/crm-role-map', { method: 'PUT', body: JSON.stringify(data) }),
   // SMTP
   smtp: () => API.req('/settings/smtp'),
+  myMail: () => API.req('/settings/my-mail'),
+  disconnectMyMail: () => API.req('/settings/my-mail', { method: 'DELETE' }),
   updateSmtp: (data) => API.req('/settings/smtp', { method: 'PUT', body: JSON.stringify(data) }),
   testSmtp: (to) => API.req('/settings/smtp/test', { method: 'POST', body: JSON.stringify({ to: to || '' }) }),
   // User management
