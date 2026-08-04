@@ -638,3 +638,18 @@ span.acc-truncate { display: inline-block; vertical-align: bottom; }
   margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--muted);
   word-break: break-word; overflow-wrap: anywhere;
 }
+
+
+/* ---- CRM lead detail: a 255-char tracking URL must not widen the page ----
+   .detail-item sits in a CSS grid, and grid items default to min-width:auto, so
+   one unbreakable URL pushed its track wider than the viewport and every card
+   on the lead page inherited the horizontal scroll. Same root cause as the
+   accounting ledger fix above. ------------------------------------------- */
+.crm-native .grid > *,
+.crm-native .detail-item,
+.crm-native .detail-value { min-width: 0; }
+.crm-native .detail-value,
+.crm-native .detail-value a {
+  overflow-wrap: anywhere; word-break: break-word;
+}
+.crm-native .detail-value a { display: inline-block; max-width: 100%; }

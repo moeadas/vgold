@@ -1006,15 +1006,44 @@ function goCrmLead(id) {
   closeMobileSidebar();
 }
 
+/**
+ * Legacy lead-form.php ran every field through htmlspecialchars() on each save,
+ * so values that were already escaped picked up another layer every time — the
+ * worst rows in crm_leads carry six. That form no longer writes (mount.php
+ * bounces it to the SPA) but the stored text is still layered, so undo it for
+ * display. Decoding then re-escaping via esc() is safe: whatever comes out is
+ * escaped exactly once before it reaches the DOM.
+ */
+function crmUnescapeEntities(v) {
+  let s = String(v ?? '');
+  for (let i = 0; i < 8; i++) {
+    const next = s
+      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&nbsp;/g, ' ');
+    if (next === s) break;
+    s = next;
+  }
+  return s;
+}
+
+/** Marketing URLs carry 200+ characters of utm/fbclid noise. Show the part a
+ *  human reads, keep the whole thing as the href and the tooltip. */
+function crmShortUrl(url, max = 58) {
+  const s = String(url ?? '').replace(/^https?:\/\//, '').replace(/\/$/, '');
+  return s.length <= max ? s : s.slice(0, max - 1) + '…';
+}
+
 function crmDetailRow(label, value, opts = {}) {
   if (value === null || value === undefined || value === '') return '';
+  const clean = crmUnescapeEntities(value);
   const inner = opts.href
-    ? `<a href="${esc(value.startsWith('http') ? value : 'https://' + value)}" target="_blank" rel="noopener">${esc(opts.text || value)}</a>`
+    ? `<a href="${esc(clean.startsWith('http') ? clean : 'https://' + clean)}" target="_blank" rel="noopener"
+          title="${esc(clean)}">${esc(crmShortUrl(opts.text ? crmUnescapeEntities(opts.text) : clean))}</a>`
     : opts.mailto
-    ? `<a href="mailto:${esc(value)}">${esc(value)}</a>`
+    ? `<a href="mailto:${esc(clean)}" title="${esc(clean)}">${esc(clean)}</a>`
     : opts.tel
-    ? `<a href="tel:${esc(value)}">${esc(value)}</a>`
-    : esc(value);
+    ? `<a href="tel:${esc(clean)}">${esc(clean)}</a>`
+    : esc(clean);
   return `<div class="detail-item${opts.span2 ? ' detail-span-2' : ''}"><div class="detail-label">${esc(label)}</div><div class="detail-value">${inner}</div></div>`;
 }
 
