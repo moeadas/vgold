@@ -599,3 +599,42 @@
 span.acc-truncate { display: inline-block; vertical-align: bottom; }
 .acc-row > *:not(.acc-num) { overflow: hidden; }
 .acc-row .acc-pill { overflow: visible; }
+
+
+/* ---- Journal entry detail modal ---------------------------------------- */
+.acc-je-memo {
+  font-size: 13px; line-height: 1.55; color: var(--text);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 8px; padding: 10px 12px;
+  word-break: break-word; overflow-wrap: anywhere;
+}
+.acc-je-meta {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 10px 16px; margin-top: 14px;
+}
+.acc-je-meta > div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* .acc-kv-value is right-aligned for key/value rows; here it reads as a stray indent. */
+.acc-je-meta .acc-kv-label,
+.acc-je-meta .acc-kv-value { text-align: left; }
+.acc-je-balance {
+  margin-top: 12px; padding: 8px 12px; border-radius: 8px;
+  font-size: 12.5px; border: 1px solid var(--border); border-left-width: 3px;
+}
+.acc-je-balance.ok  { border-left-color: #4A7C3F; background: #F1F7EE; color: #34602B; }
+.acc-je-balance.bad { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
+.acc-je-line {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 8px; background: var(--bg);
+}
+.acc-je-line-top {
+  display: flex; align-items: baseline; gap: 12px; justify-content: space-between;
+}
+.acc-je-acct { font-weight: 600; font-size: 13.5px; min-width: 0; }
+.acc-je-amt {
+  font-variant-numeric: tabular-nums; font-weight: 700; white-space: nowrap; font-size: 13.5px;
+}
+.acc-je-cr { color: var(--muted); }
+.acc-je-desc {
+  margin-top: 6px; font-size: 12px; line-height: 1.5; color: var(--muted);
+  word-break: break-word; overflow-wrap: anywhere;
+}

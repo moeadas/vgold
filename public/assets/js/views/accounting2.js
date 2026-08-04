@@ -790,6 +790,7 @@ function accJournalList() {
         <div class="acc-row acc-row-link" style="grid-template-columns:110px minmax(0,2fr) 110px 130px 130px 110px" onclick="accToggleEntry(${e.id})">
           <div class="acc-mono">${esc(e.number)}</div>
           <div class="acc-truncate" title="${esc(e.memo)}">${esc(e.memo)}</div>
+          <!-- memo stays truncated here; accEntryDetail() shows it in full -->
           <div>${accDateShort(e.entry_date)}</div>
           <div class="acc-num">${accMoney(e.total_debit)}</div>
           <div class="acc-num">${accMoney(e.total_credit)}</div>
@@ -808,6 +809,7 @@ function accJournalList() {
           <div style="display:flex;gap:10px;align-items:center;margin-top:10px">
             <span class="acc-sub">Source: ${esc(e.source)}</span>
             <span style="flex:1"></span>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:12.5px" onclick="accEntryDetail(${e.id})">${I.eye} Full details</button>
             ${e.status === 'posted' && e.source !== 'reversal'
               ? `<button class="btn-secondary" style="padding:4px 10px;font-size:12.5px" onclick="accReverseEntry(${e.id},'${esc(e.number)}')">Reverse entry</button>` : ''}
             ${e.status === 'draft'
@@ -817,6 +819,70 @@ function accJournalList() {
       </div>`).join('') : accEmpty('No journal entries found.')}
     ${accPager(data && data.meta, 'accJournalPage')}
   </div>`;
+}
+
+/* Full journal entry — descriptions from a bank import run to 200+ characters,
+   so the inline table has to truncate them. This shows everything, wrapped. */
+function accEntryDetail(id) {
+  const data = AccState.journal;
+  const e = ((data && data.entries) || []).find(x => Number(x.id) === Number(id));
+  if (!e) { toast('Entry not found — reload the journal', 'error'); return; }
+
+  const meta = [
+    ['Date', accDate(e.entry_date)],
+    ['Status', accPill(e.status)],
+    ['Source', esc(e.source || '—')],
+    ['Total debit', accMoney(e.total_debit)],
+    ['Total credit', accMoney(e.total_credit)],
+  ];
+  const balanced = Math.abs(Number(e.total_debit) - Number(e.total_credit)) < 0.005;
+
+  const lines = (e.lines || []).map(l => {
+    const isDebit = Number(l.debit) > 0;
+    return `<div class="acc-je-line">
+      <div class="acc-je-line-top">
+        <span class="acc-je-acct"><span class="acc-mono">${esc(l.code || '—')}</span> ${esc(l.account_name || 'Unknown')}</span>
+        <span class="acc-je-amt ${isDebit ? '' : 'acc-je-cr'}">${isDebit ? 'DR' : 'CR'} ${accMoney(isDebit ? l.debit : l.credit)}</span>
+      </div>
+      ${l.description ? `<div class="acc-je-desc">${esc(l.description)}</div>` : ''}
+    </div>`;
+  }).join('') || accEmpty('No lines.');
+
+  Modal.open({
+    title: `Journal entry ${e.number}`,
+    body: `
+      <div class="acc-je-memo">${esc(e.memo || '')}</div>
+      <div class="acc-je-meta">
+        ${meta.map(([k, v]) => `<div><span class="acc-kv-label">${esc(k)}</span><span class="acc-kv-value">${v}</span></div>`).join('')}
+      </div>
+      <div class="acc-je-balance ${balanced ? 'ok' : 'bad'}">
+        ${balanced ? 'Debits equal credits — this entry is balanced.' : 'Debits and credits do not match.'}
+      </div>
+      <div class="acc-card-title" style="margin:16px 0 8px">Lines</div>
+      ${lines}`,
+    footer: `<button class="btn-secondary" onclick="accEntryCopy(${e.id})">Copy as text</button>
+      <span style="flex:1"></span>
+      <button class="btn-secondary" onclick="Modal.close()">Close</button>
+      ${e.status === 'posted' && e.source !== 'reversal'
+        ? `<button class="btn-primary" onclick="Modal.close();accReverseEntry(${e.id},'${esc(e.number)}')">Reverse entry</button>` : ''}`,
+  });
+}
+
+function accEntryCopy(id) {
+  const data = AccState.journal;
+  const e = ((data && data.entries) || []).find(x => Number(x.id) === Number(id));
+  if (!e) return;
+  const text = [
+    `${e.number}  ${e.entry_date}  ${e.status}  (source: ${e.source})`,
+    e.memo, '',
+    ...(e.lines || []).map(l => {
+      const isDebit = Number(l.debit) > 0;
+      return `  ${(l.code || '—')} ${l.account_name || 'Unknown'}\n    ${isDebit ? 'DR' : 'CR'} ${Number(isDebit ? l.debit : l.credit).toFixed(2)}\n    ${l.description || ''}`;
+    }),
+  ].join('\n');
+  navigator.clipboard.writeText(text)
+    .then(() => toast('Entry copied to the clipboard', 'success'))
+    .catch(() => toast('Could not copy — select the text instead', 'error'));
 }
 
 function accToggleEntry(id) {
