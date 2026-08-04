@@ -585,3 +585,17 @@
 .ai-test-result.warn { border-left-color: #C99520; background: #FDF6E3; color: #7A5A11; }
 .ai-test-result.bad  { border-left-color: #B0432B; background: #FDF0EE; color: #7E2F1E; }
 .ai-test-line + .ai-test-line { margin-top: 7px; padding-top: 7px; border-top: 1px solid rgba(0,0,0,.07); }
+
+
+/* ---- Accounting tables: stop long text painting over the next column ----
+   .acc-row is a CSS grid. Grid items default to min-width:auto, so a long
+   description refuses to shrink below its content width and overflows its
+   track — which is why ledger descriptions were drawn on top of the debit and
+   credit figures. min-width:0 lets the track win.
+   .acc-truncate also has to be a block box to ellipsise; it was being applied
+   to <span>s, where overflow/text-overflow do nothing. ------------------- */
+.acc-row > * { min-width: 0; }
+.acc-truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+span.acc-truncate { display: inline-block; vertical-align: bottom; }
+.acc-row > *:not(.acc-num) { overflow: hidden; }
+.acc-row .acc-pill { overflow: visible; }

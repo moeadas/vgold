@@ -654,6 +654,12 @@ class AccountingController
         }
 
         $docType = $type === 'customer' ? 'invoice' : 'bill';
+        // Money can reach a contact two ways: through a document, or as a direct bank
+        // payment with no paperwork (statement imports, ad-hoc transfers). Counting only
+        // documents made every imported vendor read $0.00. Direct rows are the ones with
+        // no document_id — payments *against* a bill are already covered by the document
+        // subquery, so including them here would double-count.
+        $txType  = $type === 'customer' ? 'income' : 'expense';
         $year = (int)date('Y');
 
         $rows = DB::fetchAll(
@@ -663,10 +669,26 @@ class AccountingController
                       AND d.status NOT IN ('paid','cancelled','draft')), 0) AS open_amount,
                 COALESCE((SELECT SUM(d.amount) FROM acc_documents d
                     WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                      AND d.status <> 'cancelled' AND YEAR(d.issued_at) = $year), 0) AS ytd_amount,
+                      AND d.status <> 'cancelled' AND YEAR(d.issued_at) = $year), 0)
+              + COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
+                    WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0
+                      AND t.document_id IS NULL AND t.type = '$txType'
+                      AND YEAR(t.paid_at) = $year), 0) AS ytd_amount,
+                COALESCE((SELECT SUM(d.amount) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
+                      AND d.status <> 'cancelled'), 0)
+              + COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
+                    WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0
+                      AND t.document_id IS NULL AND t.type = '$txType'), 0) AS total_amount,
                 (SELECT d.number FROM acc_documents d
                     WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                 ORDER BY d.issued_at DESC, d.id DESC LIMIT 1) AS last_document
+                 ORDER BY d.issued_at DESC, d.id DESC LIMIT 1) AS last_document,
+                GREATEST(
+                  COALESCE((SELECT MAX(d.issued_at) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'), '1000-01-01'),
+                  COALESCE((SELECT MAX(t.paid_at) FROM acc_transactions t
+                    WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0), '1000-01-01')
+                ) AS last_activity
              FROM acc_contacts c
             WHERE $where
          ORDER BY c.name ASC
@@ -689,6 +711,7 @@ class AccountingController
         if (!$contact) jsonError('Contact not found', 404);
 
         $docType = $contact['type'] === 'customer' ? 'invoice' : 'bill';
+        $txType  = $contact['type'] === 'customer' ? 'income' : 'expense';
         $stats = DB::fetch(
             "SELECT
                COALESCE(SUM(CASE WHEN status <> 'cancelled' THEN amount END), 0) AS total,
@@ -697,6 +720,16 @@ class AccountingController
              FROM acc_documents WHERE contact_id = ? AND deleted_at IS NULL AND type = ?",
             [(int)$id, $docType]
         );
+        // Direct bank payments carry no document, so fold them into total and paid.
+        // Outstanding stays document-only: a settled bank payment owes nothing.
+        $direct = DB::fetch(
+            "SELECT COALESCE(SUM(amount), 0) AS amt FROM acc_transactions
+              WHERE contact_id = ? AND deleted_at IS NULL AND is_transfer = 0
+                AND document_id IS NULL AND type = ?",
+            [(int)$id, $txType]
+        );
+        $stats['total'] = (float)$stats['total'] + (float)($direct['amt'] ?? 0);
+        $stats['paid']  = (float)$stats['paid']  + (float)($direct['amt'] ?? 0);
 
         jsonResponse([
             'contact' => $contact,

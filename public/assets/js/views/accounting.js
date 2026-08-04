@@ -1308,7 +1308,8 @@ async function renderAccContacts(type) {
     c.category ? `<span class="acc-chip">${esc(c.category)}</span>` : '<span class="acc-dim">—</span>',
     Number(c.open_amount) > 0 ? `<span class="acc-neg">${accMoney(c.open_amount)}</span>` : accMoney(0),
     accMoney(c.ytd_amount),
-    c.last_document ? `<span class="acc-mono">${esc(c.last_document)}</span>` : '<span class="acc-dim">—</span>',
+    c.last_document ? `<span class="acc-mono">${esc(c.last_document)}</span>`
+      : (c.last_activity && c.last_activity > '1900-01-01' ? accDateShort(c.last_activity) : '<span class="acc-dim">—</span>'),
   ]);
 
   return `
@@ -1377,7 +1378,7 @@ async function renderAccContact(id) {
 
       <div class="acc-stats">
         ${accStat('Open balance', accMoney(stats.outstanding), isCustomer ? 'Owed to you' : 'You owe', Number(stats.outstanding) > 0 ? 'acc-neg' : 'acc-pos')}
-        ${accStat(isCustomer ? 'Total billed' : 'Total spent', accMoney(stats.total), 'All time')}
+        ${accStat(isCustomer ? 'Total billed' : 'Total spent', accMoney(stats.total), 'All time, incl. direct payments')}
         ${accStat('Total paid', accMoney(stats.paid), 'All time', 'acc-pos')}
       </div>
 

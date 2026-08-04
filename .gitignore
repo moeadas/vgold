@@ -56,3 +56,8 @@ migration/sql/*.sql
 
 # Task file attachments — runtime user data, never commit
 uploads/
+
+# Bank statements — real financial PII. NEVER commit or deploy.
+Bank Statements/
+bank statements/
+*.statement.pdf

@@ -789,7 +789,7 @@ function accJournalList() {
       <div style="border-bottom:1px solid var(--border)">
         <div class="acc-row acc-row-link" style="grid-template-columns:110px minmax(0,2fr) 110px 130px 130px 110px" onclick="accToggleEntry(${e.id})">
           <div class="acc-mono">${esc(e.number)}</div>
-          <div class="acc-truncate">${esc(e.memo)}</div>
+          <div class="acc-truncate" title="${esc(e.memo)}">${esc(e.memo)}</div>
           <div>${accDateShort(e.entry_date)}</div>
           <div class="acc-num">${accMoney(e.total_debit)}</div>
           <div class="acc-num">${accMoney(e.total_credit)}</div>
@@ -800,8 +800,8 @@ function accJournalList() {
             [{ label: 'Account', width: 'minmax(0,2fr)' }, { label: 'Description', width: 'minmax(0,1.4fr)' },
              { label: 'Debit', width: '130px', align: 'right' }, { label: 'Credit', width: '130px', align: 'right' }],
             (e.lines || []).map(l => [
-              `<span class="acc-mono">${esc(l.code || '—')}</span> ${esc(l.account_name || 'Unknown')}`,
-              `<span class="acc-sub acc-truncate">${esc(l.description || '')}</span>`,
+              `<div class="acc-truncate" title="${esc((l.code || '') + ' ' + (l.account_name || 'Unknown'))}"><span class="acc-mono">${esc(l.code || '—')}</span> ${esc(l.account_name || 'Unknown')}</div>`,
+              `<div class="acc-sub acc-truncate" title="${esc(l.description || '')}">${esc(l.description || '')}</div>`,
               Number(l.debit) > 0 ? accMoney(l.debit) : '<span class="acc-dim">—</span>',
               Number(l.credit) > 0 ? accMoney(l.credit) : '<span class="acc-dim">—</span>',
             ]), 'No lines.')}
