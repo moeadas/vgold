@@ -281,9 +281,9 @@ class MessageController {
         // is still an ordinary message in this project's thread (that is what
         // "syncs with the main thread" means here) — parent_id only records
         // which message it answers so both views can show the quote.
-        ProjectController::ensureChatThreadColumn();
+        $threading = ProjectController::chatThreadingAvailable();
         $parentId = null;
-        if (!empty($data['parent_id'])) {
+        if ($threading && !empty($data['parent_id'])) {
             $parent = DB::fetch("SELECT id, project_id FROM project_chat WHERE id = ?", [(int)$data['parent_id']]);
             // Only accept a parent from this same project — otherwise a reply
             // could quote a message from a project the sender can't see.

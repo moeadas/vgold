@@ -1000,17 +1000,34 @@ class ProjectController {
      * can show the quote. Added lazily (schema-on-demand), so there is no
      * migration step on deploy.
      */
+    private static $chatThreading = null;
+
     public static function ensureChatThreadColumn() {
-        static $checked = false;
-        if ($checked) return;
-        $checked = true;
+        if (self::$chatThreading !== null) return self::$chatThreading;
+        self::$chatThreading = false;
         try {
             $col = DB::fetch("SHOW COLUMNS FROM `project_chat` LIKE 'parent_id'");
             if (!$col) {
                 DB::query("ALTER TABLE `project_chat` ADD COLUMN `parent_id` INT NULL DEFAULT NULL");
                 DB::query("ALTER TABLE `project_chat` ADD INDEX `pc_parent` (`parent_id`)");
+                $col = DB::fetch("SHOW COLUMNS FROM `project_chat` LIKE 'parent_id'");
             }
-        } catch (\Exception $e) {}
+            self::$chatThreading = (bool)$col;
+        } catch (\Exception $e) {
+            self::$chatThreading = false;
+        }
+        return self::$chatThreading;
+    }
+
+    /**
+     * True only when the column is really there. If the ALTER above ever fails
+     * (no ALTER privilege on some install), threading quietly turns itself off
+     * rather than taking ordinary project chat down with it — writing to a
+     * column that doesn't exist would make every message send fail, not just
+     * replies.
+     */
+    public static function chatThreadingAvailable() {
+        return self::ensureChatThreadColumn();
     }
 
     /**
@@ -1063,7 +1080,7 @@ class ProjectController {
         if (!$ids) { jsonResponse(['comments' => [], 'unread' => 0]); return; }
         $inClause = implode(',', $ids);
 
-        self::ensureChatThreadColumn();
+        $threading = self::chatThreadingAvailable();
 
         $readRow = DB::fetch("SELECT last_read_at FROM comment_feed_reads WHERE user_id = ?", [$userId]);
         $lastRead = $readRow['last_read_at'] ?? null;
@@ -1084,7 +1101,7 @@ class ProjectController {
         // can say "2 replies" instead of hiding the conversation.
         $replyCounts = [];
         $idsOnPage = array_map(fn($r) => (int)$r['id'], $rows);
-        if ($idsOnPage) {
+        if ($threading && $idsOnPage) {
             $idIn = implode(',', $idsOnPage);
             foreach (DB::fetchAll("SELECT parent_id, COUNT(*) c FROM project_chat WHERE parent_id IN ($idIn) GROUP BY parent_id") as $rc) {
                 $replyCounts[(int)$rc['parent_id']] = (int)$rc['c'];
