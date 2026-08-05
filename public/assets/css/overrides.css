@@ -668,3 +668,79 @@ span.acc-truncate { display: inline-block; vertical-align: bottom; }
 .mailconn-sub  { color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.45; }
 .mailconn-btn  { margin-left: auto; flex: none; padding: 6px 12px; font-size: 12px;
                  text-decoration: none; white-space: nowrap; }
+
+
+/* ============================================================
+   Comments feed — reply in place (Messages → Quick access → Comments)
+   Each card is a message from some project's chat thread. The reply box
+   posts back into that same thread, so answering several comments no
+   longer means opening several projects. Grid/flex children get
+   min-width:0 so a long unbroken URL in a comment can't widen the column.
+   ------------------------------------------------------------ */
+.cmt-card {
+  border: 1px solid var(--border); border-radius: 14px; padding: 16px;
+  background: var(--surface); transition: border-color .15s; cursor: pointer;
+  min-width: 0;
+}
+.cmt-card:hover { border-color: var(--gold); }
+.cmt-card.unread { border-color: var(--gold); }
+
+.cmt-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.cmt-who  { font-size: 14px; font-weight: 700; }
+.cmt-you  { font-weight: 400; color: var(--muted); font-size: 12px; }
+.cmt-meta { font-size: 12px; color: var(--muted); }
+.cmt-new  {
+  font-size: 10px; font-weight: 700; color: var(--gold);
+  background: var(--gold-bg); border-radius: 99px; padding: 2px 8px; flex: none;
+}
+.cmt-body {
+  font-size: 13.5px; line-height: 1.5; color: var(--text);
+  background: var(--gold-bg); border-radius: 10px; padding: 12px 14px;
+  border-left: 3px solid var(--gold); min-width: 0; overflow-wrap: anywhere;
+}
+
+.cmt-actions {
+  display: flex; align-items: center; gap: 12px; margin-top: 10px;
+  flex-wrap: wrap; cursor: default;
+}
+.cmt-reply-btn, .cmt-open-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: none; padding: 2px 0; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: var(--gold); font-family: inherit;
+}
+.cmt-reply-btn:hover, .cmt-open-btn:hover { text-decoration: underline; }
+.cmt-open-btn { margin-left: auto; }
+.cmt-count { font-size: 12px; color: var(--muted); }
+
+.cmt-replies:empty { display: none; }
+.cmt-reply-sent {
+  display: flex; gap: 10px; margin-top: 10px; padding-left: 14px;
+  border-left: 2px solid var(--border); cursor: default;
+}
+.cmt-reply-text { font-size: 13px; line-height: 1.5; color: var(--text); margin-top: 2px;
+  min-width: 0; overflow-wrap: anywhere; }
+
+.cmt-reply-box { margin-top: 12px; cursor: default; }
+.cmt-reply-input {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 62px;
+  padding: 10px 12px; border: 1px solid var(--border-2); border-radius: 10px;
+  background: var(--bg); color: var(--text);
+  font-family: inherit; font-size: 13.5px; line-height: 1.5;
+}
+.cmt-reply-input:focus { outline: none; border-color: var(--gold); }
+.cmt-reply-foot {
+  display: flex; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap;
+}
+.cmt-reply-hint { font-size: 12px; color: var(--muted); flex: 1; min-width: 0; }
+.cmt-reply-send { flex: none; padding: 7px 14px; font-size: 13px; }
+
+/* The quoted message a reply is answering. Shown identically in the project
+   chat thread and in the Comments feed, so a reply reads the same in both. */
+.msg-quote {
+  display: block; margin-bottom: 7px; padding: 6px 10px;
+  border-left: 3px solid var(--gold); border-radius: 6px;
+  background: rgba(0, 0, 0, .04); font-size: 12px; line-height: 1.45;
+  min-width: 0; overflow-wrap: anywhere;
+}
+.msg-quote-who  { display: block; font-weight: 700; color: var(--gold-dark, var(--gold)); }
+.msg-quote-text { display: block; color: var(--muted); }

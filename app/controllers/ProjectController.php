@@ -168,10 +168,12 @@ class ProjectController {
         }, $subs);
         
         // Fetch category-level chat
+        self::ensureChatThreadColumn();
         $chat = DB::fetchAll(
             "SELECT pc.*, u.name, u.avatar_color FROM project_chat pc JOIN users u ON pc.user_id = u.id WHERE pc.project_id = ? ORDER BY pc.created_at",
             [$id]
         );
+        $parentMap = self::chatParentMap($chat);
         $chatFormatted = array_map(fn($m) => [
             'id' => (int)$m['id'],
             'who' => $m['name'],
@@ -180,6 +182,8 @@ class ProjectController {
             'text' => $m['body'],
             'time' => timeAgo($m['created_at']),
             'me' => $m['user_id'] == Auth::userId(),
+            'reply_to' => !empty($m['parent_id']) && isset($parentMap[(int)$m['parent_id']])
+                ? $parentMap[(int)$m['parent_id']] : null,
         ], $chat);
         
         jsonResponse([
@@ -250,10 +254,12 @@ class ProjectController {
         // Folders for this project (B4b)
         $folders = self::formatFolders($id);
         
+        self::ensureChatThreadColumn();
         $chat = DB::fetchAll(
             "SELECT pc.*, u.name, u.avatar_color FROM project_chat pc JOIN users u ON pc.user_id = u.id WHERE pc.project_id = ? ORDER BY pc.created_at",
             [$id]
         );
+        $parentMap = self::chatParentMap($chat);
         $chatFormatted = array_map(fn($m) => [
             'id' => (int)$m['id'],
             'who' => $m['name'],
@@ -262,6 +268,8 @@ class ProjectController {
             'text' => $m['body'],
             'time' => (new DateTime($m['created_at']))->format('g:i A'),
             'me' => $m['user_id'] == Auth::userId(),
+            'reply_to' => !empty($m['parent_id']) && isset($parentMap[(int)$m['parent_id']])
+                ? $parentMap[(int)$m['parent_id']] : null,
         ], $chat);
         
         // Get parent name for the back-link (immediate parent).
@@ -985,6 +993,51 @@ class ProjectController {
         jsonResponse(['unread' => $result]);
     }
     
+    /**
+     * Threading for project chat. A reply posted from the Comments feed is a
+     * normal project_chat row — that is what makes it show up in the project's
+     * own thread — it just remembers which message it answered so both places
+     * can show the quote. Added lazily (schema-on-demand), so there is no
+     * migration step on deploy.
+     */
+    public static function ensureChatThreadColumn() {
+        static $checked = false;
+        if ($checked) return;
+        $checked = true;
+        try {
+            $col = DB::fetch("SHOW COLUMNS FROM `project_chat` LIKE 'parent_id'");
+            if (!$col) {
+                DB::query("ALTER TABLE `project_chat` ADD COLUMN `parent_id` INT NULL DEFAULT NULL");
+                DB::query("ALTER TABLE `project_chat` ADD INDEX `pc_parent` (`parent_id`)");
+            }
+        } catch (\Exception $e) {}
+    }
+
+    /**
+     * Attach reply context to a set of project_chat rows: for every row with a
+     * parent_id, look up who wrote the parent and what it said. One extra query
+     * for the whole page rather than one per message.
+     *
+     * @return array map of parent id => ['who' => ..., 'text' => ...]
+     */
+    public static function chatParentMap(array $rows) {
+        $parentIds = [];
+        foreach ($rows as $r) {
+            if (!empty($r['parent_id'])) $parentIds[(int)$r['parent_id']] = true;
+        }
+        if (!$parentIds) return [];
+        $in = implode(',', array_map('intval', array_keys($parentIds)));
+        $parents = DB::fetchAll(
+            "SELECT pc.id, pc.body, u.name FROM project_chat pc
+             JOIN users u ON pc.user_id = u.id WHERE pc.id IN ($in)"
+        );
+        $map = [];
+        foreach ($parents as $p) {
+            $map[(int)$p['id']] = ['who' => $p['name'], 'text' => $p['body']];
+        }
+        return $map;
+    }
+
     // ===== COMMENTS FEED (B7) =====
     // GET /api/comments-feed — all project-chat comments across projects the user
     // is part of, newest first, with unread flag + total unread count.
@@ -1010,6 +1063,8 @@ class ProjectController {
         if (!$ids) { jsonResponse(['comments' => [], 'unread' => 0]); return; }
         $inClause = implode(',', $ids);
 
+        self::ensureChatThreadColumn();
+
         $readRow = DB::fetch("SELECT last_read_at FROM comment_feed_reads WHERE user_id = ?", [$userId]);
         $lastRead = $readRow['last_read_at'] ?? null;
 
@@ -1023,10 +1078,24 @@ class ProjectController {
             []
         );
 
+        $parentMap = self::chatParentMap($rows);
+
+        // How many replies each of these messages already has, so the feed card
+        // can say "2 replies" instead of hiding the conversation.
+        $replyCounts = [];
+        $idsOnPage = array_map(fn($r) => (int)$r['id'], $rows);
+        if ($idsOnPage) {
+            $idIn = implode(',', $idsOnPage);
+            foreach (DB::fetchAll("SELECT parent_id, COUNT(*) c FROM project_chat WHERE parent_id IN ($idIn) GROUP BY parent_id") as $rc) {
+                $replyCounts[(int)$rc['parent_id']] = (int)$rc['c'];
+            }
+        }
+
         $unread = 0;
-        $comments = array_map(function($c) use ($userId, $lastRead, &$unread) {
+        $comments = array_map(function($c) use ($userId, $lastRead, &$unread, $parentMap, $replyCounts) {
             $isUnread = ($c['user_id'] != $userId) && (!$lastRead || $c['created_at'] > $lastRead);
             if ($isUnread) $unread++;
+            $pid = !empty($c['parent_id']) ? (int)$c['parent_id'] : null;
             return [
                 'id' => (int)$c['id'],
                 'project_id' => (int)$c['project_id'],
@@ -1038,6 +1107,9 @@ class ProjectController {
                 'time_ago' => timeAgo($c['created_at']),
                 'me' => $c['user_id'] == $userId,
                 'unread' => $isUnread,
+                'parent_id' => $pid,
+                'reply_to' => $pid && isset($parentMap[$pid]) ? $parentMap[$pid] : null,
+                'reply_count' => $replyCounts[(int)$c['id']] ?? 0,
             ];
         }, $rows);
 
@@ -1194,8 +1266,28 @@ class ProjectController {
         $tasks = DB::fetch("SELECT COUNT(*) as c, COALESCE(UNIX_TIMESTAMP(MAX(updated_at)),0) as m FROM tasks WHERE project_id IN ($inClause)");
         $chat = DB::fetch("SELECT COUNT(*) as c, COALESCE(UNIX_TIMESTAMP(MAX(created_at)),0) as m FROM project_chat WHERE project_id IN ($inClause)");
 
+        // My Tasks is NOT scoped to project membership — TaskController::myTasks()
+        // returns everything assigned to you anywhere in the workspace. Without
+        // this fourth component, deleting (or re-assigning) a task in a project
+        // the assignee isn't a member of left the fingerprint unchanged, so their
+        // My Tasks kept showing the task until they manually reloaded. Counting
+        // the assignment rows as well catches an unassign, which touches
+        // task_assignees without necessarily bumping tasks.updated_at.
+        $mine = DB::fetch(
+            "SELECT COUNT(DISTINCT t.id) as c, COALESCE(UNIX_TIMESTAMP(MAX(t.updated_at)),0) as m,
+                    COUNT(ta.user_id) as a
+             FROM tasks t
+             JOIN projects p ON t.project_id = p.id
+             LEFT JOIN task_assignees ta ON ta.task_id = t.id AND ta.user_id = ?
+             WHERE p.workspace_id = ? AND (ta.user_id = ? OR t.assigned_to = ?)",
+            [$userId, $wsId, $userId, $userId]
+        );
+
         // A single fingerprint the client can compare against its last-known value.
-        $version = ($proj['c'] . ':' . $proj['m']) . '|' . ($tasks['c'] . ':' . $tasks['m']) . '|' . ($chat['c'] . ':' . $chat['m']);
+        $version = ($proj['c'] . ':' . $proj['m'])
+            . '|' . ($tasks['c'] . ':' . $tasks['m'])
+            . '|' . ($chat['c'] . ':' . $chat['m'])
+            . '|' . ($mine['c'] . ':' . $mine['m'] . ':' . $mine['a']);
         jsonResponse(['version' => $version]);
     }
 

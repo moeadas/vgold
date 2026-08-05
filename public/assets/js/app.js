@@ -598,42 +598,69 @@ document.addEventListener('DOMContentLoaded', () => {
 // a manual refresh.
 let _lastStateVersion = null;
 let _realtimeTimer = null;
+// Set when a refresh arrived while the user was mid-typing. We must not simply
+// drop it: _lastStateVersion has already advanced, so the change would never be
+// applied again and a deleted task would sit on screen until a manual reload.
+let _realtimeDeferred = false;
+async function realtimeTick() {
+  if (!State.user || document.hidden) return;
+  try {
+    const res = await API.stateVersion();
+    const v = res.version;
+    if (_lastStateVersion === null) { _lastStateVersion = v; return; }
+    if (v !== _lastStateVersion) {
+      _lastStateVersion = v;
+      applyRealtimeRefresh();
+    } else if (_realtimeDeferred) {
+      applyRealtimeRefresh();
+    }
+  } catch(e) {}
+}
 function startRealtimePolling() {
   if (_realtimeTimer) return;
-  const tick = async () => {
-    if (!State.user || document.hidden) return;
-    try {
-      const res = await API.stateVersion();
-      const v = res.version;
-      if (_lastStateVersion === null) { _lastStateVersion = v; return; }
-      if (v !== _lastStateVersion) {
-        _lastStateVersion = v;
-        applyRealtimeRefresh();
-      }
-    } catch(e) {}
-  };
-  _realtimeTimer = setInterval(tick, 12000);
-  // Refresh immediately when the tab regains focus.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
-  tick();
+  _realtimeTimer = setInterval(realtimeTick, 12000);
+  // Refresh immediately when the tab regains focus. In the installed PWA the
+  // interval is frozen while the app is backgrounded, so these three events are
+  // what actually make a resumed app show current data instead of the snapshot
+  // it was suspended with.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) realtimeTick(); });
+  window.addEventListener('focus', realtimeTick);
+  window.addEventListener('pageshow', realtimeTick);
+  realtimeTick();
 }
 
 // Invalidate caches for data that peers can change, then re-render the active view.
 function applyRealtimeRefresh() {
-  // Editing text in a field? Don't yank the DOM out from under the user.
+  // Editing text in a field? Don't yank the DOM out from under the user — but
+  // remember that we owe them a refresh and apply it on the next tick.
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) {
+    _realtimeDeferred = true;
+    return;
+  }
+  _realtimeDeferred = false;
 
   State.projects = null;
   State.unreadCounts = null;
+  // Task caches. These are what made a task deleted by someone else linger on
+  // the assignee's My Tasks: the poll re-rendered, but every task view reads
+  // from its own cache and none of them were being invalidated here.
+  State.myTasksData = null;
+  State.meetingData = null;
+  State.dayPlan = undefined;
+  if (typeof invalidateTaskOverviewCache === 'function') invalidateTaskOverviewCache();
   const s = State.screen;
   if (s === 'project') State.activeProject = null;
   if (s === 'category') State.activeCategory = null;
   if (s === 'priorities') State.agendaItems = null;
+  if (s === 'task' && typeof invalidateTaskPageCache === 'function') invalidateTaskPageCache();
+  // The Comments feed is other people's project-chat posts, so it goes stale for
+  // exactly the same reason.
+  if (s === 'messages' && State.viewComments) State.commentsFeed = null;
   // Keep the Messages nav badge and the per-module counts fresh too.
   loadMsgUnread();
   loadModuleCounts();
-  if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities'].includes(s)) {
+  if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities', 'task', 'messages'].includes(s)) {
     render();
   }
 }
@@ -831,6 +858,9 @@ async function loadMsgUnread() {
       State.commentsFeed = cf.comments || [];
       State.commentsUnread = cf.unread || 0;
       comments = cf.unread || 0;
+      // Server data now carries the replies we echoed locally — drop the echoes
+      // so they aren't counted (or shown) twice.
+      if (typeof resetCommentReplyEchoes === 'function') resetCommentReplyEchoes();
     } catch(e) {}
     // Mentions (unread notifications of type mention)
     try {

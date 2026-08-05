@@ -227,12 +227,19 @@ class NotificationController {
     }
     
     // Helper: notify all members of a project except the actor
-    public static function notifyProjectMembers($projectId, $excludeUserId, $type, $title, $body, $linkType = null, $linkId = null) {
+    /**
+     * $alsoExcludeUserId lets a caller take one more person out of the broadcast
+     * because it is sending them something more specific — e.g. the author of a
+     * message that was just replied to gets "X replied to you" instead of the
+     * generic "X posted in <project>", rather than both.
+     */
+    public static function notifyProjectMembers($projectId, $excludeUserId, $type, $title, $body, $linkType = null, $linkId = null, $alsoExcludeUserId = null) {
         $members = DB::fetchAll(
             "SELECT user_id FROM project_members WHERE project_id = ? AND user_id != ?",
             [$projectId, $excludeUserId]
         );
         foreach ($members as $m) {
+            if ($alsoExcludeUserId !== null && (int)$m['user_id'] === (int)$alsoExcludeUserId) continue;
             self::create($m['user_id'], $type, $title, $body, $linkType, $linkId, $projectId);
         }
     }

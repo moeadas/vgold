@@ -1,13 +1,25 @@
 // VGo — Task Page (full-page task view, replaces drawer)
 let _taskPageData = null; // cached task page data
 
+// Called by the realtime poll in app.js so an open task page picks up edits —
+// and notices when the task has been deleted out from under it.
+function invalidateTaskPageCache() {
+  _taskPageData = null;
+}
+
 async function renderTaskPage(taskId) {
   if (!_taskPageData || _taskPageData.id !== taskId) {
     try {
       const res = await API.task(taskId);
       _taskPageData = res.task;
     } catch (e) {
-      return `<div class="fade-in"><p style="color:var(--barn)">Task not found.</p><button class="back-link" onclick="goBackFromTask()">${I.arrowL}Back</button></div>`;
+      // The task is gone (usually deleted by someone else while this page was
+      // open). Don't strand the user on a dead page — bounce them back. The
+      // timeout keeps us out of the render() we're currently inside.
+      if (State.screen === 'task') {
+        setTimeout(() => { toast('That task was deleted', 'error'); goBackFromTask(); }, 0);
+      }
+      return `<div class="fade-in"><p style="color:var(--barn)">This task no longer exists — it may have been deleted.</p><button class="back-link" onclick="goBackFromTask()">${I.arrowL}Back</button></div>`;
     }
   }
 

@@ -79,7 +79,10 @@ const API = {
     return API.uploadReq('/messages/' + channelId, fd);
   },
   mentions: (q) => API.req('/messages/mentions?q=' + encodeURIComponent(q)),
-  sendProjectChat: (projectId, body) => API.req('/projects/' + projectId + '/chat', { method: 'POST', body: JSON.stringify({ body }) }),
+  // parentId is optional — set it to reply to a specific message. The reply is
+  // still posted into the project's own thread, so replying from the Comments
+  // feed and replying from the project page produce the same message.
+  sendProjectChat: (projectId, body, parentId) => API.req('/projects/' + projectId + '/chat', { method: 'POST', body: JSON.stringify({ body, parent_id: parentId || null }) }),
   unreadChatCounts: () => API.req('/projects/unread-counts'),
   markChatRead: (projectId) => API.req('/projects/' + projectId + '/chat/read', { method: 'POST' }),
   // B4a — the previous implementation used `.then(r => r.json())` without checking

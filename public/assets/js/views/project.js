@@ -104,7 +104,7 @@ async function renderProject() {
       <div class="avatar avatar-sm" style="background:${m.bg}">${m.initials}</div>
       <div style="min-width:0">
         <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:3px"><span style="font-size:12.5px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">${esc(m.time)}</span></div>
-        <div class="msg-bubble">${linkify(m.text)}</div>
+        <div class="msg-bubble">${chatQuoteHTML(m.reply_to)}${linkify(m.text)}</div>
       </div>
     </div>
   `).join('');
@@ -299,6 +299,18 @@ async function toggleTask(id, el) {
   } catch(e) { toast(e.message, 'error'); }
 }
 
+/**
+ * The quoted "in reply to" strip that sits above a reply's own text. Shared by
+ * the project thread and the Messages → Comments feed so a reply reads the same
+ * wherever you meet it.
+ */
+function chatQuoteHTML(replyTo) {
+  if (!replyTo || !replyTo.who) return '';
+  const t = String(replyTo.text || '');
+  const short = t.length > 160 ? t.slice(0, 160) + '…' : t;
+  return `<div class="msg-quote"><span class="msg-quote-who">${esc(replyTo.who)}</span><span class="msg-quote-text">${esc(short)}</span></div>`;
+}
+
 async function sendProjChat(pid) {
   const input = document.getElementById('proj-chat-input');
   const text = input.value.trim();
@@ -308,7 +320,7 @@ async function sendProjChat(pid) {
     const res = await API.sendProjectChat(pid, text);
     const m = res.message;
     const chat = document.getElementById('proj-chat');
-    chat.innerHTML += `<div class="chat-msg me"><div class="avatar avatar-sm" style="background:${m.bg}">${m.initials}</div><div><div style="display:flex;align-items:baseline;gap:7px;margin-bottom:3px"><span style="font-size:12.5px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">now</span></div><div class="msg-bubble">${linkify(m.text)}</div></div></div>`;
+    chat.innerHTML += `<div class="chat-msg me"><div class="avatar avatar-sm" style="background:${m.bg}">${m.initials}</div><div><div style="display:flex;align-items:baseline;gap:7px;margin-bottom:3px"><span style="font-size:12.5px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">now</span></div><div class="msg-bubble">${chatQuoteHTML(m.reply_to)}${linkify(m.text)}</div></div></div>`;
     chat.scrollTop = chat.scrollHeight;
   } catch(e) { toast(e.message, 'error'); }
 }

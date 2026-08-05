@@ -157,6 +157,13 @@ function filterTaskOverviewByUser(userId) {
   render();
 }
 
+// Called by the realtime poll in app.js. _allTasksData is module-scoped, so the
+// poll can't clear it directly — without this, Company Tasks kept showing tasks
+// other people had already deleted.
+function invalidateTaskOverviewCache() {
+  _allTasksData = null;
+}
+
 function setTaskOverviewSubView(view) {
   State.taskOverviewSubView = view;
   render();

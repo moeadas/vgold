@@ -57,6 +57,7 @@ async function renderMessages() {
       State.commentsFeed = cf.comments || [];
       State.commentsUnread = cf.unread || 0;
     } catch(e) { State.commentsFeed = []; State.commentsUnread = 0; }
+    resetCommentReplyEchoes();
   }
   const commentsCount = State.commentsUnread || 0;
 
@@ -113,20 +114,8 @@ async function renderMessages() {
     if (!State.commentsFeed || !State.commentsFeed.length) {
       convHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:48px;margin-bottom:12px">💬</div><div style="font-size:15px;font-weight:600;color:var(--text)">No comments yet</div><div style="font-size:13px;margin-top:4px">Comments posted on projects you belong to will appear here.</div></div>';
     } else {
-      convHTML = '<div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">' + State.commentsFeed.map(c => `
-        <div style="border:1px solid ${c.unread ? 'var(--gold)' : 'var(--border)'};border-radius:14px;padding:16px;background:var(--surface);transition:border-color .15s;cursor:pointer" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='${c.unread ? 'var(--gold)' : 'var(--border)'}'" onclick="nav('project');goProject(${c.project_id})">
-          <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
-            <div class="avatar avatar-md" style="background:${c.bg || '#9A8A78'};font-size:13px;flex:none">${esc(c.initials || '??')}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-size:14px;font-weight:700">${esc(c.who)}${c.me ? ' <span style=\"font-weight:400;color:var(--muted);font-size:12px\">(you)</span>' : ''}</div>
-              <div style="font-size:12px;color:var(--muted)">${esc(c.time_ago || '')} · in ${esc(c.project_name || 'a project')}</div>
-            </div>
-            ${c.unread ? '<span style="font-size:10px;font-weight:700;color:var(--gold);background:var(--gold-bg);border-radius:99px;padding:2px 8px;flex:none">NEW</span>' : ''}
-          </div>
-          <div style="font-size:13.5px;line-height:1.5;color:var(--text);background:var(--gold-bg);border-radius:10px;padding:12px 14px;border-left:3px solid var(--gold)">${linkify(esc(c.text || ''))}</div>
-          <div style="margin-top:10px;font-size:12px;color:var(--gold);font-weight:600">View project →</div>
-        </div>
-      `).join('') + '</div>';
+      convHTML = '<div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">'
+        + State.commentsFeed.map(commentCardHTML).join('') + '</div>';
     }
   } else if (State.viewMentions) {
     convTitle = 'Mentions';
@@ -231,6 +220,173 @@ async function renderMessages() {
 function toggleMobileConvList() {
   const list = document.querySelector('.conv-list');
   if (list) list.classList.toggle('conv-list-mobile-open');
+}
+
+// ===== COMMENTS FEED — reply in place =====
+//
+// A comment in this feed is a message in some project's chat thread. Replying
+// used to mean navigating into that project, which made answering five comments
+// five round trips. The composer below posts straight back into the same thread
+// with parent_id set, so the reply lands in the project conversation exactly as
+// if it had been typed there — you just never had to leave this page.
+//
+// Both maps survive re-renders (the 12s realtime poll re-renders this view), so
+// an open box and a half-typed reply are not thrown away underneath the user.
+let _cmtReplyOpen = new Set();
+let _cmtDrafts = {};
+
+/** Replies the user has just sent, keyed by the comment they answered. */
+let _cmtSentReplies = {};
+
+const CMT_REPLY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+
+// Inline handlers run in global scope, so go through a function rather than
+// assigning into the module-level map from an attribute.
+function setCommentDraft(id, value) { _cmtDrafts[id] = value; }
+
+// The server's reply_count already includes anything we echoed locally once the
+// feed has been refetched, so the local echo must be dropped at the same moment
+// or every reply gets counted twice.
+function resetCommentReplyEchoes() { _cmtSentReplies = {}; }
+
+function commentCardHTML(c) {
+  const quote = typeof chatQuoteHTML === 'function' ? chatQuoteHTML(c.reply_to) : '';
+  const open = _cmtReplyOpen.has(c.id);
+  const draft = _cmtDrafts[c.id] || '';
+  const sent = _cmtSentReplies[c.id] || [];
+  const replyCount = (Number(c.reply_count) || 0) + sent.length;
+
+  return `
+    <div class="cmt-card ${c.unread ? 'unread' : ''}" id="cmt-card-${c.id}" onclick="commentCardClick(event, ${c.project_id})">
+      <div class="cmt-head">
+        <div class="avatar avatar-md" style="background:${c.bg || '#9A8A78'};font-size:13px;flex:none">${esc(c.initials || '??')}</div>
+        <div style="flex:1;min-width:0">
+          <div class="cmt-who">${esc(c.who)}${c.me ? ' <span class="cmt-you">(you)</span>' : ''}</div>
+          <div class="cmt-meta">${esc(c.time_ago || '')} · in ${esc(c.project_name || 'a project')}</div>
+        </div>
+        ${c.unread ? '<span class="cmt-new">NEW</span>' : ''}
+      </div>
+      <div class="cmt-body">${quote}${linkify(c.text || '')}</div>
+      <div class="cmt-replies" id="cmt-replies-${c.id}">${sent.map(cmtSentReplyHTML).join('')}</div>
+      <div class="cmt-actions">
+        <button class="cmt-reply-btn" onclick="toggleCommentReply(${c.id})">${CMT_REPLY_ICON}<span>Reply</span></button>
+        ${replyCount ? `<span class="cmt-count">${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}</span>` : ''}
+        <button class="cmt-open-btn" onclick="nav('project');goProject(${c.project_id})">View project →</button>
+      </div>
+      <div class="cmt-reply-box" id="cmt-reply-${c.id}" style="${open ? '' : 'display:none'}">
+        <textarea class="cmt-reply-input" id="cmt-reply-input-${c.id}" rows="2"
+          placeholder="Reply to ${esc(c.who)}… (Enter to send, Shift+Enter for a new line)"
+          oninput="setCommentDraft(${c.id}, this.value)"
+          onkeydown="onCommentReplyKey(event, ${c.id}, ${c.project_id})">${esc(draft)}</textarea>
+        <div class="cmt-reply-foot">
+          <span class="cmt-reply-hint">Posts to the ${esc(c.project_name || 'project')} thread</span>
+          <button class="btn-primary cmt-reply-send" onclick="sendCommentReply(${c.id}, ${c.project_id})">Send reply</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function cmtSentReplyHTML(r) {
+  return `<div class="cmt-reply-sent">
+      <div class="avatar avatar-sm" style="background:${r.bg || '#9A8A78'};flex:none">${esc(r.initials || '??')}</div>
+      <div style="min-width:0;flex:1">
+        <div class="cmt-meta"><strong>${esc(r.who)}</strong> · ${esc(r.time_ago || 'just now')}</div>
+        <div class="cmt-reply-text">${linkify(r.text || '')}</div>
+      </div>
+    </div>`;
+}
+
+// The card is clickable as a whole, but the reply area inside it must not open
+// the project every time someone clicks into the textarea.
+function commentCardClick(e, projectId) {
+  if (e.target.closest('.cmt-actions, .cmt-reply-box, .cmt-replies')) return;
+  nav('project');
+  goProject(projectId);
+}
+
+function toggleCommentReply(id) {
+  const box = document.getElementById('cmt-reply-' + id);
+  if (!box) return;
+  if (_cmtReplyOpen.has(id)) {
+    _cmtReplyOpen.delete(id);
+    box.style.display = 'none';
+  } else {
+    _cmtReplyOpen.add(id);
+    box.style.display = '';
+    const input = document.getElementById('cmt-reply-input-' + id);
+    if (input) { input.focus(); input.selectionStart = input.value.length; }
+  }
+}
+
+function onCommentReplyKey(e, id, projectId) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendCommentReply(id, projectId);
+  } else if (e.key === 'Escape') {
+    toggleCommentReply(id);
+  }
+}
+
+async function sendCommentReply(id, projectId) {
+  const input = document.getElementById('cmt-reply-input-' + id);
+  if (!input) return;
+  const text = input.value.trim();
+  if (!text) return;
+
+  const sendBtn = document.querySelector('#cmt-reply-' + id + ' .cmt-reply-send');
+  if (sendBtn) { sendBtn.disabled = true; sendBtn.textContent = 'Sending…'; }
+
+  try {
+    const res = await API.sendProjectChat(projectId, text, id);
+    const m = res.message || {};
+    const reply = {
+      id: m.id,
+      who: m.who || (State.user && State.user.name) || 'You',
+      initials: m.initials || '??',
+      bg: m.bg,
+      text: m.text || text,
+      time_ago: 'just now',
+    };
+    // Show it under the comment straight away…
+    _cmtSentReplies[id] = (_cmtSentReplies[id] || []).concat([reply]);
+    const list = document.getElementById('cmt-replies-' + id);
+    if (list) list.insertAdjacentHTML('beforeend', cmtSentReplyHTML(reply));
+
+    // …and put it in the feed itself, so it is still there after the next
+    // re-render without waiting for a refetch.
+    if (Array.isArray(State.commentsFeed) && m.id) {
+      const parent = State.commentsFeed.find(c => c.id === id);
+      State.commentsFeed.unshift({
+        id: m.id,
+        project_id: projectId,
+        project_name: parent ? parent.project_name : '',
+        who: reply.who,
+        initials: reply.initials,
+        bg: reply.bg,
+        text: reply.text,
+        time_ago: 'just now',
+        me: true,
+        unread: false,
+        parent_id: id,
+        reply_to: m.reply_to || (parent ? { who: parent.who, text: parent.text } : null),
+        reply_count: 0,
+      });
+    }
+
+    // Clear the box but leave it open — the whole point is replying to several
+    // messages in a row without leaving this screen.
+    input.value = '';
+    _cmtDrafts[id] = '';
+    input.focus();
+    toast('Reply posted to the project thread', 'success');
+    // The project page caches its own copy of the thread; drop it so the reply
+    // is there when the user opens the project.
+    if (State.activeProjectId === projectId) State.activeProject = null;
+  } catch (e) {
+    toast(e.message || 'Could not send reply', 'error');
+  } finally {
+    if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send reply'; }
+  }
 }
 
 function openMentions() {

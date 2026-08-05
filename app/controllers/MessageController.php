@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/NotificationController.php';
+require_once __DIR__ . '/ProjectController.php'; // chat threading helpers
 require_once __DIR__ . '/../lib/Mail.php';
 require_once __DIR__ . '/../lib/Authz.php';
 require_once __DIR__ . '/../lib/SharePointStore.php';
@@ -275,17 +276,52 @@ class MessageController {
         Authz::requireProjectAccess($projectId);
         $data = input();
         requireFields(['body'], $data);
-        
-        $id = DB::insert('project_chat', [
+
+        // Optional reply target. A reply sent from the Messages → Comments feed
+        // is still an ordinary message in this project's thread (that is what
+        // "syncs with the main thread" means here) — parent_id only records
+        // which message it answers so both views can show the quote.
+        ProjectController::ensureChatThreadColumn();
+        $parentId = null;
+        if (!empty($data['parent_id'])) {
+            $parent = DB::fetch("SELECT id, project_id FROM project_chat WHERE id = ?", [(int)$data['parent_id']]);
+            // Only accept a parent from this same project — otherwise a reply
+            // could quote a message from a project the sender can't see.
+            if ($parent && (int)$parent['project_id'] === (int)$projectId) {
+                $parentId = (int)$parent['id'];
+            }
+        }
+
+        $row = [
             'project_id' => $projectId,
             'user_id' => Auth::userId(),
             'body' => $data['body'],
-        ]);
-        
-        // Notify project members
+        ];
+        if ($parentId) $row['parent_id'] = $parentId;
+        $id = DB::insert('project_chat', $row);
+
         $actor = DB::fetch("SELECT name FROM users WHERE id = ?", [Auth::userId()]);
         $project = DB::fetch("SELECT name FROM projects WHERE id = ?", [$projectId]);
-        NotificationController::notifyProjectMembers($projectId, Auth::userId(), 'chat', $actor['name'] . ' posted in ' . $project['name'], $data['body'], 'project', $projectId);
+
+        // The person being replied to gets a notification that says so; everyone
+        // else on the project gets the usual "posted in" one.
+        $replyTargetId = null;
+        if ($parentId) {
+            $parentAuthor = DB::fetch("SELECT user_id FROM project_chat WHERE id = ?", [$parentId]);
+            if ($parentAuthor && (int)$parentAuthor['user_id'] !== (int)Auth::userId()) {
+                $replyTargetId = (int)$parentAuthor['user_id'];
+                try {
+                    NotificationController::create(
+                        $replyTargetId, 'chat',
+                        $actor['name'] . ' replied to you in ' . $project['name'],
+                        $data['body'], 'project', $projectId, $projectId
+                    );
+                } catch (\Throwable $e) { error_log('Reply notification failed: ' . $e->getMessage()); }
+            }
+        }
+
+        // Notify project members
+        NotificationController::notifyProjectMembers($projectId, Auth::userId(), 'chat', $actor['name'] . ' posted in ' . $project['name'], $data['body'], 'project', $projectId, $replyTargetId);
         
         // Create mention notifications + send email (non-blocking)
         try {
@@ -310,15 +346,20 @@ class MessageController {
             "SELECT pc.*, u.name, u.avatar_color FROM project_chat pc JOIN users u ON pc.user_id = u.id WHERE pc.id = ?",
             [$id]
         );
-        
+        $parentMap = ProjectController::chatParentMap([$msg]);
+
         jsonResponse(['ok' => true, 'message' => [
             'id' => (int)$msg['id'],
+            'project_id' => (int)$projectId,
             'who' => $msg['name'],
             'initials' => initials($msg['name']),
             'bg' => $msg['avatar_color'],
             'text' => $msg['body'],
             'time' => 'now',
+            'time_ago' => 'just now',
             'me' => true,
+            'parent_id' => $parentId,
+            'reply_to' => $parentId && isset($parentMap[$parentId]) ? $parentMap[$parentId] : null,
         ]]);
     }
     

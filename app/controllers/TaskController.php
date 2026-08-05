@@ -409,6 +409,23 @@ class TaskController {
         Authz::requireTaskAccess($id);
         CRMTaskBridge::unlinkTask((int)$id);
         DB::delete('tasks', 'id = ?', [$id]);
+
+        // Clean up everything that still points at the task. Without this the
+        // assignee keeps a Priorities card and a notification that both open a
+        // task that no longer exists, and the assignment rows keep the task
+        // "assigned" for any query that starts from task_assignees. Wrapped
+        // because these are best-effort tidying, not the point of the request.
+        try {
+            DB::delete('task_assignees', 'task_id = ?', [$id]);
+            DB::delete('task_comments', 'task_id = ?', [$id]);
+            // Keep the user's Priorities card (it has its own title) but drop the
+            // dead link, so clicking it no longer opens a task that isn't there.
+            DB::query("UPDATE meeting_agenda SET related_task_id = NULL WHERE related_task_id = ?", [$id]);
+            DB::delete('notifications', "link_type = 'task' AND link_id = ?", [$id]);
+        } catch (\Throwable $e) {
+            error_log('Task cleanup after delete failed: ' . $e->getMessage());
+        }
+
         jsonResponse(['ok' => true]);
     }
     
