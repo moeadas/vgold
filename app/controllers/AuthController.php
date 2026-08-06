@@ -178,8 +178,12 @@ class AuthController {
         $user = Auth::user();
         if (!$user) jsonError('Not logged in', 401);
         // Per-user default landing screen (B1). Falls back to My Tasks.
-        $settings = DB::fetch("SELECT default_screen FROM user_settings WHERE user_id = ?", [$user['id']]);
+        $settings = DB::fetch("SELECT default_screen, nav_order FROM user_settings WHERE user_id = ?", [$user['id']]);
         $defaultScreen = $settings['default_screen'] ?? 'mytasks';
+        // Per-user sidebar ordering, decoded here so the shell can render it on
+        // first paint without a second round trip.
+        $navOrder = json_decode((string)($settings['nav_order'] ?? ''), true);
+        if (!is_array($navOrder)) $navOrder = new stdClass();
         jsonResponse(['user' => [
             'id' => $user['id'],
             'name' => $user['name'],
@@ -193,6 +197,7 @@ class AuthController {
             'crm_user_id' => $user['crm_user_id'] ?? null,
             'crm_role' => $user['crm_role'] ?? null,
             'modules' => Authz::grantedModules((int)$user['id'], Auth::workspaceId()),
+            'nav_order' => $navOrder,
         ], 'csrf_token' => Csrf::token(),
         'app_version' => defined('APP_VERSION') ? APP_VERSION : null,
         'app_build' => defined('APP_BUILD') ? APP_BUILD : (defined('ASSET_VERSION') ? ASSET_VERSION : null),

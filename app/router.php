@@ -144,6 +144,7 @@ $routes = [
     'PUT settings/password' => ['SettingsController::updatePassword', true],
     'GET settings/notifications' => ['SettingsController::notifications', true],
     'PUT settings/notifications' => ['SettingsController::updateNotifications', true],
+    'PUT settings/nav-order' => ['SettingsController::updateNavOrder', true],
     'GET settings/api-keys' => ['SettingsController::apiKeys', true],
     'PUT settings/api-keys' => ['SettingsController::updateApiKey', true],
     'DELETE settings/api-keys' => ['SettingsController::deleteApiKey', true],

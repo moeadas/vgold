@@ -150,6 +150,43 @@ class SettingsController {
         ]]);
     }
     
+    /**
+     * Per-user sidebar ordering.
+     *
+     * Stores only the item ids the user actually dragged, per group. The client
+     * treats the stored list as a preference layered over the canonical menu, so
+     * items added by a later release still appear (at the end) and items the user
+     * loses access to simply drop out — no migration needed either way.
+     */
+    public static function updateNavOrder() {
+        $data = input();
+        $in = $data['order'] ?? null;
+        if (!is_array($in)) jsonError('Order must be an object of group => item ids');
+
+        $clean = [];
+        foreach (['workflow', 'crm', 'acc'] as $group) {
+            if (!isset($in[$group]) || !is_array($in[$group])) continue;
+            $ids = [];
+            foreach ($in[$group] as $id) {
+                if (!is_string($id)) continue;
+                // Nav ids are our own slugs; anything else is not ours to store.
+                if (!preg_match('/^[a-z0-9-]{1,40}$/', $id)) continue;
+                if (!in_array($id, $ids, true)) $ids[] = $id;
+                if (count($ids) >= 40) break;
+            }
+            $clean[$group] = $ids;
+        }
+
+        $json = $clean ? json_encode($clean) : null;
+        $existing = DB::fetch("SELECT id FROM user_settings WHERE user_id = ?", [Auth::userId()]);
+        if (!$existing) {
+            DB::insert('user_settings', ['user_id' => Auth::userId(), 'nav_order' => $json]);
+        } else {
+            DB::update('user_settings', ['nav_order' => $json], 'user_id = ?', [Auth::userId()]);
+        }
+        jsonResponse(['ok' => true, 'nav_order' => $clean ?: new stdClass()]);
+    }
+
     public static function updateNotifications() {
         $data = input();
         $allowed = ['notify_assigned', 'notify_mentions', 'notify_chat', 'notify_comments', 'notify_digest', 'week_start', 'default_screen', 'email_notify_pref'];

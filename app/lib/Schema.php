@@ -120,6 +120,8 @@ class Schema {
             self::addColumnIfMissing('task_files', 'external_url', "ALTER TABLE `task_files` ADD COLUMN `external_url` TEXT NULL");
             self::addColumnIfMissing('user_settings', 'default_screen', "ALTER TABLE `user_settings` ADD COLUMN `default_screen` VARCHAR(20) NOT NULL DEFAULT 'mytasks'");
             self::addColumnIfMissing('user_settings', 'notify_comments', "ALTER TABLE `user_settings` ADD COLUMN `notify_comments` TINYINT(1) DEFAULT 1");
+            // Per-user sidebar ordering. JSON: {"workflow":[ids],"crm":[ids],"acc":[ids]}.
+            self::addColumnIfMissing('user_settings', 'nav_order', "ALTER TABLE `user_settings` ADD COLUMN `nav_order` TEXT NULL");
 
             // Widen `files.storage` to include 'link' if the enum doesn't already allow it.
             self::ensureStorageEnum();

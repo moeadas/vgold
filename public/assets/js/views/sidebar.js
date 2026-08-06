@@ -49,6 +49,11 @@ function renderSidebar() {
     { module: 'acc.settings', id: 'acc-settings', label: 'Accounting settings', icon: A.settings || I.settings },
   ].filter(item => granted.has(item.module));
 
+  // Each user's own ordering, layered over the canonical menus above.
+  const ordered = { workflow: navApplyOrder(workflowItems, 'workflow'),
+                    crm: navApplyOrder(crmItems, 'crm'),
+                    acc: navApplyOrder(accItems, 'acc') };
+
   const workflowOpen = localStorage.getItem('vgold-nav-workflow') !== 'closed';
   const crmOpen = localStorage.getItem('vgold-nav-crm') !== 'closed';
   const accOpen = localStorage.getItem('vgold-nav-acc') !== 'closed';
@@ -88,7 +93,10 @@ function renderSidebar() {
       'crm-customer': 'crm-customers',
     };
     const activeId = parents[State.screen] || State.screen;
-    return `<button class="nav-btn ${activeId === n.id ? 'active' : ''}" onclick="nav('${n.id}')">${n.icon || I.grid}<span>${n.label}</span>${badge}</button>`;
+    return `<button class="nav-btn ${activeId === n.id ? 'active' : ''}" onclick="nav('${n.id}')"
+      data-nav-id="${n.id}" data-nav-group-item="${groupKey}"
+      aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+      title="${esc(n.label)} — drag the handle, or Alt+↑/↓, to reorder">${n.icon || I.grid}<span>${n.label}</span>${badge}<span class="nav-drag-handle" aria-hidden="true" title="Drag to reorder"><svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor"><circle cx="3.5" cy="3" r="1.3"/><circle cx="8.5" cy="3" r="1.3"/><circle cx="3.5" cy="7" r="1.3"/><circle cx="8.5" cy="7" r="1.3"/><circle cx="3.5" cy="11" r="1.3"/><circle cx="8.5" cy="11" r="1.3"/></svg></span></button>`;
   }).join('');
   
   return `
@@ -101,23 +109,23 @@ function renderSidebar() {
       <nav class="nav-section" aria-label="VGo modules">
         <div class="module-nav-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('workflow')" aria-expanded="${workflowOpen}">
-            <span class="module-nav-mark workflow">W</span><span class="module-nav-label">Workflow</span>${groupBadge('workflow', workflowItems)}<span class="module-nav-chevron ${workflowOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark workflow">W</span><span class="module-nav-label">Workflow</span>${groupBadge('workflow', ordered.workflow)}${navResetBtn('workflow')}<span class="module-nav-chevron ${workflowOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${workflowOpen ? '' : 'collapsed'}" id="nav-group-workflow">${renderItems(workflowItems, 'workflow')}</div>
+          <div class="module-nav-items ${workflowOpen ? '' : 'collapsed'}" id="nav-group-workflow">${renderItems(ordered.workflow, 'workflow')}</div>
         </div>
         ${crmItems.length ? `
         <div class="module-nav-group crm-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('crm')" aria-expanded="${crmOpen}">
-            <span class="module-nav-mark crm">C</span><span class="module-nav-label">CRM</span>${groupBadge('crm', crmItems)}<span class="module-nav-chevron ${crmOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark crm">C</span><span class="module-nav-label">CRM</span>${groupBadge('crm', ordered.crm)}${navResetBtn('crm')}<span class="module-nav-chevron ${crmOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${crmOpen ? '' : 'collapsed'}" id="nav-group-crm">${renderItems(crmItems, 'crm')}</div>
+          <div class="module-nav-items ${crmOpen ? '' : 'collapsed'}" id="nav-group-crm">${renderItems(ordered.crm, 'crm')}</div>
         </div>` : ''}
         ${accItems.length ? `
         <div class="module-nav-group acc-group">
           <button class="module-nav-toggle" onclick="toggleNavGroup('acc')" aria-expanded="${accOpen}">
-            <span class="module-nav-mark acc">A</span><span class="module-nav-label">Accounting</span>${groupBadge('acc', accItems)}<span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
+            <span class="module-nav-mark acc">A</span><span class="module-nav-label">Accounting</span>${groupBadge('acc', ordered.acc)}${navResetBtn('acc')}<span class="module-nav-chevron ${accOpen ? 'open' : ''}">⌄</span>
           </button>
-          <div class="module-nav-items ${accOpen ? '' : 'collapsed'}" id="nav-group-acc">${renderItems(accItems, 'acc')}</div>
+          <div class="module-nav-items ${accOpen ? '' : 'collapsed'}" id="nav-group-acc">${renderItems(ordered.acc, 'acc')}</div>
         </div>` : ''}
       </nav>
       <div class="sidebar-bottom">
@@ -136,6 +144,214 @@ function renderSidebar() {
       </div>
     </aside>`;
 }
+
+/* ===========================================================================
+   Per-user sidebar ordering.
+
+   The saved order is a *preference layered over* the canonical menus in
+   renderSidebar(), never a replacement for them: ids the user has arranged come
+   first in their order, then anything the list knows about that the preference
+   does not — a newly shipped item, or a module just granted — is appended. So a
+   release can add nav items and a stale preference can never hide them.
+
+   One pointer-based drag engine rather than HTML5 drag-and-drop: DnD events do
+   not fire on touch, and we want the same live-reorder feel everywhere. All
+   listeners are delegated from document because renderSidebar() replaces the
+   whole <aside> on every navigation.
+=========================================================================== */
+const NAV_GROUPS = ['workflow', 'crm', 'acc'];
+
+function navOrderStore() {
+  const u = (typeof State !== 'undefined' && State.user) || {};
+  const fromServer = (u.nav_order && typeof u.nav_order === 'object' && !Array.isArray(u.nav_order)) ? u.nav_order : null;
+  if (fromServer && Object.keys(fromServer).length) return fromServer;
+  // Local mirror: covers the moment before /me resolves, and a failed save.
+  try {
+    const raw = localStorage.getItem('vgo-nav-order-' + (u.id || 0));
+    const parsed = raw ? JSON.parse(raw) : null;
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch (e) {}
+  return {};
+}
+
+function navApplyOrder(items, groupKey) {
+  const want = navOrderStore()[groupKey];
+  if (!Array.isArray(want) || !want.length) return items;
+  const remaining = new Map(items.map(n => [n.id, n]));
+  const out = [];
+  want.forEach(id => { if (remaining.has(id)) { out.push(remaining.get(id)); remaining.delete(id); } });
+  remaining.forEach(n => out.push(n));
+  return out;
+}
+
+/** Reset control, shown only once a group actually has a custom order. */
+function navResetBtn(group) {
+  const has = Array.isArray(navOrderStore()[group]) && navOrderStore()[group].length;
+  return `<span class="nav-reset" role="button" tabindex="0" data-nav-reset="${group}"
+    title="Reset this menu to the default order" aria-label="Reset this menu to the default order"
+    ${has ? '' : 'hidden'}>&#8635;</span>`;
+}
+
+function navSaveOrder(group, ids) {
+  if (typeof State === 'undefined') return;
+  State.user = State.user || {};
+  const next = { ...(State.user.nav_order || {}) };
+  if (ids && ids.length) next[group] = ids; else delete next[group];
+  State.user.nav_order = next;
+  try { localStorage.setItem('vgo-nav-order-' + (State.user.id || 0), JSON.stringify(next)); } catch (e) {}
+  document.querySelectorAll(`[data-nav-reset="${group}"]`).forEach(b => { b.hidden = !(ids && ids.length); });
+  clearTimeout(navSaveOrder._t);
+  navSaveOrder._t = setTimeout(() => {
+    if (typeof API === 'undefined' || !API.updateNavOrder) return;
+    API.updateNavOrder(State.user.nav_order).catch(() => {
+      if (typeof toast === 'function') toast('Menu order saved on this device only — the server did not accept it.', 'error');
+    });
+  }, 600);
+}
+
+function navResetOrder(group) {
+  navSaveOrder(group, null);
+  if (typeof render === 'function') render();
+  else if (typeof State !== 'undefined') { const sb = document.querySelector('.sidebar'); if (sb) sb.outerHTML = renderSidebar(); }
+  if (typeof toast === 'function') toast('Menu order reset.', 'success');
+}
+window.navResetOrder = navResetOrder;
+
+const NavDrag = {
+  el: null, box: null, group: null, startY: 0, moved: false, pressTimer: null, blockClickUntil: 0, touch: false,
+
+  start(btn, y, touch) {
+    const box = btn.closest('.module-nav-items');
+    if (!box || !box.id || box.querySelectorAll('.nav-btn').length < 2) return false;
+    NavDrag.touch = !!touch;
+    NavDrag.el = btn;
+    NavDrag.box = box;
+    NavDrag.group = box.id.replace('nav-group-', '');
+    NavDrag.startY = y;
+    NavDrag.moved = false;
+    btn.classList.add('nav-dragging');
+    box.classList.add('nav-reordering');
+    document.body.classList.add('nav-drag-active');
+    return true;
+  },
+
+  move(y) {
+    const el = NavDrag.el, box = NavDrag.box;
+    if (!el || !box) return;
+    if (!NavDrag.moved && Math.abs(y - NavDrag.startY) < 4) return;
+    NavDrag.moved = true;
+    const others = Array.from(box.querySelectorAll('.nav-btn')).filter(n => n !== el);
+    let before = null;
+    for (const s of others) {
+      const r = s.getBoundingClientRect();
+      if (y < r.top + r.height / 2) { before = s; break; }
+    }
+    if (before) { if (el.nextElementSibling !== before) box.insertBefore(el, before); }
+    else if (box.lastElementChild !== el) box.appendChild(el);
+  },
+
+  finish() {
+    clearTimeout(NavDrag.pressTimer);
+    const el = NavDrag.el, box = NavDrag.box, group = NavDrag.group, moved = NavDrag.moved;
+    if (el) el.classList.remove('nav-dragging');
+    if (box) box.classList.remove('nav-reordering');
+    document.body.classList.remove('nav-drag-active');
+    NavDrag.el = NavDrag.box = NavDrag.group = null;
+    NavDrag.moved = false;
+    NavDrag.touch = false;
+    if (moved && box && group) {
+      // Swallow the click that a pointerup would otherwise deliver to nav().
+      NavDrag.blockClickUntil = Date.now() + 350;
+      navSaveOrder(group, Array.from(box.querySelectorAll('.nav-btn')).map(n => n.dataset.navId).filter(Boolean));
+    }
+  },
+};
+
+(function bindNavDrag() {
+  if (window.__navDragBound) return;
+  window.__navDragBound = true;
+
+  document.addEventListener('pointerdown', e => {
+    const reset = e.target.closest?.('[data-nav-reset]');
+    if (reset) { e.preventDefault(); e.stopPropagation(); navResetOrder(reset.dataset.navReset); return; }
+    const btn = e.target.closest?.('.nav-btn[data-nav-id]');
+    if (!btn || e.button > 0) return;
+    if (e.target.closest('.nav-drag-handle')) {
+      if (NavDrag.start(btn, e.clientY)) { e.preventDefault(); btn.setPointerCapture?.(e.pointerId); }
+      return;
+    }
+    // Touch has no hover, so there is no handle to aim at: long-press instead.
+    if (e.pointerType === 'touch') {
+      const y = e.clientY;
+      NavDrag.pressTimer = setTimeout(() => {
+        if (NavDrag.start(btn, y, true)) {
+          NavDrag.moved = true;               // a deliberate long-press is already a drag
+          btn.setPointerCapture?.(e.pointerId);
+          if (navigator.vibrate) navigator.vibrate(12);
+        }
+      }, 350);
+    }
+  }, true);
+
+  document.addEventListener('pointermove', e => {
+    if (NavDrag.pressTimer && !NavDrag.el && Math.abs(e.clientY - NavDrag.startY) > 8) clearTimeout(NavDrag.pressTimer);
+    if (!NavDrag.el || NavDrag.touch) return;   // touch is driven by touchmove below
+    e.preventDefault();
+    NavDrag.move(e.clientY);
+  }, { passive: false });
+
+  /* Touch is driven from the touch events, not the pointer ones. Once the finger
+     moves, the browser claims the gesture as a scroll and fires pointercancel,
+     which would abort a long-press drag on the very first move — so during a
+     touch drag we preventDefault the scroll here and ignore pointercancel. */
+  document.addEventListener('touchmove', e => {
+    if (!NavDrag.el || !NavDrag.touch) return;
+    e.preventDefault();
+    const t = e.touches[0];
+    if (t) NavDrag.move(t.clientY);
+  }, { passive: false });
+
+  document.addEventListener('pointerup', () => { clearTimeout(NavDrag.pressTimer); if (NavDrag.el) NavDrag.finish(); }, true);
+  document.addEventListener('pointercancel', () => {
+    clearTimeout(NavDrag.pressTimer);
+    if (NavDrag.el && !NavDrag.touch) NavDrag.finish();
+  }, true);
+  ['touchend', 'touchcancel'].forEach(ev =>
+    document.addEventListener(ev, () => { clearTimeout(NavDrag.pressTimer); if (NavDrag.el) NavDrag.finish(); }, true));
+
+  document.addEventListener('click', e => {
+    if (Date.now() < NavDrag.blockClickUntil && e.target.closest?.('.nav-btn[data-nav-id]')) {
+      e.preventDefault(); e.stopPropagation();
+    }
+  }, true);
+
+  // Keyboard equivalent — the drag handle is pointer-only, so this is the
+  // accessible path, not an afterthought.
+  document.addEventListener('keydown', e => {
+    const reset = e.target.closest?.('[data-nav-reset]');
+    if (reset && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); navResetOrder(reset.dataset.navReset); return; }
+    if (!e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return;
+    const btn = e.target.closest?.('.nav-btn[data-nav-id]');
+    if (!btn) return;
+    const box = btn.closest('.module-nav-items');
+    if (!box || !box.id) return;
+    e.preventDefault();
+    const up = e.key === 'ArrowUp';
+    const sib = up ? btn.previousElementSibling : btn.nextElementSibling;
+    if (!sib) return;
+    if (up) box.insertBefore(btn, sib); else box.insertBefore(sib, btn);
+    btn.focus();
+    const group = box.id.replace('nav-group-', '');
+    navSaveOrder(group, Array.from(box.querySelectorAll('.nav-btn')).map(n => n.dataset.navId).filter(Boolean));
+    const pos = Array.from(box.querySelectorAll('.nav-btn')).indexOf(btn) + 1;
+    const live = document.getElementById('nav-live') || (() => {
+      const d = document.createElement('div');
+      d.id = 'nav-live'; d.className = 'sr-only'; d.setAttribute('aria-live', 'polite');
+      document.body.appendChild(d); return d;
+    })();
+    live.textContent = `${btn.querySelector('span')?.textContent || 'Item'} moved to position ${pos} of ${box.querySelectorAll('.nav-btn').length}`;
+  });
+})();
 
 function toggleNavGroup(group) {
   const el = document.getElementById('nav-group-' + group);

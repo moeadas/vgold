@@ -118,6 +118,7 @@ const API = {
   updatePassword: (data) => API.req('/settings/password', { method: 'PUT', body: JSON.stringify(data) }),
   notifSettings: () => API.req('/settings/notifications'),
   updateNotifications: (data) => API.req('/settings/notifications', { method: 'PUT', body: JSON.stringify(data) }),
+  updateNavOrder: (order) => API.req('/settings/nav-order', { method: 'PUT', body: JSON.stringify({ order }) }),
   apiKeys: () => API.req('/settings/api-keys'),
   updateApiKey: (data) => API.req('/settings/api-keys', { method: 'PUT', body: JSON.stringify(data) }),
   deleteApiKey: (provider) => API.req('/settings/api-keys', { method: 'DELETE', body: JSON.stringify({ provider }) }),

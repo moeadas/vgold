@@ -126,6 +126,49 @@ body {
 .module-nav-items { display: flex; flex-direction: column; max-height: 620px; overflow: hidden; transition: max-height .2s ease, opacity .18s ease; opacity: 1; }
 .module-nav-items.collapsed { max-height: 0; opacity: 0; }
 .module-nav-items .nav-btn { padding-left: 15px; }
+
+/* --- sidebar reordering ------------------------------------------------- */
+.module-nav-items .nav-btn { padding-right: 26px; }
+.nav-drag-handle {
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  display: flex; align-items: center; justify-content: center;
+  width: 18px; height: 22px; border-radius: 5px; cursor: grab;
+  color: var(--muted, #9a8a78); opacity: 0; transition: opacity .14s, background .14s;
+  touch-action: none;
+}
+.nav-btn:hover .nav-drag-handle,
+.nav-btn:focus-visible .nav-drag-handle { opacity: .75; }
+.nav-drag-handle:hover { opacity: 1; background: rgba(0,0,0,.06); }
+.nav-drag-handle:active { cursor: grabbing; }
+.nav-btn.nav-dragging {
+  opacity: .95; cursor: grabbing;
+  background: var(--gold-bg, #f6f1e6);
+  box-shadow: 0 6px 18px rgba(0,0,0,.16); position: relative; z-index: 3;
+}
+.nav-btn.nav-dragging .nav-drag-handle { opacity: 1; cursor: grabbing; }
+/* The container grows a touch so the lifted row has somewhere to go, and the
+   max-height transition from the collapse animation must not clip it. */
+.module-nav-items.nav-reordering { max-height: none; }
+.module-nav-items.nav-reordering .nav-btn:not(.nav-dragging) { transition: transform .16s ease; }
+body.nav-drag-active { user-select: none; -webkit-user-select: none; }
+body.nav-drag-active .nav-btn { cursor: grabbing; }
+
+.nav-reset {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; margin-left: 2px; border-radius: 5px;
+  font-size: 13px; line-height: 1; color: var(--muted, #9a8a78);
+  cursor: pointer; flex: none; transition: background .14s, color .14s;
+}
+.nav-reset:hover, .nav-reset:focus-visible { background: rgba(0,0,0,.07); color: var(--text-2, #4a443c); }
+.nav-reset[hidden] { display: none; }
+
+@media (hover: none) {
+  /* No hover on touch, so the handle is always visible and long-press drags. */
+  .nav-drag-handle { opacity: .55; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .module-nav-items.nav-reordering .nav-btn { transition: none; }
+}
 .crm-group .nav-btn.active { background: linear-gradient(90deg, #F8E6B8 0%, rgba(248,230,184,.35) 100%); color: #74540F; }
 .sidebar-projects { margin-top: 26px; padding: 0 8px; overflow-y: auto; flex: 1; }
 .sidebar-projects-label { font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
