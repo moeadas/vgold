@@ -41,6 +41,7 @@ function renderSidebar() {
     { module: 'acc.bills', id: 'acc-contractor-invoices', label: 'Contractor invoices', icon: A.contacts || I.people },
     { module: 'acc.customers', id: 'acc-customers', label: 'Customers', icon: A.contacts || I.people },
     { module: 'acc.vendors', id: 'acc-vendors', label: 'Vendors', icon: A.contacts || I.people },
+    { module: 'acc.investors', id: 'acc-investors', label: 'Investors', icon: A.contacts || I.people },
     { module: 'acc.banking', id: 'acc-banking', label: 'Banking', icon: A.bank || I.grid },
     { module: 'acc.accounting', id: 'acc-ledger', label: 'Journal & ledger', icon: A.ledger || I.file },
     { module: 'acc.catalog', id: 'acc-catalog', label: 'Catalog', icon: A.catalog || I.grid },
@@ -77,7 +78,8 @@ function renderSidebar() {
     // Detail screens keep their parent nav item highlighted.
     const parents = {
       'acc-doc': State.accDocType === 'bill' ? 'acc-bills' : 'acc-invoices',
-      'acc-contact': State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers',
+      'acc-contact': (typeof accContactKind === 'function'
+        ? accContactKind(State.accContactType).nav : 'acc-customers'),
       'acc-account': 'acc-banking',
       'acc-bill-scan': 'acc-bills',
       'acc-danger': 'acc-settings',

@@ -1287,26 +1287,74 @@ function accDoPrint() {
 
 /* ===================== Contacts ===================== */
 
+/**
+ * Customers, vendors and investors share one table and one set of screens, but
+ * they are three different relationships and three separate access modules.
+ * Everything that differs between them lives here rather than in a ternary.
+ *
+ * An investor is money-in like a customer, but nothing is ever invoiced to
+ * them — the cash lands as a direct deposit that posts to equity or to a
+ * director's loan. So `doc` is null and the document columns are dropped
+ * entirely instead of rendering a permanent $0.00.
+ */
+const ACC_CONTACT_KINDS = {
+  customer: {
+    type: 'customer', module: 'acc.customers', nav: 'acc-customers', denied: 'customers',
+    title: 'Customers', one: 'customer', blurb: 'Everyone you invoice.',
+    empty: 'No customers found.', ytd: 'Billed YTD', total: 'Total billed',
+    doc: 'invoice', docTitle: 'Invoice history', docEmpty: 'No invoices found.',
+    openHint: 'Owed to you',
+  },
+  vendor: {
+    type: 'vendor', module: 'acc.vendors', nav: 'acc-vendors', denied: 'vendors',
+    title: 'Vendors', one: 'vendor', blurb: 'Everyone who bills you.',
+    empty: 'No vendors found.', ytd: 'Spent YTD', total: 'Total spent',
+    doc: 'bill', docTitle: 'Bill history', docEmpty: 'No bills found.',
+    openHint: 'You owe',
+  },
+  investor: {
+    type: 'investor', module: 'acc.investors', nav: 'acc-investors', denied: 'investors',
+    title: 'Investors', one: 'investor',
+    blurb: 'Equity holders, director loans and funding partners. Money in, never invoiced.',
+    empty: 'No investors found.', ytd: 'Received YTD', total: 'Total received',
+    doc: null, docTitle: 'Funds received', docEmpty: 'Nothing received yet.',
+    openHint: null,
+  },
+};
+function accContactKind(type) { return ACC_CONTACT_KINDS[type] || ACC_CONTACT_KINDS.customer; }
+
 async function renderAccContacts(type) {
   await accBoot();
-  // Customers and vendors are separate modules so the sales team can be granted
-  // customers without seeing supplier data.
+  // Each kind is its own module so the sales team can be granted customers
+  // without seeing supplier data or the cap table.
   const tab = type || AccState.contactTab || 'customer';
-  const mod = tab === 'vendor' ? 'acc.vendors' : 'acc.customers';
-  if (!accHas(mod)) return accDenied(tab === 'vendor' ? 'vendors' : 'customers');
+  const K = accContactKind(tab);
+  if (!accHas(K.module)) return accDenied(K.denied);
   if (AccState.contactTab !== tab) { AccState.contactTab = tab; AccState.contacts = null; }
   State.accContactType = tab;
   if (!AccState.contacts) {
     AccState.contacts = await API.accContacts({ type: tab, search: AccState.contactSearch, page: 1 });
   }
   const data = AccState.contacts;
-  const isCustomer = tab === 'customer';
+
+  // Same five-column grid for every kind, so the layout is unchanged. An
+  // investor has no open balance to show, so that slot carries the all-time
+  // total instead — the number that actually matters on a cap table.
+  const cols = [
+    { label: K.title.replace(/s$/, ''), width: 'minmax(0,2fr)' },
+    { label: 'Category', width: '150px' },
+    K.doc ? { label: 'Open', width: '120px', align: 'right' }
+          : { label: K.total, width: '130px', align: 'right' },
+    { label: K.ytd, width: '130px', align: 'right' },
+    { label: 'Latest', width: '120px', align: 'right' },
+  ];
 
   const rows = (data.contacts || []).map(c => [
     `<div style="min-width:0"><div class="acc-strong acc-truncate">${esc(c.name)}</div>
       <div class="acc-sub acc-truncate">${esc(c.email || c.phone || '')}</div></div>`,
     c.category ? `<span class="acc-chip">${esc(c.category)}</span>` : '<span class="acc-dim">—</span>',
-    Number(c.open_amount) > 0 ? `<span class="acc-neg">${accMoney(c.open_amount)}</span>` : accMoney(0),
+    K.doc ? (Number(c.open_amount) > 0 ? `<span class="acc-neg">${accMoney(c.open_amount)}</span>` : accMoney(0))
+          : `<span class="acc-pos">${accMoney(c.total_amount)}</span>`,
     accMoney(c.ytd_amount),
     c.last_document ? `<span class="acc-mono">${esc(c.last_document)}</span>`
       : (c.last_activity && c.last_activity > '1900-01-01' ? accDateShort(c.last_activity) : '<span class="acc-dim">—</span>'),
@@ -1314,10 +1362,9 @@ async function renderAccContacts(type) {
 
   return `
     <div class="fade-in acc-page">
-      ${accHeader(isCustomer ? 'Customers' : 'Vendors',
-        isCustomer ? 'Everyone you invoice.' : 'Everyone who bills you.',
-        `${isCustomer ? `<button class="btn-secondary" onclick="accCrmImportModal()">Import from CRM</button>` : ''}
-         <button class="btn-primary" onclick="accContactModal('${tab}')">${I.plus} New ${isCustomer ? 'customer' : 'vendor'}</button>`)}
+      ${accHeader(K.title, K.blurb,
+        `${K.type === 'customer' ? `<button class="btn-secondary" onclick="accCrmImportModal()">Import from CRM</button>` : ''}
+         <button class="btn-primary" onclick="accContactModal('${K.type}')">${I.plus} New ${K.one}</button>`)}
 
       <div class="acc-toolbar">
         <div class="acc-search">
@@ -1328,11 +1375,7 @@ async function renderAccContacts(type) {
       </div>
 
       <div class="acc-card acc-card-flush">
-        ${accTable(
-          [{ label: isCustomer ? 'Customer' : 'Vendor', width: 'minmax(0,2fr)' }, { label: 'Category', width: '150px' },
-           { label: 'Open', width: '120px', align: 'right' }, { label: isCustomer ? 'Billed YTD' : 'Spent YTD', width: '130px', align: 'right' },
-           { label: 'Latest', width: '120px', align: 'right' }],
-          rows, isCustomer ? 'No customers found.' : 'No vendors found.',
+        ${accTable(cols, rows, K.empty,
           (i) => `onclick="accGoContact(${(data.contacts[i] || {}).id})"`)}
         ${accPager(data.meta, 'accContactPage')}
       </div>
@@ -1341,7 +1384,7 @@ async function renderAccContacts(type) {
 
 function accContactTab(tab) {
   AccState.contactTab = tab; AccState.contacts = null;
-  if (typeof accNav === 'function') accNav(tab === 'vendor' ? 'acc-vendors' : 'acc-customers'); else render();
+  if (typeof accNav === 'function') accNav(accContactKind(tab).nav); else render();
 }
 function accContactSearch() { AccState.contactSearch = accVal('acc-contact-search'); AccState.contacts = null; render(); }
 async function accContactPage(p) {
@@ -1351,12 +1394,16 @@ async function accContactPage(p) {
 
 async function renderAccContact(id) {
   await accBoot();
-  const wantVendor = State.accContactType === 'vendor';
-  if (!accHas(wantVendor ? 'acc.vendors' : 'acc.customers')) return accDenied(wantVendor ? 'vendors' : 'customers');
+  const want = accContactKind(State.accContactType);
+  if (!accHas(want.module)) return accDenied(want.denied);
   if (!AccState.contact || Number(AccState.contact.contact.id) !== Number(id)) {
     AccState.contact = await API.accContact(id);
   }
   const { contact: c, people, stats, documents, transactions } = AccState.contact;
+  const K = accContactKind(c.type);
+  // Deep links land here with whatever type was last browsed; trust the record so
+  // the back link and the sidebar highlight follow the contact, not the history.
+  State.accContactType = K.type;
   const isCustomer = c.type === 'customer';
 
   const docRows = (documents || []).map(d => [
@@ -1366,30 +1413,41 @@ async function renderAccContact(id) {
     accPill(d.status),
     accMoney(d.amount),
   ]);
+  // Investors have no documents, so the deposits themselves are the history.
+  const fundRows = (transactions || []).map(t => [
+    accDateShort(t.paid_at),
+    `<span class="acc-truncate">${esc(t.category_name || t.description || '—')}</span>`,
+    `<span class="acc-sub">${esc(t.payment_method || t.reference || '')}</span>`,
+    `<span class="${t.type === 'income' ? 'acc-pos' : ''}">${accMoney(t.amount)}</span>`,
+  ]);
 
   return `
     <div class="fade-in acc-page">
-      <div style="margin-bottom:12px">${accBackLink(State.accContactType === 'vendor' ? 'Vendors' : 'Customers', "accNav('" + (State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers') + "')")}</div>
-      ${accHeader(c.name, `${isCustomer ? 'Customer' : 'Vendor'}${c.category ? ' · ' + c.category : ''}${c.crm_lead_id ? ' · linked to CRM lead #' + c.crm_lead_id : ''}`,
+      <div style="margin-bottom:12px">${accBackLink(K.title, "accNav('" + K.nav + "')")}</div>
+      ${accHeader(c.name, `${K.one.charAt(0).toUpperCase() + K.one.slice(1)}${c.category ? ' · ' + c.category : ''}${c.crm_lead_id ? ' · linked to CRM lead #' + c.crm_lead_id : ''}`,
         `${isCustomer && accHas('acc.invoices') ? `<button class="btn-primary" onclick="accDocEditor('invoice')">${I.plus} New invoice</button>` : ''}
-         ${!isCustomer && accHas('acc.bills') ? `<button class="btn-primary" onclick="accDocEditor('bill')">${I.plus} New bill</button>` : ''}
+         ${c.type === 'vendor' && accHas('acc.bills') ? `<button class="btn-primary" onclick="accDocEditor('bill')">${I.plus} New bill</button>` : ''}
          <button class="btn-secondary" onclick="accContactModal('${c.type}',${c.id})">${I.pencil} Edit</button>
          <button class="btn-secondary" style="color:var(--barn)" onclick="accDeleteContact(${c.id})">${I.trash}</button>`)}
 
       <div class="acc-stats">
-        ${accStat('Open balance', accMoney(stats.outstanding), isCustomer ? 'Owed to you' : 'You owe', Number(stats.outstanding) > 0 ? 'acc-neg' : 'acc-pos')}
-        ${accStat(isCustomer ? 'Total billed' : 'Total spent', accMoney(stats.total), 'All time, incl. direct payments')}
-        ${accStat('Total paid', accMoney(stats.paid), 'All time', 'acc-pos')}
+        ${K.doc ? accStat('Open balance', accMoney(stats.outstanding), K.openHint, Number(stats.outstanding) > 0 ? 'acc-neg' : 'acc-pos') : ''}
+        ${accStat(K.total, accMoney(stats.total), K.doc ? 'All time, incl. direct payments' : 'All time, direct deposits')}
+        ${accStat(K.doc ? 'Total paid' : 'Deposits', K.doc ? accMoney(stats.paid) : String((transactions || []).length), 'All time', 'acc-pos')}
       </div>
 
       <div class="acc-split">
         <div class="acc-card acc-card-flush">
-          <div class="acc-card-head"><span class="acc-card-title">${isCustomer ? 'Invoice history' : 'Bill history'}</span></div>
-          ${accTable(
+          <div class="acc-card-head"><span class="acc-card-title">${K.docTitle}</span></div>
+          ${K.doc ? accTable(
             [{ label: 'Number', width: '110px' }, { label: 'Description', width: 'minmax(0,2fr)' },
              { label: 'Due', width: '90px' }, { label: 'Status', width: '105px' }, { label: 'Amount', width: '115px', align: 'right' }],
-            docRows, isCustomer ? 'No invoices found.' : 'No bills found.',
-            (i) => `onclick="accGoDoc(${(documents[i] || {}).id})"`)}
+            docRows, K.docEmpty,
+            (i) => `onclick="accGoDoc(${(documents[i] || {}).id})"`)
+          : accTable(
+            [{ label: 'Date', width: '100px' }, { label: 'Posted to', width: 'minmax(0,2fr)' },
+             { label: 'Reference', width: 'minmax(0,1fr)' }, { label: 'Amount', width: '115px', align: 'right' }],
+            fundRows, K.docEmpty)}
         </div>
         <div>
           <div class="acc-card">
@@ -1402,7 +1460,7 @@ async function renderAccContact(id) {
             <div class="acc-card-title" style="margin-bottom:10px">People</div>
             ${people.map(p => `<div class="acc-kv"><span><span class="acc-strong">${esc(p.name)}</span>${p.position ? `<span class="acc-sub"> · ${esc(p.position)}</span>` : ''}</span><span class="acc-sub">${esc(p.email || '')}</span></div>`).join('')}
           </div>` : ''}
-          ${(transactions || []).length ? `<div class="acc-card">
+          ${K.doc && (transactions || []).length ? `<div class="acc-card">
             <div class="acc-card-title" style="margin-bottom:10px">Recent payments</div>
             ${transactions.slice(0, 8).map(t => `<div class="acc-kv">
               <span><span class="acc-sub">${accDate(t.paid_at)}</span>${t.document_number ? ` · <span class="acc-mono">${esc(t.document_number)}</span>` : ''}</span>
@@ -1415,15 +1473,18 @@ async function renderAccContact(id) {
 
 function accContactModal(type, id) {
   const c = (id && AccState.contact && Number(AccState.contact.contact.id) === Number(id)) ? AccState.contact.contact : null;
-  const isCustomer = type === 'customer';
+  const K = accContactKind(type);
+  const isCustomer = K.type === 'customer';
+  const namePlaceholder = { customer: 'Company or person', vendor: 'Supplier name', investor: 'Investor or entity' }[K.type];
+  const catPlaceholder = { vendor: 'e.g. Reagents', investor: 'e.g. Investor, Director’s loan' }[K.type] || '';
   accOpenForm({
-    title: (id ? 'Edit ' : 'New ') + (isCustomer ? 'customer' : 'vendor'),
+    title: (id ? 'Edit ' : 'New ') + K.one,
     body: `
       <div class="form-row" style="gap:12px;flex-wrap:wrap">
-        ${accField('Name', `<input class="form-input" id="acc-c-name" value="${esc(c ? c.name : '')}" placeholder="${isCustomer ? 'Company or person' : 'Supplier name'}">`)}
+        ${accField('Name', `<input class="form-input" id="acc-c-name" value="${esc(c ? c.name : '')}" placeholder="${namePlaceholder}">`)}
         ${accField(isCustomer ? 'Primary contact' : 'Category', isCustomer
           ? `<input class="form-input" id="acc-c-person" value="" placeholder="Optional">`
-          : `<input class="form-input" id="acc-c-category" value="${esc(c ? (c.category || '') : '')}" placeholder="e.g. Reagents">`)}
+          : `<input class="form-input" id="acc-c-category" value="${esc(c ? (c.category || '') : '')}" placeholder="${catPlaceholder}">`)}
       </div>
       <div class="form-row" style="gap:12px;margin-top:10px;flex-wrap:wrap">
         ${accField('Email', `<input class="form-input" type="email" id="acc-c-email" value="${esc(c ? (c.email || '') : '')}">`)}
@@ -1478,7 +1539,7 @@ async function accDeleteContact(id) {
     AccState.contact = null;
     await accRefreshOptions();
     toast('Contact deleted', 'success');
-    accNav(State.accContactType === 'vendor' ? 'acc-vendors' : 'acc-customers');
+    accNav(accContactKind(State.accContactType).nav);
   } catch (e) { toast(e.message, 'error'); }
 }
 

@@ -29,6 +29,7 @@ class Authz {
         'acc.bills'      => 'Bills & expenses',
         'acc.customers'  => 'Customers',
         'acc.vendors'    => 'Vendors',
+        'acc.investors'  => 'Investors',
         'acc.banking'    => 'Banking & transactions',
         'acc.accounting' => 'Journal & chart of accounts',
         'acc.catalog'    => 'Items, categories & taxes',

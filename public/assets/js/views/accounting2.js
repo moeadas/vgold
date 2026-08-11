@@ -298,7 +298,7 @@ async function accDeleteAccount(id) {
 function accTransactionModal(id) {
   const t = id && AccState.transactions ? (AccState.transactions.transactions || []).find(x => Number(x.id) === Number(id)) : null;
   const o = accOpts();
-  const contacts = (o.customers || []).concat(o.vendors || []);
+  const contacts = (o.customers || []).concat(o.vendors || [], o.investors || []);
   accOpenForm({
     title: id ? 'Edit transaction' : 'New transaction',
     body: `

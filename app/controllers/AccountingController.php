@@ -85,6 +85,7 @@ class AccountingController
             'accounts'   => DB::fetchAll("SELECT id, name, bank_name, number, type, balance, currency_code, color FROM acc_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
             'customers'  => DB::fetchAll("SELECT id, name, email FROM acc_contacts WHERE deleted_at IS NULL AND type = 'customer' ORDER BY name"),
             'vendors'    => DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'vendor' ORDER BY name"),
+            'investors'  => DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'investor' ORDER BY name"),
             'taxes'      => DB::fetchAll("SELECT id, name, rate, type FROM acc_taxes WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
             'categories' => DB::fetchAll("SELECT id, name, type, color, parent_id FROM acc_categories WHERE deleted_at IS NULL ORDER BY type, name"),
             'items'      => DB::fetchAll("SELECT id, name, sku, sale_price, purchase_price, type FROM acc_items WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
@@ -623,10 +624,32 @@ class AccountingController
 
 
     /**
-     * Guard for contact endpoints now that customers and vendors are separate
-     * modules. Reads the type from the request (or from the stored row for
-     * id-addressed endpoints) and requires only the matching grant, so a sales
-     * user granted acc.customers never sees vendor records.
+     * The three kinds of contact, and what each one means downstream.
+     *
+     * An investor is money-in like a customer, but nothing is ever invoiced to
+     * them — their cash arrives as a direct bank deposit that posts to equity or
+     * to a director's loan. So `doc` is null and every document subquery has to
+     * be skipped rather than run against a type that will never match.
+     */
+    public const CONTACT_KINDS = [
+        'customer' => ['module' => 'acc.customers', 'doc' => 'invoice', 'tx' => 'income'],
+        'vendor'   => ['module' => 'acc.vendors',   'doc' => 'bill',    'tx' => 'expense'],
+        'investor' => ['module' => 'acc.investors', 'doc' => null,      'tx' => 'income'],
+    ];
+
+    /** Resolve any user-supplied type to a known kind, defaulting to customer. */
+    private static function contactKind($type)
+    {
+        $t = strtolower(trim((string)$type));
+        $k = self::CONTACT_KINDS[$t] ?? self::CONTACT_KINDS['customer'];
+        return $k + ['type' => isset(self::CONTACT_KINDS[$t]) ? $t : 'customer'];
+    }
+
+    /**
+     * Guard for contact endpoints now that customers, vendors and investors are
+     * separate modules. Reads the type from the request (or from the stored row
+     * for id-addressed endpoints) and requires only the matching grant, so a
+     * sales user granted acc.customers never sees vendor or investor records.
      */
     private static function bootContacts($type = null, $id = null) {
         if ($id !== null && $type === null) {
@@ -634,15 +657,15 @@ class AccountingController
             $type = $row['type'] ?? null;
         }
         if ($type === null) $type = $_GET['type'] ?? (input()['type'] ?? null);
-        $module = (strtolower((string)$type) === 'vendor') ? 'acc.vendors' : 'acc.customers';
-        self::boot($module);
+        self::boot(self::contactKind($type)['module']);
     }
 
     public static function contacts()
     {
         self::bootContacts();
         list($page, $per, $offset) = self::page();
-        $type = ($_GET['type'] ?? 'customer') === 'vendor' ? 'vendor' : 'customer';
+        $kind = self::contactKind($_GET['type'] ?? 'customer');
+        $type = $kind['type'];
         $search = trim((string)($_GET['search'] ?? ''));
 
         $where = "c.deleted_at IS NULL AND c.type = ?";
@@ -653,39 +676,57 @@ class AccountingController
             array_push($params, $like, $like, $like);
         }
 
-        $docType = $type === 'customer' ? 'invoice' : 'bill';
+        $docType = $kind['doc'];
         // Money can reach a contact two ways: through a document, or as a direct bank
         // payment with no paperwork (statement imports, ad-hoc transfers). Counting only
         // documents made every imported vendor read $0.00. Direct rows are the ones with
         // no document_id — payments *against* a bill are already covered by the document
         // subquery, so including them here would double-count.
-        $txType  = $type === 'customer' ? 'income' : 'expense';
+        $txType  = $kind['tx'];
         $year = (int)date('Y');
+
+        // Investors have no document type at all, so those subqueries collapse to
+        // constants instead of scanning acc_documents for a type that cannot exist.
+        $docOpen = $docType
+            ? "COALESCE((SELECT SUM(d.amount - d.paid_amount) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
+                      AND d.status NOT IN ('paid','cancelled','draft')), 0)"
+            : "0";
+        $docYtd = $docType
+            ? "COALESCE((SELECT SUM(d.amount) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
+                      AND d.status <> 'cancelled' AND YEAR(d.issued_at) = $year), 0)"
+            : "0";
+        $docTotal = $docType
+            ? "COALESCE((SELECT SUM(d.amount) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
+                      AND d.status <> 'cancelled'), 0)"
+            : "0";
+        $lastDoc = $docType
+            ? "(SELECT d.number FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
+                 ORDER BY d.issued_at DESC, d.id DESC LIMIT 1)"
+            : "NULL";
+        $lastDocDate = $docType
+            ? "COALESCE((SELECT MAX(d.issued_at) FROM acc_documents d
+                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'), '1000-01-01')"
+            : "'1000-01-01'";
 
         $rows = DB::fetchAll(
             "SELECT c.*,
-                COALESCE((SELECT SUM(d.amount - d.paid_amount) FROM acc_documents d
-                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                      AND d.status NOT IN ('paid','cancelled','draft')), 0) AS open_amount,
-                COALESCE((SELECT SUM(d.amount) FROM acc_documents d
-                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                      AND d.status <> 'cancelled' AND YEAR(d.issued_at) = $year), 0)
+                $docOpen AS open_amount,
+                $docYtd
               + COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
                     WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0
                       AND t.document_id IS NULL AND t.type = '$txType'
                       AND YEAR(t.paid_at) = $year), 0) AS ytd_amount,
-                COALESCE((SELECT SUM(d.amount) FROM acc_documents d
-                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                      AND d.status <> 'cancelled'), 0)
+                $docTotal
               + COALESCE((SELECT SUM(t.amount) FROM acc_transactions t
                     WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0
                       AND t.document_id IS NULL AND t.type = '$txType'), 0) AS total_amount,
-                (SELECT d.number FROM acc_documents d
-                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'
-                 ORDER BY d.issued_at DESC, d.id DESC LIMIT 1) AS last_document,
+                $lastDoc AS last_document,
                 GREATEST(
-                  COALESCE((SELECT MAX(d.issued_at) FROM acc_documents d
-                    WHERE d.contact_id = c.id AND d.deleted_at IS NULL AND d.type = '$docType'), '1000-01-01'),
+                  $lastDocDate,
                   COALESCE((SELECT MAX(t.paid_at) FROM acc_transactions t
                     WHERE t.contact_id = c.id AND t.deleted_at IS NULL AND t.is_transfer = 0), '1000-01-01')
                 ) AS last_activity
@@ -710,16 +751,17 @@ class AccountingController
         $contact = DB::fetch("SELECT * FROM acc_contacts WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
         if (!$contact) jsonError('Contact not found', 404);
 
-        $docType = $contact['type'] === 'customer' ? 'invoice' : 'bill';
-        $txType  = $contact['type'] === 'customer' ? 'income' : 'expense';
-        $stats = DB::fetch(
+        $kind = self::contactKind($contact['type']);
+        $docType = $kind['doc'];
+        $txType  = $kind['tx'];
+        $stats = $docType ? DB::fetch(
             "SELECT
                COALESCE(SUM(CASE WHEN status <> 'cancelled' THEN amount END), 0) AS total,
                COALESCE(SUM(CASE WHEN status <> 'cancelled' THEN paid_amount END), 0) AS paid,
                COALESCE(SUM(CASE WHEN status NOT IN ('paid','cancelled','draft') THEN amount - paid_amount END), 0) AS outstanding
              FROM acc_documents WHERE contact_id = ? AND deleted_at IS NULL AND type = ?",
             [(int)$id, $docType]
-        );
+        ) : ['total' => 0, 'paid' => 0, 'outstanding' => 0];
         // Direct bank payments carry no document, so fold them into total and paid.
         // Outstanding stays document-only: a settled bank payment owes nothing.
         $direct = DB::fetch(
@@ -739,18 +781,22 @@ class AccountingController
                 'paid' => Acc::money($stats['paid'] ?? 0),
                 'outstanding' => Acc::money($stats['outstanding'] ?? 0),
             ],
-            'documents' => DB::fetchAll(
+            'documents' => $docType ? DB::fetchAll(
                 "SELECT d.*, (SELECT di.name FROM acc_document_items di WHERE di.document_id = d.id ORDER BY di.id LIMIT 1) AS first_item
                    FROM acc_documents d
                   WHERE d.contact_id = ? AND d.deleted_at IS NULL AND d.type = ?
                ORDER BY d.issued_at DESC, d.id DESC LIMIT 50",
                 [(int)$id, $docType]
-            ),
+            ) : [],
+            // An investor has no paperwork, so the payment list is the whole record —
+            // give it room rather than the 25 rows a customer's sidebar needs.
             'transactions' => DB::fetchAll(
-                "SELECT t.*, d.number AS document_number FROM acc_transactions t
+                "SELECT t.*, d.number AS document_number, cat.name AS category_name
+                   FROM acc_transactions t
               LEFT JOIN acc_documents d ON d.id = t.document_id
+              LEFT JOIN acc_categories cat ON cat.id = t.category_id
                   WHERE t.contact_id = ? AND t.deleted_at IS NULL
-               ORDER BY t.paid_at DESC, t.id DESC LIMIT 25",
+               ORDER BY t.paid_at DESC, t.id DESC LIMIT " . ($docType ? 25 : 200),
                 [(int)$id]
             ),
         ]);
@@ -758,7 +804,8 @@ class AccountingController
 
     private static function contactFields($data, $existing = null)
     {
-        $type = Acc::enum($data['type'] ?? ($existing['type'] ?? 'customer'), ['customer', 'vendor'], 'customer');
+        $type = Acc::enum($data['type'] ?? ($existing['type'] ?? 'customer'),
+                          array_keys(self::CONTACT_KINDS), 'customer');
         return [
             'type'          => $type,
             'name'          => Acc::strOrNull($data['name'] ?? ($existing['name'] ?? null)),

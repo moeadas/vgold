@@ -61,3 +61,6 @@ uploads/
 Bank Statements/
 bank statements/
 *.statement.pdf
+
+# Vendor bills, invoices and statements — real financial PII. NEVER commit.
+Accounting/

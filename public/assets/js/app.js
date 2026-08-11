@@ -243,6 +243,7 @@ async function render() {
       case 'acc-doc': mainContent = await renderAccDocument(State.accDocId); break;
       case 'acc-customers': mainContent = await renderAccContacts('customer'); break;
       case 'acc-vendors': mainContent = await renderAccContacts('vendor'); break;
+      case 'acc-investors': mainContent = await renderAccContacts('investor'); break;
       case 'acc-contact': mainContent = await renderAccContact(State.accContactId); break;
       case 'acc-banking': mainContent = await renderAccBanking(); break;
       case 'acc-account': mainContent = await renderAccAccount(State.accAccountId); break;
