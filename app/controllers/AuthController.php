@@ -160,6 +160,11 @@ class AuthController {
         $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         
         Auth::login($user['id'], $wm['workspace_id']);
+        // Default on: this is an internal tool and the phone PWA is the main
+        // casualty of a short session. Send remember:false to opt out.
+        if (!array_key_exists('remember', $data) || !empty($data['remember'])) {
+            Auth::rememberIssue($user['id'], $wm['workspace_id']);
+        }
         jsonResponse(['ok' => true, 'csrf_token' => Csrf::token(), 'user' => [
             'id' => $user['id'],
             'name' => $user['name'],
@@ -331,6 +336,7 @@ class AuthController {
         $_SESSION['crm_user_id'] = $user['crm_user_id'] ?? null;
         $_SESSION['crm_role'] = $user['crm_role'] ?? null;
         Auth::login($user['id'], $wm['workspace_id']);
+        Auth::rememberIssue($user['id'], $wm['workspace_id']);
         header('Location: /');
         exit;
     }

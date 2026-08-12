@@ -71,6 +71,10 @@ function renderSignIn() {
               <label class="input-label">Password</label>
               <input class="input-field" type="password" id="login-password" placeholder="••••••••" required autocomplete="current-password">
             </div>
+            <label class="login-remember">
+              <input type="checkbox" id="login-remember" checked>
+              <span>Keep me signed in on this device</span>
+            </label>
             <button type="submit" class="btn-login" id="login-submit">
               <span id="login-btn-text">Sign in</span>
               <span id="login-spinner" style="display:none">${I.spinner}</span>
@@ -251,8 +255,9 @@ async function handleLogin(e) {
   spinner.style.display = 'inline';
   const email = document.getElementById('login-email').value;
   const password = document.getElementById('login-password').value;
+  const remember = document.getElementById('login-remember')?.checked !== false;
   try {
-    await API.login(email, password);
+    await API.login(email, password, remember);
     location.reload();
   } catch (ex) {
     showLoginError(ex.message);

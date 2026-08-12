@@ -27,7 +27,7 @@ const API = {
   },
   // Auth
   register: (name, email, password) => API.req('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
-  login: (email, password) => API.req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email, password, remember = true) => API.req('/auth/login', { method: 'POST', body: JSON.stringify({ email, password, remember }) }),
   logout: () => API.req('/auth/logout', { method: 'POST' }),
   me: () => API.req('/auth/me'),
   // Projects
