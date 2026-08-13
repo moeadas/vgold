@@ -292,12 +292,16 @@ async function loadCategoryFiles(catId) {
     const res = await fetch('/api/files?category=' + catId, { credentials: 'same-origin' });
     const data = await res.json();
     const files = data.files || [];
+    const folders = data.folders || [];
     // Cache for the file-search feature
     State.catFilesCache = files;
     // Populate the "All Files" collapsible section only (no duplicated full list)
     const allFilesSection = document.getElementById('cat-all-files-section');
     if (allFilesSection) {
-      allFilesSection.innerHTML = renderCollapsibleFiles(files, 'cat');
+      const wasOpen = (document.getElementById('cat-all-files-body')?.style.display ?? 'none') !== 'none';
+      allFilesSection.innerHTML = renderFilesPanel({ scope: 'cat', files, folders });
+      // Keep the section open across an upload/link/folder refresh.
+      if (wasOpen) toggleCatSection('cat-all-files-body');
     }
   } catch(e) {}
 }
@@ -328,24 +332,66 @@ function renderCollapsibleTasks(cat, projects) {
   `;
 }
 
-// Reusable collapsible + searchable files section.
-// scope is a unique prefix (e.g. 'cat', 'proj') so ids don't collide.
-// B4 — folder-aware file browser. `folders` is a flat list [{id,name,parent_folder_id,file_count}].
-// Files with folder_id === null live at the project root. `scope` is 'proj' or 'cat'.
-// For 'proj', uploads target the active project directly; for 'cat', uploadCategoryFiles
-// picks the first sub-project (folders/links are only offered in the 'proj' scope where a
-// concrete project id exists).
-function renderCollapsibleFiles(files, scope = 'cat', folders = null) {
-  files = files || [];
-  const count = files.length;
+// ===== SHARED FILES PANEL =====
+// One renderer for every "Files" section in the app — workspace (category),
+// project and task page. Before this they were three near-copies that drifted:
+// the task page had no folders, no search and its own upload zone; the workspace
+// scope was missing "New folder" and "Add link" entirely; and each one spaced its
+// toolbar differently. Anything that varies per surface lives in FILE_SCOPES.
+//
+// `scope`  — 'proj' | 'cat' | 'task'. Also the DOM id prefix, so ids never collide.
+// `files`  — [{id,name,ext,size,by,when,folder_id,...}]
+// `folders`— flat [{id,name,parent_folder_id,file_count,project_id}] (folder-capable scopes)
+const FILE_SCOPES = {
+  proj: {
+    title: 'All Files',
+    folders: true,
+    ownerExpr: 'State.activeProjectId',
+    uploadFn: 'uploadFiles',
+    linkFn: 'openAddLinkModal',
+    folderFn: 'openNewFolderModal',
+    deleteFolderFn: 'deleteFolderFromId',
+    rowFn: 'renderFileRow',
+  },
+  cat: {
+    title: 'All Files',
+    folders: true,
+    ownerExpr: 'State.activeCategory?.id',
+    uploadFn: 'uploadCategoryFiles',
+    linkFn: 'openAddCategoryLinkModal',
+    folderFn: 'openNewCategoryFolderModal',
+    deleteFolderFn: 'deleteCategoryFolder',
+    rowFn: 'renderFileRow',
+  },
+  task: {
+    title: 'Files',
+    folders: false,
+    ownerExpr: null,          // supplied by the caller as opts.ownerId
+    uploadFn: 'uploadTaskFiles',
+    linkFn: 'openAddTaskLinkModal',
+    folderFn: null,
+    deleteFolderFn: null,
+    rowFn: 'renderTaskFileRow',
+  },
+};
+
+function renderFilesPanel(opts) {
+  const scope = opts.scope || 'cat';
+  const cfg = FILE_SCOPES[scope];
+  if (!cfg) return '';
+
+  const files = opts.files || [];
+  const folders = cfg.folders ? (opts.folders || []) : [];
+  // The id (or JS expression) the upload/link/folder calls are made against.
+  const owner = opts.ownerId != null ? String(opts.ownerId) : cfg.ownerExpr;
+  const isAdmin = State.user?.role === 'admin';
+
   const bodyId = scope + '-all-files-body';
   const chevronId = scope + '-all-files-chevron';
   const searchId = scope + '-file-search';
   const listId = scope + '-file-list';
-  const uploadFn = scope === 'proj' ? 'uploadFiles' : 'uploadCategoryFiles';
-  const uploadId = scope === 'proj' ? 'State.activeProjectId' : 'State.activeCategory?.id';
-  const supportsFolders = scope === 'proj';
-  folders = supportsFolders ? (folders || []) : [];
+  const zoneId = scope + '-upload-zone';
+  const rowFn = cfg.rowFn;
 
   // Split files into root vs. by-folder buckets.
   const rootFiles = files.filter(f => !f.folder_id);
@@ -354,9 +400,12 @@ function renderCollapsibleFiles(files, scope = 'cat', folders = null) {
   files.forEach(f => { if (f.folder_id && byFolder[f.folder_id]) byFolder[f.folder_id].push(f); });
 
   // Folder blocks (top-level folders only; nesting kept flat for simplicity).
+  // At workspace scope a folder can belong to a sub-project, so uploads into it
+  // must target that folder's own project id — not the workspace id.
   const folderBlocks = folders.filter(fo => !fo.parent_folder_id).map(fo => {
     const inside = byFolder[fo.id] || [];
-    const fBodyId = `folder-body-${fo.id}`;
+    const fBodyId = `${scope}-folder-body-${fo.id}`;
+    const target = fo.project_id != null ? String(fo.project_id) : owner;
     return `
       <div class="folder-block" data-folder-id="${fo.id}">
         <div class="folder-header">
@@ -367,55 +416,70 @@ function renderCollapsibleFiles(files, scope = 'cat', folders = null) {
             <span class="folder-count">${inside.length}</span>
           </button>
           <div class="folder-actions" onclick="event.stopPropagation()">
-            <label class="file-action-btn" title="Upload into folder" style="cursor:pointer">${I.upload}<input type="file" multiple style="display:none" onchange="uploadFiles(${uploadId},this.files,${fo.id})"></label>
-            <button class="file-action-btn" title="Add link into folder" onclick="openAddLinkModal(${uploadId},${fo.id})">${I.link || '🔗'}</button>
-            ${State.user?.role === 'admin' ? `<button class="file-action-btn danger" title="Delete folder" onclick="deleteFolderFromId(${uploadId},${fo.id})">${I.trash}</button>` : ''}
+            <label class="file-action-btn" title="Upload into folder" style="cursor:pointer">${I.upload}<input type="file" multiple style="display:none" onchange="${cfg.uploadFn}(${target},this.files,${fo.id})"></label>
+            <button class="file-action-btn" title="Add link into folder" onclick="${cfg.linkFn}(${target},${fo.id})">${I.link || '🔗'}</button>
+            ${isAdmin ? `<button class="file-action-btn danger" title="Delete folder" onclick="${cfg.deleteFolderFn}(${target},${fo.id})">${I.trash}</button>` : ''}
           </div>
         </div>
         <div class="folder-body" id="${fBodyId}" style="display:none">
-          ${inside.length ? inside.map(f => renderFileRow(f)).join('') : '<div style="padding:10px 0 4px 34px;color:var(--muted);font-size:13px">Empty folder.</div>'}
+          ${inside.length ? inside.map(f => window[rowFn](f)).join('') : '<div class="folder-empty">Empty folder.</div>'}
         </div>
       </div>`;
   }).join('');
 
   const toolbar = `
-    <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px;flex-wrap:wrap">
-      ${supportsFolders ? `<button class="btn" onclick="openNewFolderModal(${uploadId})">${I.folder || '📁'}New folder</button>` : ''}
-      ${supportsFolders ? `<button class="btn" onclick="openAddLinkModal(${uploadId},null)">${I.link || '🔗'}Add link</button>` : ''}
-      <label class="btn" style="cursor:pointer">${I.upload}Upload<input type="file" multiple style="display:none" onchange="${uploadFn}(${uploadId},this.files)"></label>
+    <div class="files-toolbar">
+      ${cfg.folders ? `<button class="btn" onclick="${cfg.folderFn}(${owner})">${I.folder || '📁'}New folder</button>` : ''}
+      <button class="btn" onclick="${cfg.linkFn}(${owner}${cfg.folders ? ',null' : ''})">${I.link || '🔗'}Add link</button>
+      <label class="btn" style="cursor:pointer">${I.upload}Upload<input type="file" multiple style="display:none" onchange="${cfg.uploadFn}(${owner},this.files)"></label>
     </div>`;
 
+  // The zone has always said "drag files here" but only the task page ever
+  // handled a drop. All three do now.
+  const uploadZone = `
+    <div class="upload-zone" id="${zoneId}"
+      ondragover="event.preventDefault();this.classList.add('drag-over')"
+      ondragleave="this.classList.remove('drag-over')"
+      ondrop="event.preventDefault();this.classList.remove('drag-over');${cfg.uploadFn}(${owner},event.dataTransfer.files)"
+      onclick="this.querySelector('input').click()">
+      ${I.upload} Drag files here or click to upload
+      <input type="file" multiple style="display:none" onchange="${cfg.uploadFn}(${owner},this.files)">
+    </div>`;
+
+  const count = files.length;
   const totalItems = count + folders.length;
 
   return `
-    <div class="cat-toggle-section">
+    <div class="cat-toggle-section files-panel">
       <button class="cat-toggle-header" onclick="toggleCatSection('${bodyId}')">
         <span style="display:flex;align-items:center;gap:8px">
           <span class="cat-toggle-chevron" id="${chevronId}">${I.arrowR}</span>
-          <span style="font-size:18px;font-weight:700;color:var(--gold)">All Files</span>
-          <span style="font-size:13px;color:var(--muted)">(${count})</span>
+          <span class="cat-toggle-title">${cfg.title}</span>
+          <span class="cat-toggle-count">(${count})</span>
         </span>
       </button>
-      <div class="cat-toggle-body" id="${bodyId}" style="display:none">
+      <div class="cat-toggle-body files-panel-body" id="${bodyId}" style="display:none">
         ${toolbar}
-        <label class="upload-zone" onclick="this.querySelector('input').click()">
-          ${I.upload} Drag files here or click to upload
-          <input type="file" multiple style="display:none" onchange="${uploadFn}(${uploadId},this.files)">
-        </label>
+        ${uploadZone}
         ${totalItems ? `
           <div class="file-search-wrap">
             ${I.search || ''}
             <input type="text" class="file-search-input" id="${searchId}" placeholder="Search files by name…" oninput="filterFileList('${scope}')" aria-label="Search files">
           </div>
           ${folderBlocks}
-          <div id="${listId}" style="display:flex;flex-direction:column;gap:8px;margin-top:${folderBlocks ? '8px' : '0'}">
-            ${rootFiles.map(f => renderFileRow(f)).join('')}
+          <div id="${listId}" class="file-list">
+            ${rootFiles.map(f => window[rowFn](f)).join('')}
           </div>
-          <div id="${listId}-empty" style="display:none;padding:16px 0;color:var(--muted);font-size:14px">No files match your search.</div>
-        ` : '<div style="padding:16px 0;color:var(--muted);font-size:14px">No files yet.</div>'}
+          <div id="${listId}-empty" class="file-list-empty" style="display:none">No files match your search.</div>
+        ` : '<div class="file-list-empty">No files yet.</div>'}
       </div>
     </div>
   `;
+}
+
+// Back-compat wrapper for the original signature.
+function renderCollapsibleFiles(files, scope = 'cat', folders = null) {
+  return renderFilesPanel({ scope, files, folders });
 }
 
 // Expand/collapse a single folder block.
@@ -470,7 +534,10 @@ function toggleCatSection(bodyId) {
   const body = document.getElementById(bodyId);
   if (!body) return;
   const isShown = body.style.display !== 'none';
-  body.style.display = isShown ? 'none' : 'block';
+  // Clear the inline value rather than setting 'block' — .cat-toggle-body is a
+  // flex column, and an inline display:block silently killed its row gap, which
+  // is why these panels spaced differently from every other stacked section.
+  body.style.display = isShown ? 'none' : '';
   // Update chevron rotation
   const chevronId = bodyId.replace('body', 'chevron');
   const chevron = document.getElementById(chevronId);
@@ -569,48 +636,48 @@ function renderFileRow(f) {
 }
 
 // ===== B4b — CREATE FOLDER =====
-function openNewFolderModal(pid) {
-  if (!pid) { toast('No project selected', 'error'); return; }
+// `scope` ('proj' | 'cat') only decides how the list is refreshed afterwards —
+// a workspace is a project row, so the API call is identical either way.
+function openNewFolderModal(pid, scope = 'proj') {
+  if (!pid) { toast('Nothing selected to add a folder to', 'error'); return; }
   Modal.open({
     title: 'New folder',
     body: `
       <div class="form-field">
         <label class="form-label">Folder name</label>
-        <input class="form-input" id="new-folder-name" placeholder="e.g. Contracts" onkeydown="if(event.key==='Enter')submitNewFolder(${pid})">
+        <input class="form-input" id="new-folder-name" placeholder="e.g. Contracts" onkeydown="if(event.key==='Enter')submitNewFolder(${pid},'${scope}')">
       </div>`,
     footer: `
       <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-      <button class="btn-primary" onclick="submitNewFolder(${pid})">Create folder</button>`,
+      <button class="btn-primary" onclick="submitNewFolder(${pid},'${scope}')">Create folder</button>`,
     onMount: () => setTimeout(() => document.getElementById('new-folder-name')?.focus(), 100),
   });
 }
 
-async function submitNewFolder(pid) {
+async function submitNewFolder(pid, scope = 'proj') {
   const name = document.getElementById('new-folder-name')?.value.trim();
   if (!name) { toast('Please enter a folder name', 'error'); return; }
   try {
     await API.createFolder(pid, name, null);
     Modal.close();
     toast('Folder created', 'success');
-    State.activeProject = null;
-    render();
+    refreshFilesScope(scope, pid);
   } catch(e) { toast(e.message, 'error'); }
 }
 
-async function deleteFolderFromId(pid, folderId) {
-  appConfirm('Delete this folder? Files inside it will be moved to the project root.', async () => {
+async function deleteFolderFromId(pid, folderId, scope = 'proj') {
+  appConfirm('Delete this folder? Files inside it will be moved back to the top level.', async () => {
     try {
       await API.deleteFolder(pid, folderId);
       toast('Folder deleted', 'success');
-      State.activeProject = null;
-      render();
+      refreshFilesScope(scope, pid);
     } catch(e) { toast(e.message, 'error'); }
   });
 }
 
 // ===== B4d — ADD FILE VIA LINK (e.g. SharePoint-hosted) =====
-function openAddLinkModal(pid, folderId) {
-  if (!pid) { toast('No project selected', 'error'); return; }
+function openAddLinkModal(pid, folderId, scope = 'proj') {
+  if (!pid) { toast('Nothing selected to add a link to', 'error'); return; }
   Modal.open({
     title: 'Add file link',
     body: `
@@ -621,16 +688,16 @@ function openAddLinkModal(pid, folderId) {
       </div>
       <div class="form-field">
         <label class="form-label">Display name (optional)</label>
-        <input class="form-input" id="add-link-name" placeholder="e.g. Q3 Budget.xlsx" onkeydown="if(event.key==='Enter')submitAddLink(${pid},${folderId == null ? 'null' : folderId})">
+        <input class="form-input" id="add-link-name" placeholder="e.g. Q3 Budget.xlsx" onkeydown="if(event.key==='Enter')submitAddLink(${pid},${folderId == null ? 'null' : folderId},'${scope}')">
       </div>`,
     footer: `
       <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-      <button class="btn-primary" onclick="submitAddLink(${pid},${folderId == null ? 'null' : folderId})">Add link</button>`,
+      <button class="btn-primary" onclick="submitAddLink(${pid},${folderId == null ? 'null' : folderId},'${scope}')">Add link</button>`,
     onMount: () => setTimeout(() => document.getElementById('add-link-url')?.focus(), 100),
   });
 }
 
-async function submitAddLink(pid, folderId) {
+async function submitAddLink(pid, folderId, scope = 'proj') {
   const url = document.getElementById('add-link-url')?.value.trim();
   let name = document.getElementById('add-link-name')?.value.trim();
   if (!url) { toast('Please enter a link URL', 'error'); return; }
@@ -644,24 +711,57 @@ async function submitAddLink(pid, folderId) {
     await API.addFileLink(pid, url, name, folderId || null);
     Modal.close();
     toast('Link added', 'success');
-    State.activeProject = null;
-    render();
+    refreshFilesScope(scope, pid);
   } catch(e) { toast(e.message, 'error'); }
 }
 
-async function uploadCategoryFiles(catId, files) {
+// A workspace (category) is itself a row in `projects`, so files, folders and
+// links attach to it directly. This used to silently redirect every workspace
+// upload into whichever sub-project happened to sort first, which meant a file
+// dropped on the workspace page landed somewhere the user never chose.
+async function uploadCategoryFiles(catId, files, folderId = null) {
+  if (!catId) { toast('No workspace selected', 'error'); return; }
   if (!files || !files.length) return;
-  // Find first project in category to attach files to, or create a default
-  const cat = State.activeCategory;
-  const projects = cat?.projects || [];
-  if (!projects.length) { toast('Create a project first before uploading files', 'error'); return; }
-  // Use first project as the upload target
-  const pid = projects[0].id;
+  let ok = 0, failed = 0;
+  toast('Uploading' + (files.length > 1 ? ' ' + files.length + ' files…' : '…'), 'info');
   for (const f of files) {
-    try { await API.uploadFile(pid, f); } catch(e) { console.error(e); }
+    try {
+      if (folderId) await API.uploadFileToFolder(catId, f, folderId);
+      else await API.uploadFile(catId, f);
+      ok++;
+    } catch(e) { failed++; console.error('upload failed', e); }
   }
-  toast('Files uploaded', 'success');
-  loadCategoryFiles(catId);
+  if (ok) toast(ok + (ok === 1 ? ' file' : ' files') + ' uploaded', 'success');
+  if (failed) toast(failed + (failed === 1 ? ' file' : ' files') + ' failed to upload', 'error');
+  refreshFilesScope('cat', catId);
+}
+
+// Workspace-scope folder/link actions. They reuse the project modals — only the
+// refresh differs, because the workspace files list is loaded separately into
+// #cat-all-files-section rather than coming back with a full render().
+function openNewCategoryFolderModal(catId) {
+  openNewFolderModal(catId, 'cat');
+}
+
+function openAddCategoryLinkModal(catId, folderId) {
+  openAddLinkModal(catId, folderId, 'cat');
+}
+
+function deleteCategoryFolder(catId, folderId) {
+  deleteFolderFromId(catId, folderId, 'cat');
+}
+
+// Refresh whichever files surface the action was fired from. At workspace scope
+// the id passed in may belong to a SUB-project (a folder living inside one), so
+// always reload against the workspace actually on screen.
+function refreshFilesScope(scope, ownerId) {
+  if (scope === 'cat') {
+    const catId = State.activeCategory?.id || State.activeCategoryId;
+    if (catId) loadCategoryFiles(catId);
+  } else {
+    State.activeProject = null;
+    render();
+  }
 }
 
 async function downloadFileFromId(id) {

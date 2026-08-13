@@ -365,7 +365,10 @@ class MessageController {
     
     // ===== UPLOAD FILE (SharePoint) =====
     public static function uploadFile($projectId) {
-        Authz::requireProjectAccess($projectId);
+        // Accepts a workspace (category) id as well — it is a project row, and the
+        // workspace files panel uploads straight onto it rather than guessing a
+        // sub-project.
+        Authz::requireProjectOrCategoryAccess($projectId);
         if (!isset($_FILES['file'])) jsonError('No file uploaded');
         
         $file = $_FILES['file'];

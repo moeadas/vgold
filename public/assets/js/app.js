@@ -314,7 +314,7 @@ async function render() {
             <div style="display:flex;align-items:center;gap:6px;position:relative">
             <button class="notif-btn" id="notif-btn" onclick="toggleNotifPanel()" aria-label="Notifications" aria-haspopup="true" aria-expanded="false" aria-controls="notif-panel" style="background:none;border:none;cursor:pointer;position:relative;padding:8px;border-radius:10px;color:var(--text-2);display:flex;align-items:center;justify-content:center;transition:background .15s">
               ${I.bell}
-              <span id="notif-badge" style="display:none;position:absolute;top:0;right:0;background:#B0432B;color:#FFF;font-size:10px;font-weight:700;border-radius:99px;min-width:17px;height:17px;display:flex;align-items:center;justify-content:center;padding:0 4px;line-height:1">${State.notifCount}</span>
+              <span id="notif-badge" style="display:${State.notifCount > 0 ? 'flex' : 'none'};position:absolute;top:0;right:0;background:#B0432B;color:#FFF;font-size:10px;font-weight:700;border-radius:99px;min-width:17px;height:17px;align-items:center;justify-content:center;padding:0 4px;line-height:1">${State.notifCount > 99 ? '99+' : (State.notifCount || '')}</span>
             </button>
             <div class="notif-panel" id="notif-panel" role="menu" aria-label="Notifications" style="display:none">
               <div class="notif-panel-header">

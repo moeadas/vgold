@@ -41,7 +41,7 @@ async function renderProject() {
   `).join('');
 
   const projFiles = p.files || [];
-  const filesSection = renderCollapsibleFiles(projFiles, 'proj', p.folders || []);
+  const filesSection = renderFilesPanel({ scope: 'proj', files: projFiles, folders: p.folders || [] });
 
   // C3 — multi-level breadcrumb (category → project → sub-project → …). The
   // backend provides `breadcrumb` as an ordered ancestor list; we append the

@@ -202,9 +202,10 @@ async function renderMessages() {
             <div style="flex:1;position:relative">
               <div class="msg-composer" id="msg-composer" contenteditable="true" placeholder="Write a message… or @ to mention…" onkeydown="onComposerKey(event)" oninput="onComposerInput()"></div>
               <div class="mention-dropdown" id="mention-dropdown" style="display:none"></div>
-              <div id="chat-attachment-preview" style="display:none;margin-top:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:13px;display:flex;align-items:center;gap:8px">
-                <span id="chat-attachment-name" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
-                <button class="btn" style="padding:2px 8px;font-size:12px" onclick="clearChatAttachment()">✕</button>
+              <div id="chat-attachment-preview" class="chat-attachment-preview">
+                <span class="chat-attachment-chip">${I.upload || '📎'}</span>
+                <span id="chat-attachment-name"></span>
+                <button class="chat-attachment-clear" onclick="clearChatAttachment()" title="Remove attachment" aria-label="Remove attachment">✕</button>
               </div>
             </div>
             <input type="file" id="chat-attachment-input" style="display:none" onchange="onChatAttachmentSelect(this.files)">
@@ -456,6 +457,10 @@ function deleteChannelFromList(id, name) {
 
 let _chatAttachment = null;
 
+// The preview strip under the composer is hidden by CSS and only revealed by the
+// `is-visible` class. It used to be toggled with an inline `display`, but the
+// markup carried BOTH `display:none` and `display:flex` in one style attribute —
+// the later declaration won, so an empty bar sat under every composer.
 function onChatAttachmentSelect(files) {
   if (!files || !files.length) return;
   _chatAttachment = files[0];
@@ -463,14 +468,18 @@ function onChatAttachmentSelect(files) {
   const name = document.getElementById('chat-attachment-name');
   if (preview && name) {
     name.textContent = _chatAttachment.name;
-    preview.style.display = 'flex';
+    preview.classList.add('is-visible');
   }
 }
 
 function clearChatAttachment() {
   _chatAttachment = null;
   const preview = document.getElementById('chat-attachment-preview');
-  if (preview) preview.style.display = 'none';
+  if (preview) {
+    preview.classList.remove('is-visible');
+    const name = document.getElementById('chat-attachment-name');
+    if (name) name.textContent = '';
+  }
   const input = document.getElementById('chat-attachment-input');
   if (input) input.value = '';
 }

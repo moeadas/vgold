@@ -53,39 +53,8 @@ async function renderTaskPage(taskId) {
     </div>
   `).join('');
 
-  // Files
-  const taskFiles = (t.files || []).map(f => {
-    // Link-type attachment (URL pasted via "Add link"): render as a clickable
-    // external link. No preview/download/edit — just open in a new tab.
-    if (f.is_link && f.external_url) {
-      const url = f.external_url;
-      return `<div class="file-row" style="cursor:pointer" onclick="window.open('${esc(url)}','_blank','noopener')">
-        <div class="file-icon" style="background:#4A7C9B"><span>LINK</span></div>
-        <div style="flex:1;min-width:0">
-          <div class="file-name">${esc(f.name)} <span style="font-size:11px;color:var(--muted);font-weight:400">↗ external</span></div>
-          <div class="file-meta">Link · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
-        </div>
-        <div class="file-actions" onclick="event.stopPropagation()">
-          <button class="file-action-btn" onclick="window.open('${esc(url)}','_blank','noopener')" title="Open link">${I.eye}</button>
-          ${State.user?.role === 'admin' || f.uploaded_by === State.user?.id ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${t.id},${f.id})" title="Remove link">${I.trash}</button>` : ''}
-        </div>
-      </div>`;
-    }
-    const colorMap = { PDF: '#B0432B', DOC: '#4A7C9B', DOCX: '#4A7C9B', XLS: '#5B8C5A', XLSX: '#5B8C5A', PNG: '#C99520', JPG: '#C99520', JPEG: '#C99520', ZIP: '#8A6D4F', CSV: '#4A7C9B' };
-    const fc = colorMap[(f.ext || '').toUpperCase()] || '#6B5A4A';
-    return `<div class="file-row" style="cursor:pointer" onclick="viewTaskFile(${f.id})">
-      <div class="file-icon" style="background:${fc}"><span>${esc(f.ext || 'FILE')}</span></div>
-      <div style="flex:1;min-width:0">
-        <div class="file-name">${esc(f.name || f.filename)}</div>
-        <div class="file-meta">${esc(f.size || '')} · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
-      </div>
-      <div class="file-actions" onclick="event.stopPropagation()">
-        <button class="file-action-btn" onclick="viewTaskFile(${f.id})" title="Open">${I.eye}</button>
-        <button class="file-action-btn" onclick="downloadTaskFile(${f.id})" title="Download">${I.download}</button>
-        ${State.user?.role === 'admin' || f.uploaded_by === State.user?.id ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${t.id},${f.id})" title="Delete">${I.trash}</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
+  // Files — rendered by the shared panel (renderTaskFileRow lives below).
+  _taskFileOwnerId = t.id;
 
   return `
     <div class="fade-in">
@@ -126,26 +95,9 @@ async function renderTaskPage(taskId) {
             ${t.source_module === 'crm.follow_up' && t.crm_lead_id ? `<button onclick="goCrmLead(${t.crm_lead_id})" class="crm-lead-link" style="display:inline-flex;align-items:center;gap:6px;margin-top:14px;padding:8px 14px;border-radius:99px;background:#F4ECDD;color:#8E6B3A;font-size:13px;font-weight:600;text-decoration:none;border:none;cursor:pointer">View lead in CRM →</button>` : ''}
           </div>
 
-          <!-- Files -->
-          <div class="cat-toggle-section" style="margin-top:8px">
-            <button class="cat-toggle-header" onclick="toggleCatSection('task-files-body')">
-              <span style="display:flex;align-items:center;gap:8px">
-                <span class="cat-toggle-chevron" id="task-files-chevron">${I.arrowR}</span>
-                <span style="font-size:22px;font-family:var(--serif);font-weight:400;color:var(--gold)">Files</span>
-                <span style="font-size:13px;color:var(--muted)">(${(t.files||[]).length})</span>
-              </span>
-            </button>
-            <div class="cat-toggle-body" id="task-files-body" style="display:none">
-              <div style="display:flex;justify-content:flex-end;gap:8px;margin-bottom:10px">
-                <button class="btn" onclick="openAddTaskLinkModal(${t.id})">${I.link || '🔗'}Add link</button>
-                <label class="btn" style="cursor:pointer">${I.upload}Upload<input type="file" multiple style="display:none" onchange="uploadTaskFiles(${t.id},this.files)"></label>
-              </div>
-              <div class="task-upload-zone" id="task-upload-zone" ondragover="event.preventDefault();this.classList.add('drag-over')" ondragleave="this.classList.remove('drag-over')" ondrop="event.preventDefault();this.classList.remove('drag-over');uploadTaskFiles(${t.id},event.dataTransfer.files)" onclick="this.querySelector('input').click()">
-                ${I.upload} Drag files here or click to upload
-                <input type="file" multiple style="display:none" onchange="uploadTaskFiles(${t.id},this.files)">
-              </div>
-              <div id="task-files-list" style="display:flex;flex-direction:column;gap:8px;margin-top:12px">${taskFiles || '<div style="font-size:14px;color:var(--muted);padding:8px 0">No files attached.</div>'}</div>
-            </div>
+          <!-- Files — same shared panel as the project and workspace pages -->
+          <div style="margin-top:8px">
+            ${renderFilesPanel({ scope: 'task', files: t.files || [], ownerId: t.id })}
           </div>
 
           <!-- Delete button -->
@@ -282,6 +234,48 @@ function editTaskPageDesc(taskId, el) {
   area.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { el.innerHTML = oldVal ? linkifyText(oldVal) : esc('No description yet. Click to add one.'); el.dataset.value = oldVal; el.classList.toggle('is-empty', !oldVal); }
   });
+}
+
+// ===== TASK FILE ROW =====
+// The shared files panel (renderFilesPanel, projects.js) calls this by name for
+// every row in the 'task' scope. Task files live in their own table with their
+// own view/download/delete endpoints, which is the only reason this isn't
+// renderFileRow — the markup is deliberately identical.
+let _taskFileOwnerId = null;
+
+function renderTaskFileRow(f) {
+  const taskId = _taskFileOwnerId;
+  const canDelete = State.user?.role === 'admin' || f.uploaded_by === State.user?.id;
+  // Link-type attachment (URL pasted via "Add link"): render as a clickable
+  // external link. No preview/download/edit — just open in a new tab.
+  if (f.is_link && f.external_url) {
+    const url = f.external_url;
+    return `<div class="file-row" style="cursor:pointer" onclick="window.open('${esc(url)}','_blank','noopener')">
+      <div class="file-icon" style="background:#4A7C9B"><span>LINK</span></div>
+      <div style="flex:1;min-width:0">
+        <div class="file-name">${esc(f.name)} <span style="font-size:11px;color:var(--muted);font-weight:400">↗ external</span></div>
+        <div class="file-meta">Link · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
+      </div>
+      <div class="file-actions" onclick="event.stopPropagation()">
+        <button class="file-action-btn" onclick="window.open('${esc(url)}','_blank','noopener')" title="Open link">${I.eye}</button>
+        ${canDelete ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${taskId},${f.id})" title="Remove link">${I.trash}</button>` : ''}
+      </div>
+    </div>`;
+  }
+  const colorMap = { PDF: '#B0432B', DOC: '#4A7C9B', DOCX: '#4A7C9B', XLS: '#5B8C5A', XLSX: '#5B8C5A', PNG: '#C99520', JPG: '#C99520', JPEG: '#C99520', ZIP: '#8A6D4F', CSV: '#4A7C9B' };
+  const fc = colorMap[(f.ext || '').toUpperCase()] || '#6B5A4A';
+  return `<div class="file-row" style="cursor:pointer" onclick="viewTaskFile(${f.id})">
+    <div class="file-icon" style="background:${fc}"><span>${esc(f.ext || 'FILE')}</span></div>
+    <div style="flex:1;min-width:0">
+      <div class="file-name">${esc(f.name || f.filename)}</div>
+      <div class="file-meta">${esc(f.size || '')} · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
+    </div>
+    <div class="file-actions" onclick="event.stopPropagation()">
+      <button class="file-action-btn" onclick="viewTaskFile(${f.id})" title="Open">${I.eye}</button>
+      <button class="file-action-btn" onclick="downloadTaskFile(${f.id})" title="Download">${I.download}</button>
+      ${canDelete ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${taskId},${f.id})" title="Delete">${I.trash}</button>` : ''}
+    </div>
+  </div>`;
 }
 
 // Upload task files

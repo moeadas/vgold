@@ -408,13 +408,17 @@ class ProjectController {
             'id' => (int)$f['id'],
             'name' => $f['name'],
             'parent_folder_id' => $f['parent_folder_id'] !== null ? (int)$f['parent_folder_id'] : null,
+            'project_id' => (int)$f['project_id'],
             'file_count' => (int)($f['file_count'] ?? 0),
         ], $rows);
     }
 
     // ===== FOLDERS (B4b) =====
     public static function createFolder($projectId) {
-        Authz::requireProjectAccess($projectId);
+        // A workspace (category) is a project row, so folders and links attach to it
+        // directly. requireProjectAccess() alone would reject a user who is only a
+        // member of one of its sub-projects.
+        Authz::requireProjectOrCategoryAccess($projectId);
         $data = input();
         requireFields(['name'], $data);
         $name = trim($data['name']);
@@ -440,7 +444,10 @@ class ProjectController {
     }
 
     public static function deleteFolder($projectId, $folderId) {
-        Authz::requireProjectAccess($projectId);
+        // A workspace (category) is a project row, so folders and links attach to it
+        // directly. requireProjectAccess() alone would reject a user who is only a
+        // member of one of its sub-projects.
+        Authz::requireProjectOrCategoryAccess($projectId);
         $folder = DB::fetch("SELECT * FROM file_folders WHERE id = ? AND project_id = ?", [$folderId, $projectId]);
         if (!$folder) jsonError('Folder not found', 404);
         $user = Auth::user();
@@ -457,7 +464,10 @@ class ProjectController {
 
     // ===== ADD FILE VIA LINK (B4d) =====
     public static function addFileLink($projectId) {
-        Authz::requireProjectAccess($projectId);
+        // A workspace (category) is a project row, so folders and links attach to it
+        // directly. requireProjectAccess() alone would reject a user who is only a
+        // member of one of its sub-projects.
+        Authz::requireProjectOrCategoryAccess($projectId);
         $data = input();
         requireFields(['url', 'name'], $data);
         $url = trim($data['url']);
@@ -784,7 +794,31 @@ class ProjectController {
             $out['project_name'] = $f['project_name'];
             return $out;
         }, $files);
-        jsonResponse(['files' => $result]);
+
+        // Folders for the whole category tree, so the workspace files panel can
+        // group exactly like the project one. Each carries its own project_id
+        // because an upload into a sub-project's folder must target that project.
+        $folders = [];
+        if ($categoryId) {
+            $rows = DB::fetchAll(
+                "SELECT ff.id, ff.name, ff.parent_folder_id, ff.project_id,
+                        (SELECT COUNT(*) FROM files f WHERE f.folder_id = ff.id) AS file_count
+                 FROM file_folders ff
+                 JOIN projects p ON ff.project_id = p.id
+                 WHERE p.workspace_id = ?
+                   AND (ff.project_id = ? OR ff.project_id IN (SELECT id FROM projects WHERE parent_id = ?))
+                 ORDER BY ff.name ASC",
+                [$wsId, $categoryId, $categoryId]
+            );
+            $folders = array_map(fn($f) => [
+                'id' => (int)$f['id'],
+                'name' => $f['name'],
+                'parent_folder_id' => $f['parent_folder_id'] !== null ? (int)$f['parent_folder_id'] : null,
+                'project_id' => (int)$f['project_id'],
+                'file_count' => (int)($f['file_count'] ?? 0),
+            ], $rows);
+        }
+        jsonResponse(['files' => $result, 'folders' => $folders]);
     }
     
     public static function addMember($id) {

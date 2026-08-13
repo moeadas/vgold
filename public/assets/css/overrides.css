@@ -749,3 +749,64 @@ span.acc-truncate { display: inline-block; vertical-align: bottom; }
 }
 .msg-quote-who  { display: block; font-weight: 700; color: var(--gold-dark, var(--gold)); }
 .msg-quote-text { display: block; color: var(--muted); }
+
+/* ===== SHARED FILES PANEL =====
+   The Files section on the project, workspace and task pages is one component
+   (renderFilesPanel in projects.js). These rules replace the per-page inline
+   styles that had each surface spacing and titling itself differently.
+
+   .cat-toggle-body is a flex column, so vertical rhythm comes from ONE row gap
+   here — children must not carry their own margins or the two compound. */
+.files-panel-body { padding: 0 20px 18px 20px; gap: 12px; }
+.files-panel-body > * { margin-top: 0; margin-bottom: 0; }
+
+.files-panel .cat-toggle-title {
+  font-size: 18px; font-weight: 700; color: var(--gold);
+  font-family: var(--sans); line-height: 1.2;
+}
+.files-panel .cat-toggle-count { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+/* Toolbar: New folder / Add link / Upload. Same order and alignment everywhere. */
+.files-toolbar {
+  display: flex; justify-content: flex-end; align-items: center;
+  gap: 8px; flex-wrap: wrap;
+}
+.files-toolbar .btn { flex: none; }
+
+.file-list { display: flex; flex-direction: column; gap: 8px; }
+.file-list:empty { display: none; }
+.file-list-empty { padding: 4px 0 2px; color: var(--muted); font-size: 14px; }
+.folder-empty { padding: 6px 0 2px 34px; color: var(--muted); font-size: 13px; }
+
+/* Folder blocks stack on the panel's own gap, not their own margins. */
+.folder-block + .folder-block { margin-top: 8px; }
+
+@media (max-width: 720px) {
+  .cat-toggle-header { padding: 14px 16px; }
+  .files-panel-body { padding: 0 16px 16px 16px; }
+  .files-toolbar { justify-content: stretch; }
+  .files-toolbar .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ===== CHAT COMPOSER ATTACHMENT =====
+   Hidden until a file is actually picked. The old markup carried both
+   display:none and display:flex in one style attribute, so the later
+   declaration won and an empty strip sat under every composer. */
+.chat-attachment-preview { display: none; }
+.chat-attachment-preview.is-visible {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface-2); font-size: 13px; color: var(--text);
+}
+.chat-attachment-chip { display: inline-flex; color: var(--gold); flex: none; }
+#chat-attachment-name {
+  flex: 1; min-width: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-attachment-clear {
+  flex: none; border: none; background: none; cursor: pointer;
+  color: var(--muted); font-size: 13px; line-height: 1;
+  padding: 4px 6px; border-radius: 6px; transition: all .15s;
+}
+.chat-attachment-clear:hover { background: var(--gold-bg); color: var(--gold-dark); }
