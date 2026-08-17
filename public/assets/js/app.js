@@ -168,7 +168,10 @@ function chatStartReply(kind, id) {
   ChatReply[kind] = { id, who: el.dataset.who || '', text: el.dataset.text || '' };
   chatRenderReplyBar(kind);
   const composer = document.getElementById(kind === 'channel' ? 'msg-composer' : 'proj-chat-input');
-  if (composer) composer.focus();
+  // preventScroll matters when a notification deep-link just scrolled the thread
+  // to the message being replied to: a plain focus() scrolls the composer into
+  // view and yanks that message straight back off screen.
+  if (composer) composer.focus({ preventScroll: true });
 }
 
 function chatCancelReply(kind) {
@@ -1195,16 +1198,21 @@ function closeNotifPanelOutside(e) {
   }
 }
 
+// The rendered list, kept so a click can look its notification up by index
+// instead of trying to smuggle a routing object through an inline onclick.
+let _notifItems = [];
+
 async function loadNotifList() {
   try {
     const res = await API.notifications();
     const list = document.getElementById('notif-list');
-    if (!res.notifications || !res.notifications.length) {
+    _notifItems = res.notifications || [];
+    if (!_notifItems.length) {
       list.innerHTML = '<div style="padding:24px;text-align:center;color:var(--muted);font-size:14px">No notifications yet</div>';
       return;
     }
-    list.innerHTML = res.notifications.map(n => `
-      <div class="notif-item ${n.is_read ? 'read' : 'unread'}" role="menuitem" tabindex="0" onclick="handleNotifClick('${esc(n.link_type)}', ${n.link_id || 0}, ${n.project_id || 0}); markNotifRead(${n.id})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
+    list.innerHTML = _notifItems.map((n, i) => `
+      <div class="notif-item ${n.is_read ? 'read' : 'unread'}" role="menuitem" tabindex="0" onclick="openNotif(${i})" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click();}">
         <div class="notif-dot ${n.is_read ? '' : 'active'}" aria-hidden="true"></div>
         <div style="flex:1;min-width:0">
           <div class="notif-title">${esc(n.title)}</div>
@@ -1241,13 +1249,77 @@ async function promptInstall() {
   deferredInstallPrompt = null;
 }
 
-function handleNotifClick(type, id, projectId) {
-  if (!type) return;
-  toggleNotifPanel();
-  if (type === 'task' && id) navigateToTask(id, projectId);
-  else if (type === 'project' && id) goProject(id);
-  else if (type === 'crm_lead' && id) goCrmLead(id);
-  else if (type === 'crm') nav('crm-dashboard');
+function openNotif(index) {
+  const n = _notifItems[index];
+  if (!n) return;
+  setNotifClosed();
+  if (!n.is_read) { n.is_read = true; markNotifRead(n.id); }
+  goToNotification(n.target);
+}
+
+/**
+ * Act on a notification. `target` is computed server-side
+ * (NotificationController::targetFor) so there is exactly one routing table and
+ * the client cannot silently do nothing for a link type it has not heard of —
+ * `target.nav` is always populated, so there is always somewhere to land.
+ */
+function goToNotification(t) {
+  if (!t) { nav('mytasks'); return; }
+
+  switch (t.action) {
+    // goTaskPage takes an optional project id. The old path went through
+    // navigateToTask(), which refetched My Tasks and gave up silently when the
+    // task wasn't in it — a mention on someone else's task opened nothing.
+    case 'task':    goTaskPage(t.id, t.project_id || null); break;
+    case 'project': goProject(t.id); break;
+    case 'crm_lead': goCrmLead(t.id); break;
+    case 'channel':
+      // openChannel() doesn't set the screen, so nav() has to come first.
+      nav('messages');
+      if (typeof openChannel === 'function') openChannel(t.id);
+      break;
+    case 'contractor_invoice':
+      if (typeof accGoContractorInvoices === 'function') accGoContractorInvoices(t.id);
+      else nav(t.nav);
+      break;
+    default: nav(t.nav || 'mytasks');
+  }
+
+  if (t.focus) focusNotifRow(t.focus, !!t.reply);
+}
+
+/**
+ * Scroll to the exact row a notification is about and flash it.
+ *
+ * `spec` is 'channel:42' / 'project:42' / 'task:42'. The target may not be in
+ * the DOM yet — the screen it lives on is still fetching — so poll briefly
+ * rather than firing once and missing. Chat rows are `cmsg-<kind>-<id>` from
+ * chatMsgHTML(); task comments are `tcmt-<id>`.
+ */
+function focusNotifRow(spec, primeReply) {
+  const [kind, rawId] = String(spec).split(':');
+  const id = Number(rawId);
+  if (!kind || !id) return;
+  const domId = kind === 'task' ? 'tcmt-' + id : 'cmsg-' + kind + '-' + id;
+
+  let tries = 0;
+  const tick = () => {
+    const el = document.getElementById(domId);
+    if (!el) {
+      if (++tries < 40) setTimeout(tick, 150);   // ~6s, then give up quietly
+      return;
+    }
+    // Prime the reply BEFORE scrolling. The reply bar takes height off the
+    // message list, so scrolling first leaves the message clipped by exactly
+    // the bar's height.
+    if (primeReply && kind !== 'task' && typeof chatStartReply === 'function') {
+      chatStartReply(kind, id);
+    }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('notif-focus');
+    setTimeout(() => el.classList.remove('notif-focus'), 2600);
+  };
+  setTimeout(tick, 120);
 }
 
 async function markNotifRead(id) {

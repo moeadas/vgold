@@ -197,7 +197,7 @@ class TaskController {
                     $task['assigned_to'], 'completion',
                     $actor['name'] . " completed a task",
                     $task['title'],
-                    'task', $id, $task['project_id']
+                    'task', $id, $task['project_id'], (int)$cid
                 );
             }
         }
@@ -440,11 +440,18 @@ class TaskController {
             'body' => $data['body'],
         ]);
         
-        // Notify @mentions in the comment
-        NotificationController::notifyMentions($data['body'], Auth::userId(), null, $id);
-        
         // Also notify task assignees about the comment
         $task = DB::fetch("SELECT title, project_id FROM tasks WHERE id = ?", [$id]);
+
+        // Notify @mentions in the comment. Passing the project means the mention
+        // can be opened by anyone, not only people who already have the task in
+        // their My Tasks; ref_id scrolls straight to the comment.
+        NotificationController::notifyMentions(
+            $data['body'], Auth::userId(), $task['project_id'] ?? null, $id,
+            ['link_type' => 'task', 'link_id' => (int)$id, 'ref_id' => (int)$cid,
+             'label' => $task['title'] ?? null]
+        );
+
         $assignees = DB::fetchAll("SELECT user_id FROM task_assignees WHERE task_id = ?", [$id]);
         $actor = DB::fetch("SELECT name FROM users WHERE id = ?", [Auth::userId()]);
         foreach ($assignees as $a) {

@@ -992,3 +992,23 @@ textarea.ml-grow,
   }
   .notif-item { align-items: flex-start; }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NOTIFICATION DEEP-LINK HIGHLIGHT
+   Clicking a notification scrolls to the exact message/comment it is about and
+   flashes it, so you can see WHICH one it meant among a screen full of others.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.notif-focus { animation: notifFocus 2.6s ease-out both; border-radius: 12px; }
+
+@keyframes notifFocus {
+  0%   { background: var(--gold-bg); box-shadow: 0 0 0 6px var(--gold-bg); }
+  70%  { background: var(--gold-bg); box-shadow: 0 0 0 6px var(--gold-bg); }
+  100% { background: transparent;    box-shadow: 0 0 0 6px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notif-focus { animation: none; background: var(--gold-bg); box-shadow: 0 0 0 6px var(--gold-bg); }
+}
+
+/* The notification rows themselves should read as clickable. */
+.notif-item { cursor: pointer; }
+.notif-item:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }

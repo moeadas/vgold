@@ -319,9 +319,17 @@ class MessageController {
             }
         }
         
-        // Notify @mentions
+        // Notify @mentions. The context tells notifyMentions this happened in a
+        // CHANNEL — it used to file channel mentions as link_type 'project' with a
+        // null link_id, which routed nowhere and named the wrong container.
         $channel = DB::fetch("SELECT * FROM channels WHERE id = ?", [$channelId]);
-        NotificationController::notifyMentions($body, Auth::userId(), ($channel && isset($channel['project_id'])) ? $channel['project_id'] : null);
+        NotificationController::notifyMentions(
+            $body, Auth::userId(),
+            ($channel && isset($channel['project_id'])) ? $channel['project_id'] : null,
+            null,
+            ['link_type' => 'channel', 'link_id' => (int)$channelId, 'ref_id' => (int)$id,
+             'label' => $channel['name'] ?? null]
+        );
 
         // Tell the person you replied to. Best-effort — a failed notification
         // must never fail the send itself.
@@ -333,7 +341,7 @@ class MessageController {
                     NotificationController::create(
                         (int)$pa['user_id'], 'chat',
                         ($actor['name'] ?? 'Someone') . ' replied to you in ' . ($channel['name'] ?? 'a channel'),
-                        $body, 'channel', $channelId, null
+                        $body, 'channel', $channelId, null, (int)$id
                     );
                 }
             } catch (\Throwable $e) { error_log('Reply notification failed: ' . $e->getMessage()); }
@@ -425,7 +433,7 @@ class MessageController {
                     NotificationController::create(
                         $replyTargetId, 'chat',
                         $actor['name'] . ' replied to you in ' . $project['name'],
-                        $data['body'], 'project', $projectId, $projectId
+                        $data['body'], 'project', $projectId, $projectId, (int)$id
                     );
                 } catch (\Throwable $e) { error_log('Reply notification failed: ' . $e->getMessage()); }
             }
@@ -436,7 +444,10 @@ class MessageController {
         
         // Create mention notifications + send email (non-blocking)
         try {
-            NotificationController::notifyMentions($data['body'], Auth::userId(), $projectId);
+            NotificationController::notifyMentions(
+                $data['body'], Auth::userId(), $projectId, null,
+                ['link_type' => 'project', 'link_id' => (int)$projectId, 'ref_id' => (int)$id]
+            );
             
             // Also send email for mentions
             preg_match_all('/@(\w+(?:\s+\w+)?)/', $data['body'], $matches);

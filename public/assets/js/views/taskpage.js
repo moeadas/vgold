@@ -43,8 +43,10 @@ async function renderTaskPage(taskId) {
   const assigneeAvatars = assignees.length ? assignees.map(a => `<div class="avatar avatar-sm" style="background:${a.avatar_color || a.bg};margin-right:-6px;border:2px solid var(--surface)" title="${esc(a.name)}">${esc(a.initials)}</div>`).join('') : '<span style="font-size:13px;color:var(--muted)">Unassigned</span>';
 
   // Comments
+  // The tcmt-<id> anchor is what a "mentioned you" / "commented on" notification
+  // scrolls to (focusNotifRow in app.js).
   const comments = (t.comments || []).map(c => `
-    <div style="display:flex;gap:11px;margin-bottom:16px">
+    <div class="task-cmt" id="tcmt-${c.id}" style="display:flex;gap:11px;margin-bottom:16px">
       <div class="avatar" style="width:30px;height:30px;font-size:11px;background:${c.bg || c.avatar_color}">${esc(c.initials)}</div>
       <div style="min-width:0">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px"><span style="font-size:13px;font-weight:700">${esc(c.who || c.name)}</span><span style="font-size:11px;color:var(--muted)">${esc(c.time || c.time_ago)}</span></div>
@@ -392,7 +394,7 @@ async function sendTaskPageComment(taskId) {
       // Clear the "no comments yet" placeholder on first comment.
       if (_taskPageData && _taskPageData.comments.length === 1) cm.innerHTML = '';
       cm.insertAdjacentHTML('beforeend', `
-        <div style="display:flex;gap:11px;margin-bottom:16px">
+        <div class="task-cmt" id="tcmt-${c.id}" style="display:flex;gap:11px;margin-bottom:16px">
           <div class="avatar" style="width:30px;height:30px;font-size:11px;background:${c.bg || c.avatar_color}">${esc(c.initials)}</div>
           <div style="min-width:0">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px"><span style="font-size:13px;font-weight:700">${esc(c.who || c.name)}</span><span style="font-size:11px;color:var(--muted)">${esc(c.time || c.time_ago || 'now')}</span></div>

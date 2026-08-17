@@ -126,7 +126,7 @@ async function renderMessages() {
     if (!State.mentions || !State.mentions.length) {
       convHTML = '<div style="padding:40px;text-align:center;color:var(--muted)"><div style="font-size:48px;margin-bottom:12px">@</div><div style="font-size:15px;font-weight:600;color:var(--text)">No mentions yet</div><div style="font-size:13px;margin-top:4px">When someone mentions you with @, it will appear here.</div></div>';
     } else {
-      convHTML = '<div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">' + State.mentions.map(n => {
+      convHTML = '<div style="padding:16px 22px;display:flex;flex-direction:column;gap:12px">' + State.mentions.map((n, idx) => {
         // Parse who and context from title
         // Title formats: "X mentioned you in Y" or "X mentioned you" or "X posted in Y"
         let who = 'Someone';
@@ -137,12 +137,17 @@ async function renderMessages() {
         else if (m2) { who = m2[1]; context = m2[2] || ''; }
         else { who = n.title; }
         
+        // Route through the same server-computed target the bell uses. This card
+        // used to send every task mention to nav('mytasks') — the list, not the
+        // task — and could call goProject(0) when link_id was missing.
         const linkType = n.link_type || 'project';
-        const linkId = n.link_id || n.project_id;
-        const goTo = linkType === 'task' ? "nav('mytasks')" : "nav('project');goProject(" + linkId + ")";
-        const contextLabel = context ? 'in ' + esc(context) : (linkType === 'task' ? 'in a task' : '');
+        const contextLabel = context ? 'in ' + esc(context)
+          : (linkType === 'task' ? 'in a task' : linkType === 'channel' ? 'in a channel' : '');
+        const goLabel = linkType === 'task' ? 'View task'
+          : linkType === 'channel' ? 'Open the message'
+          : 'View project';
         return `
-          <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface);transition:border-color .15s;cursor:pointer" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'" onclick="${goTo}">
+          <div style="border:1px solid var(--border);border-radius:14px;padding:16px;background:var(--surface);transition:border-color .15s;cursor:pointer" onmouseover="this.style.borderColor='var(--gold)'" onmouseout="this.style.borderColor='var(--border)'" onclick="openMentionCard(${idx})">
             <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
               <div class="avatar avatar-md" style="background:#C99520;font-size:14px;flex:none">@</div>
               <div style="flex:1;min-width:0">
@@ -151,7 +156,7 @@ async function renderMessages() {
               </div>
             </div>
             <div style="font-size:13.5px;line-height:1.5;color:var(--text);background:var(--gold-bg);border-radius:10px;padding:12px 14px;border-left:3px solid var(--gold)">${linkify(esc(n.body || ''))}</div>
-            <div style="margin-top:10px;font-size:12px;color:var(--gold);font-weight:600">View ${linkType === 'task' ? 'task' : 'project'} →</div>
+            <div style="margin-top:10px;font-size:12px;color:var(--gold);font-weight:600">${goLabel} →</div>
           </div>
         `;
       }).join('') + '</div>';
@@ -388,6 +393,15 @@ async function sendCommentReply(id, projectId) {
   } finally {
     if (sendBtn) { sendBtn.disabled = false; sendBtn.textContent = 'Send reply'; }
   }
+}
+
+// A mention card opens the exact thing that was mentioned, using the same
+// server-computed target as the notification bell.
+function openMentionCard(idx) {
+  const n = (State.mentions || [])[idx];
+  if (!n) return;
+  if (!n.is_read) { n.is_read = true; if (typeof API.markRead === 'function') API.markRead(n.id).catch(() => {}); }
+  if (typeof goToNotification === 'function') goToNotification(n.target);
 }
 
 async function openMentions() {
