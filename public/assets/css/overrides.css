@@ -825,6 +825,13 @@ textarea.msg-composer,
 textarea.ask-input,
 textarea.ml-grow {
   display: block;
+  /* A <textarea> sizes itself from its `cols` attribute (~20 chars) and does NOT
+     stretch to fill like the <div>/<input> it replaced. Without this the
+     Messages composer collapsed to ~275px. box-sizing keeps the padding inside
+     that width. */
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   resize: none;              /* height is driven by mlAutoGrow, not the grip */
   overflow-y: hidden;
   font-family: var(--sans);
@@ -886,3 +893,102 @@ textarea.ml-grow,
 }
 
 .cmt-text { font-size: 14px; line-height: 1.5; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   CHAT: REPLY + DELETE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Bubble and its action buttons sit on one row; on your own messages the row
+   reverses with .chat-msg.me so the buttons stay on the inside edge. */
+.msg-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.chat-msg.me .msg-row { flex-direction: row-reverse; }
+
+.chat-actions { display: flex; gap: 2px; flex: none; opacity: 0; transition: opacity .12s; }
+.chat-msg:hover .chat-actions,
+.chat-actions:focus-within { opacity: 1; }
+
+.chat-act {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 26px; height: 26px; padding: 0;
+  border: none; background: none; cursor: pointer;
+  color: var(--muted); border-radius: 7px; transition: background .12s, color .12s;
+}
+.chat-act:hover { background: var(--gold-bg); color: var(--gold-dark, var(--gold)); }
+.chat-act-del:hover { background: #F6E3DF; color: #B0432B; }
+.chat-act:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; opacity: 1; }
+
+/* Touch devices have no hover, so the actions would be unreachable. */
+@media (hover: none) {
+  .chat-actions { opacity: 1; }
+}
+
+/* "Replying to X" strip above the composer. */
+.chat-reply-bar { flex: none; padding: 8px 12px 0; }
+.chat-reply-bar-inner {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--gold-bg); border: 1px solid rgba(126,101,73,.15);
+}
+.chat-reply-rail { flex: none; width: 3px; align-self: stretch; border-radius: 99px; background: var(--gold); }
+.chat-reply-copy { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.chat-reply-who  { font-size: 12px; font-weight: 700; color: var(--gold-dark, var(--gold)); }
+.chat-reply-text {
+  font-size: 12px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.chat-reply-x {
+  flex: none; display: inline-flex; border: none; background: none; cursor: pointer;
+  color: var(--muted); padding: 4px; border-radius: 7px; line-height: 1;
+}
+.chat-reply-x:hover { background: rgba(126,101,73,.12); color: var(--text); }
+
+/* Attachment chip inside a bubble — the channel view used to render this only
+   on the optimistic echo, so attachments vanished on reload. */
+.msg-attach {
+  display: flex; align-items: center; gap: 8px; margin-top: 8px;
+  padding: 7px 10px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--surface); font-size: 13px; color: var(--text);
+  text-decoration: none; max-width: 320px;
+}
+.msg-attach:hover { border-color: var(--gold); }
+.msg-attach-ext  { flex: none; font-weight: 700; color: #FFF; padding: 2px 6px; border-radius: 4px; font-size: 10px; }
+.msg-attach-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-attach-size { flex: none; font-size: 11px; color: var(--muted); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MOBILE NOTIFICATION PANEL
+   app.css puts the mobile rule (line ~613) EARLIER in the file than the desktop
+   rule (line ~893) at equal specificity, so the desktop `position:absolute` and
+   `right:0` won and only `width:auto !important` survived. The panel then sized
+   itself against its containing block — the ~40px wrapper around the bell — so
+   it opened about 32px wide. This file loads last, so these win cleanly.
+   ═══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  .notif-panel {
+    position: fixed !important;
+    top: 62px !important;              /* just below the mobile topbar */
+    left: 8px !important;
+    right: 8px !important;
+    width: auto !important;
+    max-height: calc(100dvh - 150px);
+    overflow-y: auto;
+    z-index: 120 !important;
+  }
+  /* .topbar has backdrop-filter, which makes it the containing block for
+     position:fixed descendants AND traps them in its stacking context — at
+     z-index 5 the bottom .mobile-nav (z-index 50) painted over the panel. */
+  .topbar { z-index: 60; }
+
+  /* app.css single-lines this with nowrap + ellipsis; on a narrow panel that
+     left every notification as one clipped line. */
+  .notif-body {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .notif-item { align-items: flex-start; }
+}

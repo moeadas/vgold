@@ -13,37 +13,42 @@ class MessageController {
         $user = Auth::user();
         $isAdmin = $user && $user['role'] === 'admin';
 
+        // Must run BEFORE the first channelUnreadCount() call below, which reads
+        // from channel_reads.
+        self::ensureChannelReadsTable();
+
         // Admins see all workspace channels; members only see channels they belong to.
         if ($isAdmin) {
             $channels = DB::fetchAll(
-                "SELECT c.*, 
-                    (SELECT body FROM messages m WHERE m.channel_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_msg,
-                    (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id) as msg_count
+                "SELECT c.*,
+                    (SELECT body FROM messages m WHERE m.channel_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_msg
                  FROM channels c WHERE c.workspace_id = ? AND c.type = 'channel'
                  ORDER BY c.name",
                 [$wsId]
             );
         } else {
             $channels = DB::fetchAll(
-                "SELECT c.*, 
-                    (SELECT body FROM messages m WHERE m.channel_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_msg,
-                    (SELECT COUNT(*) FROM messages m WHERE m.channel_id = c.id) as msg_count
-                 FROM channels c 
+                "SELECT c.*,
+                    (SELECT body FROM messages m WHERE m.channel_id = c.id ORDER BY m.created_at DESC LIMIT 1) as last_msg
+                 FROM channels c
                  JOIN channel_members cm ON cm.channel_id = c.id AND cm.user_id = ?
                  WHERE c.workspace_id = ? AND c.type = 'channel'
                  ORDER BY c.name",
                 [$userId, $wsId]
             );
         }
-        
+
+        // `count` is what the sidebar renders as a badge, so it must mean "new
+        // since you last looked", not "messages that exist". It used to be a bare
+        // COUNT(*) — which also counted your OWN messages — so a quiet channel
+        // still showed a permanent 4. DMs already used channelUnreadCount(); team
+        // channels now use the same helper.
         $teamChannels = array_map(fn($c) => [
             'id' => (int)$c['id'],
             'name' => $c['name'],
             'preview' => $c['last_msg'] ? substr($c['last_msg'], 0, 60) : 'No messages yet',
-            'count' => (int)$c['msg_count'],
+            'count' => self::channelUnreadCount((int)$c['id'], $userId),
         ], $channels);
-        
-        self::ensureChannelReadsTable();
 
         $dms = DB::fetchAll(
             "SELECT c.*, u.name as dm_name, u.avatar_color, u.id as dm_user_id
@@ -145,18 +150,64 @@ class MessageController {
         }
     }
 
+    // ===== REPLY THREADING on channel messages =====
+    // Mirrors ProjectController::ensureChatThreadColumn(). The column is added
+    // lazily, and this returns whether it is REALLY there — if the ALTER fails
+    // (no privilege on some install) replies quietly turn themselves off rather
+    // than making every send reference a column that doesn't exist and taking
+    // ordinary messaging down with them.
+    private static $msgThreading = null;
+
+    public static function msgThreadingAvailable() {
+        if (self::$msgThreading !== null) return self::$msgThreading;
+        self::$msgThreading = false;
+        try {
+            $col = DB::fetch("SHOW COLUMNS FROM `messages` LIKE 'parent_id'");
+            if (!$col) {
+                DB::query("ALTER TABLE `messages` ADD COLUMN `parent_id` INT NULL DEFAULT NULL");
+                DB::query("ALTER TABLE `messages` ADD INDEX `msg_parent` (`parent_id`)");
+                $col = DB::fetch("SHOW COLUMNS FROM `messages` LIKE 'parent_id'");
+            }
+            self::$msgThreading = (bool)$col;
+        } catch (\Throwable $e) {
+            self::$msgThreading = false;
+        }
+        return self::$msgThreading;
+    }
+
+    // id => ['who' => …, 'text' => …] for every message quoted by this page.
+    private static function msgParentMap(array $rows) {
+        $parentIds = [];
+        foreach ($rows as $r) {
+            if (!empty($r['parent_id'])) $parentIds[(int)$r['parent_id']] = true;
+        }
+        if (!$parentIds) return [];
+        $in = implode(',', array_map('intval', array_keys($parentIds)));
+        $parents = DB::fetchAll(
+            "SELECT m.id, m.body, u.name FROM messages m
+             JOIN users u ON m.user_id = u.id WHERE m.id IN ($in)"
+        );
+        $map = [];
+        foreach ($parents as $p) {
+            $map[(int)$p['id']] = ['who' => $p['name'], 'text' => $p['body']];
+        }
+        return $map;
+    }
+
     public static function show($channelId) {
         Authz::requireChannelAccess($channelId);
         self::markChannelRead($channelId, Auth::userId());
+        self::msgThreadingAvailable();
         $messages = DB::fetchAll(
-            "SELECT m.*, u.name, u.avatar_color FROM messages m 
-             JOIN users u ON m.user_id = u.id 
+            "SELECT m.*, u.name, u.avatar_color FROM messages m
+             JOIN users u ON m.user_id = u.id
              WHERE m.channel_id = ? ORDER BY m.created_at ASC",
             [$channelId]
         );
-        
+
         $channel = DB::fetch("SELECT * FROM channels WHERE id = ?", [$channelId]);
-        
+        $parentMap = self::msgParentMap($messages);
+
         jsonResponse([
             'channel' => [
                 'id' => (int)$channel['id'],
@@ -172,10 +223,43 @@ class MessageController {
                 'time' => (new DateTime($m['created_at']))->format('g:i A'),
                 'me' => $m['user_id'] == Auth::userId(),
                 'attachment' => self::getAttachmentForMessage((int)$m['id']),
+                'reply_to' => !empty($m['parent_id']) && isset($parentMap[(int)$m['parent_id']])
+                    ? $parentMap[(int)$m['parent_id']] : null,
             ], $messages),
         ]);
     }
-    
+
+    // DELETE /api/messages/message/{id} — you can only delete your own messages.
+    // Admins are deliberately NOT exempted: "each one can delete only their own".
+    public static function deleteMessage($messageId) {
+        $messageId = (int)$messageId;
+        $msg = DB::fetch("SELECT * FROM messages WHERE id = ?", [$messageId]);
+        if (!$msg) jsonError('Message not found', 404);
+        Authz::requireChannelAccess((int)$msg['channel_id']);
+        if ((int)$msg['user_id'] !== (int)Auth::userId()) {
+            jsonError('You can only delete your own messages', 403);
+        }
+
+        // Detach replies rather than cascading — deleting your own message must
+        // never silently remove someone else's reply to it.
+        if (self::msgThreadingAvailable()) {
+            try { DB::query("UPDATE messages SET parent_id = NULL WHERE parent_id = ?", [$messageId]); } catch (\Throwable $e) {}
+        }
+
+        // Remove the attachment row AND its file, or storage/ leaks orphans.
+        try {
+            $atts = DB::fetchAll("SELECT * FROM message_attachments WHERE message_id = ?", [$messageId]);
+            foreach ($atts as $a) {
+                $path = UPLOAD_PATH . '/messages/' . $a['filename'];
+                if (is_file($path)) @unlink($path);
+            }
+            DB::query("DELETE FROM message_attachments WHERE message_id = ?", [$messageId]);
+        } catch (\Throwable $e) {}
+
+        DB::query("DELETE FROM messages WHERE id = ?", [$messageId]);
+        jsonResponse(['ok' => true, 'id' => $messageId]);
+    }
+
     public static function send($channelId) {
         Authz::requireChannelAccess($channelId);
         $data = input();
@@ -186,12 +270,22 @@ class MessageController {
             jsonError('Missing fields: body');
         }
         
-        $id = DB::insert('messages', [
+        // Optional reply target. Only accept a parent from THIS channel — else a
+        // reply could quote a message from a channel the sender can't see.
+        $parentId = null;
+        if (self::msgThreadingAvailable() && !empty($data['parent_id'])) {
+            $parent = DB::fetch("SELECT id, channel_id, user_id FROM messages WHERE id = ?", [(int)$data['parent_id']]);
+            if ($parent && (int)$parent['channel_id'] === (int)$channelId) $parentId = (int)$parent['id'];
+        }
+
+        $row = [
             'channel_id' => $channelId,
             'user_id' => Auth::userId(),
             'body' => $body,
-        ]);
-        
+        ];
+        if ($parentId) $row['parent_id'] = $parentId;
+        $id = DB::insert('messages', $row);
+
         // Handle file attachment
         $attachment = null;
         if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] === UPLOAD_ERR_OK) {
@@ -228,7 +322,23 @@ class MessageController {
         // Notify @mentions
         $channel = DB::fetch("SELECT * FROM channels WHERE id = ?", [$channelId]);
         NotificationController::notifyMentions($body, Auth::userId(), ($channel && isset($channel['project_id'])) ? $channel['project_id'] : null);
-        
+
+        // Tell the person you replied to. Best-effort — a failed notification
+        // must never fail the send itself.
+        if ($parentId) {
+            try {
+                $pa = DB::fetch("SELECT user_id FROM messages WHERE id = ?", [$parentId]);
+                if ($pa && (int)$pa['user_id'] !== (int)Auth::userId()) {
+                    $actor = DB::fetch("SELECT name FROM users WHERE id = ?", [Auth::userId()]);
+                    NotificationController::create(
+                        (int)$pa['user_id'], 'chat',
+                        ($actor['name'] ?? 'Someone') . ' replied to you in ' . ($channel['name'] ?? 'a channel'),
+                        $body, 'channel', $channelId, null
+                    );
+                }
+            } catch (\Throwable $e) { error_log('Reply notification failed: ' . $e->getMessage()); }
+        }
+
         $msg = DB::fetch(
             "SELECT m.*, u.name, u.avatar_color FROM messages m JOIN users u ON m.user_id = u.id WHERE m.id = ?",
             [$id]
@@ -246,6 +356,7 @@ class MessageController {
             'time' => 'now',
             'me' => true,
             'attachment' => $attachmentInfo,
+            'reply_to' => $parentId ? (self::msgParentMap([['parent_id' => $parentId]])[$parentId] ?? null) : null,
         ]]);
     }
     

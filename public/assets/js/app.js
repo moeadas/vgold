@@ -110,6 +110,108 @@ function mlListContinue(e) {
   return true;
 }
 
+// ===== SHARED CHAT MESSAGE RENDERING (reply + delete) =====
+// Channel chat (Messages) and project chat render the same shape, so they share
+// one renderer. `kind` is 'channel' or 'project' — it picks which API to call
+// and keeps the two reply drafts independent.
+
+const CHAT_REPLY_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 17 4 12 9 7"/><path d="M20 18v-2a4 4 0 0 0-4-4H4"/></svg>';
+const CHAT_TRASH_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M10 11v6M14 11v6"/></svg>';
+
+// Pending reply target per surface: { id, who, text } or null.
+const ChatReply = { channel: null, project: null };
+
+function chatAttachHTML(a) {
+  if (!a) return '';
+  const ext = String(a.ext || '').toLowerCase();
+  const fc = /^(jpg|jpeg|png|gif|webp)$/.test(ext) ? '#6B8E5A' : ext === 'pdf' ? '#B0432B' : '#9A8A78';
+  return `<a class="msg-attach" href="/api/msg-attachments/${a.id}/download" target="_blank" rel="noopener">
+      <span class="msg-attach-ext" style="background:${fc}">${esc(String(a.ext || 'FILE').toUpperCase())}</span>
+      <span class="msg-attach-name">${esc(a.original_name || 'attachment')}</span>
+      ${a.size ? `<span class="msg-attach-size">${esc(a.size)}</span>` : ''}
+    </a>`;
+}
+
+function chatActionsHTML(kind, m) {
+  // Delete is offered only on your own messages — the server enforces the same
+  // rule, this just hides a button that would always 403.
+  return `<div class="chat-actions">
+      <button class="chat-act" title="Reply" aria-label="Reply to this message" onclick="chatStartReply('${kind}',${m.id})">${CHAT_REPLY_ICON}</button>
+      ${m.me ? `<button class="chat-act chat-act-del" title="Delete" aria-label="Delete this message" onclick="chatDeleteMsg('${kind}',${m.id})">${CHAT_TRASH_ICON}</button>` : ''}
+    </div>`;
+}
+
+// `size` is 'sm' for the narrower project-chat column.
+function chatMsgHTML(kind, m, size) {
+  const sm = size === 'sm';
+  const avClass = sm ? 'avatar avatar-sm' : 'avatar';
+  const avStyle = sm ? `background:${m.bg}` : `width:32px;height:32px;font-size:12px;background:${m.bg}`;
+  const quote = typeof chatQuoteHTML === 'function' ? chatQuoteHTML(m.reply_to) : '';
+  return `
+    <div class="chat-msg ${m.me ? 'me' : ''}" id="cmsg-${kind}-${m.id}" data-who="${esc(m.who)}" data-text="${esc(String(m.text || ''))}">
+      <div class="${avClass}" style="${avStyle}">${esc(m.initials || '')}</div>
+      <div style="min-width:0">
+        <div style="display:flex;align-items:baseline;gap:${sm ? 7 : 8}px;margin-bottom:${sm ? 3 : 4}px"><span style="font-size:${sm ? '12.5px' : '13px'};font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">${esc(m.time || '')}</span></div>
+        <div class="msg-row">
+          <div class="msg-bubble">${quote}${linkify(m.text || '')}${chatAttachHTML(m.attachment)}</div>
+          ${chatActionsHTML(kind, m)}
+        </div>
+      </div>
+    </div>`;
+}
+
+// The who/text for the quote preview are read off the message's own dataset, so
+// this works without either view exposing its message cache.
+function chatStartReply(kind, id) {
+  const el = document.getElementById('cmsg-' + kind + '-' + id);
+  if (!el) return;
+  ChatReply[kind] = { id, who: el.dataset.who || '', text: el.dataset.text || '' };
+  chatRenderReplyBar(kind);
+  const composer = document.getElementById(kind === 'channel' ? 'msg-composer' : 'proj-chat-input');
+  if (composer) composer.focus();
+}
+
+function chatCancelReply(kind) {
+  ChatReply[kind] = null;
+  chatRenderReplyBar(kind);
+}
+
+function chatRenderReplyBar(kind) {
+  const bar = document.getElementById('chat-reply-bar-' + kind);
+  if (!bar) return;
+  const r = ChatReply[kind];
+  if (!r) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+  const short = r.text.length > 120 ? r.text.slice(0, 120) + '…' : r.text;
+  bar.innerHTML = `<div class="chat-reply-bar-inner">
+      <span class="chat-reply-rail"></span>
+      <div class="chat-reply-copy">
+        <span class="chat-reply-who">Replying to ${esc(r.who)}</span>
+        <span class="chat-reply-text">${esc(short)}</span>
+      </div>
+      <button class="chat-reply-x" title="Cancel reply" aria-label="Cancel reply" onclick="chatCancelReply('${kind}')">${I.close}</button>
+    </div>`;
+  bar.style.display = 'block';
+}
+
+async function chatDeleteMsg(kind, id) {
+  if (!confirm('Delete this message? This cannot be undone.')) return;
+  try {
+    if (kind === 'channel') await API.deleteMessage(id);
+    else await API.deleteProjectChat(id);
+
+    document.getElementById('cmsg-' + kind + '-' + id)?.remove();
+    // Drop it from the view's cache too, or the next render brings it back.
+    if (kind === 'channel' && Array.isArray(State.channelMessages)) {
+      State.channelMessages = State.channelMessages.filter(m => Number(m.id) !== Number(id));
+    }
+    if (kind === 'project' && State.activeProject && Array.isArray(State.activeProject.chat)) {
+      State.activeProject.chat = State.activeProject.chat.filter(m => Number(m.id) !== Number(id));
+    }
+    if (ChatReply[kind] && Number(ChatReply[kind].id) === Number(id)) chatCancelReply(kind);
+    toast('Message deleted', 'success');
+  } catch (e) { toast(e.message, 'error'); }
+}
+
 // Allowlist HTML sanitizer for AI-generated / server HTML fragments (XSS defense, H4).
 // Parses the fragment, drops any tag/attribute not on the allowlist, blocks
 // javascript:/data: URLs and all inline event handlers, then returns safe HTML.

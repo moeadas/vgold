@@ -84,6 +84,8 @@ $routes = [
     'GET projects/{id}/members' => ['ProjectController::listMembers', true],
     'POST projects/{projectId}/chat' => ['MessageController::sendProjectChat', true],
     'POST projects/{projectId}/chat/read' => ['ProjectController::markChatRead', true],
+    // Literal 'chat' segment, so this must not collide with projects/{id}.
+    'DELETE projects/chat/{chatId}' => ['ProjectController::deleteChatMessage', true],
     'POST projects/{projectId}/upload' => ['MessageController::uploadFile', true],
     'POST projects/{projectId}/folders' => ['ProjectController::createFolder', true],
     'DELETE projects/{projectId}/folders/{folderId}' => ['ProjectController::deleteFolder', true],
@@ -133,6 +135,7 @@ $routes = [
     'GET messages/channels' => ['MessageController::channels', true],
     'POST messages/create-channel' => ['MessageController::createChannel', true],
     'DELETE messages/channel/{channelId}' => ['MessageController::deleteChannel', true],
+    'DELETE messages/message/{messageId}' => ['MessageController::deleteMessage', true],
     'POST messages/start-dm' => ['MessageController::startDM', true],
     'GET messages/mentions' => ['MessageController::mentions', true],
     'GET messages/{channelId}' => ['MessageController::show', true],

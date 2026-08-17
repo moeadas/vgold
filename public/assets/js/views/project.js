@@ -99,15 +99,7 @@ async function renderProject() {
       ${subs.length ? `<div class="project-grid">${subGrid}</div>` : `<div class="empty-state" style="padding:22px"><div class="desc">No project areas yet. Break this project into areas for complex work.</div></div>`}
     </div>`;
 
-  const chat = (p.chat || []).map(m => `
-    <div class="chat-msg ${m.me ? 'me' : ''}">
-      <div class="avatar avatar-sm" style="background:${m.bg}">${m.initials}</div>
-      <div style="min-width:0">
-        <div style="display:flex;align-items:baseline;gap:7px;margin-bottom:3px"><span style="font-size:12.5px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">${esc(m.time)}</span></div>
-        <div class="msg-bubble">${chatQuoteHTML(m.reply_to)}${linkify(m.text)}</div>
-      </div>
-    </div>
-  `).join('');
+  const chat = (p.chat || []).map(m => chatMsgHTML('project', m, 'sm')).join('');
 
   return `
     <div class="fade-in">
@@ -166,6 +158,7 @@ async function renderProject() {
             <div><div style="font-size:14px;font-weight:700">Project chat</div><div style="font-size:12px;color:var(--muted)">${esc(p.name)} · ${(p.members||[]).length} members</div></div>
           </div>
           <div class="chat-messages" id="proj-chat">${chat}</div>
+          <div class="chat-reply-bar" id="chat-reply-bar-project" style="display:none"></div>
           <div class="chat-input-row">
             <div class="chat-input-wrap" style="position:relative">
               <textarea class="chat-input" id="proj-chat-input" rows="1" placeholder="Message the team… @ to mention · Shift+Enter for a new line or bullet" onkeydown="onProjChatKey(event,${p.id})" oninput="onProjChatInput()"></textarea>
@@ -316,11 +309,14 @@ async function sendProjChat(pid) {
   const text = input.value.trim();
   if (!text) return;
   mlReset(input);
+  const replyTo = ChatReply.project;
+  chatCancelReply('project');
   try {
-    const res = await API.sendProjectChat(pid, text);
+    const res = await API.sendProjectChat(pid, text, replyTo ? replyTo.id : null);
     const m = res.message;
     const chat = document.getElementById('proj-chat');
-    chat.innerHTML += `<div class="chat-msg me"><div class="avatar avatar-sm" style="background:${m.bg}">${m.initials}</div><div><div style="display:flex;align-items:baseline;gap:7px;margin-bottom:3px"><span style="font-size:12.5px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">now</span></div><div class="msg-bubble">${chatQuoteHTML(m.reply_to)}${linkify(m.text)}</div></div></div>`;
+    if (State.activeProject && Array.isArray(State.activeProject.chat)) State.activeProject.chat.push(m);
+    chat.insertAdjacentHTML('beforeend', chatMsgHTML('project', m, 'sm'));
     chat.scrollTop = chat.scrollHeight;
   } catch(e) { toast(e.message, 'error'); }
 }

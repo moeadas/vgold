@@ -1358,4 +1358,25 @@ class ProjectController {
         jsonResponse(['ok' => true]);
     }
 
+    // DELETE /api/projects/chat/{chatId} — you can only delete your own chat
+    // messages. Admins are deliberately NOT exempted here.
+    public static function deleteChatMessage($chatId) {
+        $chatId = (int)$chatId;
+        $msg = DB::fetch("SELECT * FROM project_chat WHERE id = ?", [$chatId]);
+        if (!$msg) jsonError('Message not found', 404);
+        Authz::requireProjectAccess((int)$msg['project_id']);
+        if ((int)$msg['user_id'] !== (int)Auth::userId()) {
+            jsonError('You can only delete your own messages', 403);
+        }
+
+        // Orphan the replies instead of cascading — someone else's reply must not
+        // disappear because you deleted the message it answered.
+        if (self::chatThreadingAvailable()) {
+            try { DB::query("UPDATE project_chat SET parent_id = NULL WHERE parent_id = ?", [$chatId]); } catch (\Throwable $e) {}
+        }
+
+        DB::query("DELETE FROM project_chat WHERE id = ?", [$chatId]);
+        jsonResponse(['ok' => true, 'id' => $chatId]);
+    }
+
 }

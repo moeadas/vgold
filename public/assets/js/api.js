@@ -71,7 +71,8 @@ const API = {
   deleteChannel: (id) => API.req('/messages/channel/' + id, { method: 'DELETE' }),
   startDM: (userIds) => API.req('/messages/start-dm', { method: 'POST', body: JSON.stringify(Array.isArray(userIds) ? { user_ids: userIds } : { user_id: userIds }) }),
   channelMessages: (id) => API.req('/messages/' + id),
-  sendMessage: (channelId, body) => API.req('/messages/' + channelId, { method: 'POST', body: JSON.stringify({ body }) }),
+  sendMessage: (channelId, body, parentId) => API.req('/messages/' + channelId, { method: 'POST', body: JSON.stringify({ body, parent_id: parentId || null }) }),
+  deleteMessage: (id) => API.req('/messages/message/' + id, { method: 'DELETE' }),
   sendMessageWithAttachment: (channelId, body, file) => {
     const fd = new FormData();
     if (body) fd.append('body', body);
@@ -83,6 +84,7 @@ const API = {
   // still posted into the project's own thread, so replying from the Comments
   // feed and replying from the project page produce the same message.
   sendProjectChat: (projectId, body, parentId) => API.req('/projects/' + projectId + '/chat', { method: 'POST', body: JSON.stringify({ body, parent_id: parentId || null }) }),
+  deleteProjectChat: (id) => API.req('/projects/chat/' + id, { method: 'DELETE' }),
   unreadChatCounts: () => API.req('/projects/unread-counts'),
   markChatRead: (projectId) => API.req('/projects/' + projectId + '/chat/read', { method: 'POST' }),
   // B4a — the previous implementation used `.then(r => r.json())` without checking

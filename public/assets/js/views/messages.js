@@ -48,7 +48,10 @@ async function renderMessages() {
       State.mentions = all.filter(n => n.type === 'mention' || (n.body && n.body.includes('@')));
     } catch(e) { State.mentions = []; }
   }
-  const mentionCount = (State.mentions || []).length;
+  // A badge means "new since you looked", not "how many exist" — so count only
+  // the unread ones. app.js's nav badge already did this; this one didn't, so
+  // the same data showed two different numbers.
+  const mentionCount = (State.mentions || []).filter(n => !n.is_read).length;
 
   // Comments feed (B7c) — all comments on projects the user is part of.
   if (!State.commentsFeed) {
@@ -154,15 +157,10 @@ async function renderMessages() {
       }).join('') + '</div>';
     }
   } else if (State.activeChannel && State.channelMessages) {
-    convHTML = State.channelMessages.map(m => `
-      <div class="chat-msg ${m.me ? 'me' : ''}">
-        <div class="avatar" style="width:32px;height:32px;font-size:12px;background:${m.bg}">${m.initials}</div>
-        <div style="min-width:0">
-          <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">${esc(m.time)}</span></div>
-          <div class="msg-bubble">${linkify(m.text)}</div>
-        </div>
-      </div>
-    `).join('');
+    // Shared renderer (app.js) — gives every message reply + delete actions, the
+    // quoted-parent block, and the attachment chip, which the old inline markup
+    // here was missing on reload.
+    convHTML = State.channelMessages.map(m => chatMsgHTML('channel', m)).join('');
   }
 
   return `
@@ -198,7 +196,8 @@ async function renderMessages() {
             ${convHeaderExtra}
           </div>
           <div class="chat-messages" id="conv-messages">${convHTML}</div>
-          ${showComposer ? `<div class="chat-input-row">
+          ${showComposer ? `<div class="chat-reply-bar" id="chat-reply-bar-channel" style="display:none"></div>
+          <div class="chat-input-row">
             <div style="flex:1;position:relative">
               <textarea class="msg-composer" id="msg-composer" rows="1" placeholder="Write a message… @ to mention · Shift+Enter for a new line or bullet" onkeydown="onComposerKey(event)" oninput="onComposerInput()"></textarea>
               <div class="mention-dropdown" id="mention-dropdown" style="display:none"></div>
@@ -391,14 +390,24 @@ async function sendCommentReply(id, projectId) {
   }
 }
 
-function openMentions() {
+async function openMentions() {
   State.viewMentions = !State.viewMentions;
-  if (State.viewMentions) {
-    State.viewComments = false;
-    State.activeChannel = null;
-    State.channelName = null;
-  }
+  if (!State.viewMentions) { render(); return; }
+  State.viewComments = false;
+  State.activeChannel = null;
+  State.channelName = null;
   render();
+  // Now that the badge counts unread rather than all, opening the list has to
+  // clear them or it stays lit forever. Render first so the items are seen once.
+  const unread = (State.mentions || []).filter(n => !n.is_read);
+  if (!unread.length) return;
+  try {
+    await Promise.all(unread.map(n => API.markRead(n.id).catch(() => {})));
+    State.mentions = (State.mentions || []).map(n => ({ ...n, is_read: true }));
+    if (typeof loadNotifCount === 'function') loadNotifCount();
+    if (typeof loadMsgUnread === 'function') loadMsgUnread();
+    render();
+  } catch (e) {}
 }
 
 // B7c — Comments feed view. Opening it marks the feed as read (clears unread).
@@ -431,7 +440,15 @@ async function openChannel(id) {
     const res = await API.channelMessages(id);
     State.channelMessages = res.messages;
     State.channelName = res.channel.name;
+    // The GET marks the channel read server-side, so zero the cached badge now
+    // instead of leaving it lit until the next poll.
+    if (State.channels) {
+      for (const list of [State.channels.channels, State.channels.dms]) {
+        (list || []).forEach(c => { if (Number(c.id) === Number(id)) c.count = 0; });
+      }
+    }
     render();
+    if (typeof loadMsgUnread === 'function') loadMsgUnread();
     const el = document.getElementById('conv-messages');
     if (el) el.scrollTop = el.scrollHeight;
   } catch(e) { toast(e.message, 'error'); }
@@ -490,24 +507,23 @@ async function sendChannelMsg() {
   const text = composer.value.trim();
   if ((!text && !_chatAttachment) || !State.activeChannel) return;
   mlReset(composer);
+  // Capture and clear the reply target BEFORE the await, so a fast second
+  // message doesn't inherit the first one's parent.
+  const replyTo = ChatReply.channel;
+  chatCancelReply('channel');
   try {
     let res;
     if (_chatAttachment) {
       res = await API.sendMessageWithAttachment(State.activeChannel, text, _chatAttachment);
       clearChatAttachment();
     } else {
-      res = await API.sendMessage(State.activeChannel, text);
+      res = await API.sendMessage(State.activeChannel, text, replyTo ? replyTo.id : null);
     }
     const m = res.message;
     const el = document.getElementById('conv-messages');
     if (el && m) {
-      let attachHTML = '';
-      if (m.attachment) {
-        const a = m.attachment;
-        const fc = a.ext ? a.ext.match(/^(jpg|jpeg|png|gif|webp)$/i) ? '#6B8E5A' : a.ext.match(/^(pdf)$/i) ? '#B0432B' : '#9A8A78' : '#9A8A78';
-        attachHTML = `<div style="margin-top:8px;display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface);font-size:13px;cursor:pointer" onclick="window.open('/api/msg-attachments/${a.id}/download','_blank')"><span style="font-weight:700;background:${fc};color:#FFF;padding:2px 6px;border-radius:4px;font-size:10px">${esc(a.ext || 'FILE').toUpperCase()}</span><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.original_name)}</span</span>`;
-      }
-      el.innerHTML += `<div class="chat-msg me"><div class="avatar" style="width:32px;height:32px;font-size:12px;background:${m.bg}">${m.initials}</div><div><div style="display:flex;align-items:baseline;gap:8px;margin-bottom:4px"><span style="font-size:13px;font-weight:700">${esc(m.who)}</span><span style="font-size:11px;color:var(--muted)">now</span></div><div class="msg-bubble">${linkify(m.text || '')}${attachHTML}</div></div></div>`;
+      if (Array.isArray(State.channelMessages)) State.channelMessages.push(m);
+      el.insertAdjacentHTML('beforeend', chatMsgHTML('channel', m));
       el.scrollTop = el.scrollHeight;
     }
   } catch(e) { toast(e.message, 'error'); }
