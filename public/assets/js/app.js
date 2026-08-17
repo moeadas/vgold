@@ -1282,7 +1282,16 @@ function goToNotification(t) {
       if (typeof accGoContractorInvoices === 'function') accGoContractorInvoices(t.id);
       else nav(t.nav);
       break;
-    default: nav(t.nav || 'mytasks');
+    default:
+      nav(t.nav || 'mytasks');
+      // No deep link to follow — open the list that actually contains the item
+      // rather than dropping the user on an empty conversation pane.
+      // openMentions/openComments toggle, so force the flag off first.
+      if (t.view === 'mentions' && typeof openMentions === 'function') {
+        State.viewMentions = false; openMentions();
+      } else if (t.view === 'comments' && typeof openComments === 'function') {
+        State.viewComments = false; openComments();
+      }
   }
 
   if (t.focus) focusNotifRow(t.focus, !!t.reply);

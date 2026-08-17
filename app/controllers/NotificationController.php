@@ -341,6 +341,17 @@ class NotificationController {
                 break;
         }
 
+        // Some rows genuinely carry no target — legacy mentions written before
+        // notifyMentions() passed its context through have link_id AND project_id
+        // both 0, so there is nothing to open. Landing on a bare Messages screen
+        // ("Select a conversation") tells the user nothing; the Mentions and
+        // Comments lists at least contain the item itself, with its text.
+        if (!$t['action'] && $t['nav'] === 'messages') {
+            $t['view'] = ($type === 'mention') ? 'mentions' : 'comments';
+        } else {
+            $t['view'] = null;
+        }
+
         // "X replied to you" is the one case where the obvious next act is to
         // reply back, so the client primes the composer. A mention only gets
         // scrolled to and highlighted — hijacking the composer for those would

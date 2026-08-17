@@ -1,39 +1,25 @@
-Notifications: clicking one takes you to the thing it is about
+Notifications: never land on an empty Messages pane
 
-Clicking a notification often did nothing at all. handleNotifClick() knew only
-four link types — task, project, crm_lead, crm — and opened with
-`if (!type) return;`, so anything else was silently swallowed. Dead on click:
-every channel reply, all four contractor-invoice notifications, any @mention in
-a channel without a project (filed as link_type 'project' with a null link_id),
-and every row with a null link_type. Unmatched-WhatsApp and lead-less automation
-notices landed on the CRM dashboard instead of where the work was.
+Two live mention rows (#72, #73) were written before notifyMentions() passed its
+context through, so they carry link_id 0 AND project_id 0 — no target at all.
+targetFor() correctly fell back to nav('messages'), but on mobile that is a blank
+pane reading "Select a conversation" with the channel list off-canvas, which is
+what Moe screenshotted. Landing somewhere is not the same as landing usefully.
 
-Routing now lives in one place: NotificationController::targetFor(), read by the
-bell, by the Mentions cards, and by web push (which had the same gap one layer
-down and dropped everything but two types on '/'). It always returns a `nav`, so
-a link type nobody has taught it about still lands on a sensible screen rather
-than doing nothing. It also splits contractor invoices by `type` — the approver
-queue vs the contractor's own list — which the client could never do, because it
-was never passed `type`.
+Two changes so this cannot look like a dead click again:
 
-Notifications now point at the exact row, not just the screen. A new
-notifications.ref_id column (added lazily and gated on really existing) records
-the message, chat line or comment, while link_id keeps pointing at the container
-you have to open to see it. Clicking scrolls that row into view and flashes it,
-and when the notification is "X replied to you" the composer is primed with the
-reply already targeted. Task comments gained tcmt-<id> anchors for the same
-reason.
+- When a notification has no deep link and belongs on Messages, targetFor() now
+  also returns a `view` — the Mentions list for a mention, the Comments feed for
+  anything else. Those lists contain the item itself with its text, instead of an
+  empty conversation pane.
 
-Fixed the producers feeding it: notifyMentions() never passed $projectId through
-to create(), so EVERY mention row had project_id NULL — a task mention could
-only be opened by someone who already had that task in their My Tasks, because
-navigateToTask() refetched My Tasks and gave up silently otherwise. It now takes
-a $context so a channel mention is filed against the channel, and routing goes
-through goTaskPage(), whose project id is optional.
+- renderMessages() opens the conversation list on mobile whenever nothing is
+  selected. The list is display:none until .conv-list-mobile-open on narrow
+  screens, so an unselected Messages screen previously showed nothing at all and
+  gave no hint that the "Channels" button was the way forward.
 
-Two ordering bugs found by the harness, both real: focusing the composer scrolled
-the message being replied to straight back off screen (needs preventScroll), and
-opening the reply bar takes height off the message list, so priming has to happen
-before the scroll or the message ends up clipped by exactly the bar's height.
+The two legacy rows are separately repairable and are backfilled by hand: both
+bodies match rows in `messages` on channel 7 (System feedback), message ids 16
+and 18, so they become link_type 'channel' with a ref_id and deep-link properly.
 
-v1.26.0 / build 2026.08.17.3
+v1.26.1 / build 2026.08.17.4

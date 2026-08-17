@@ -168,6 +168,11 @@ async function renderMessages() {
     convHTML = State.channelMessages.map(m => chatMsgHTML('channel', m)).join('');
   }
 
+  // On mobile the conversation list is off-canvas, so landing here with nothing
+  // selected shows an empty pane and a "Select a conversation" message with no
+  // visible way forward. When there is no selection, open the list instead.
+  const nothingSelected = !State.activeChannel && !State.viewMentions && !State.viewComments;
+
   return `
     <div class="fade-in">
       <div class="section-label">Messages</div>
@@ -180,7 +185,7 @@ async function renderMessages() {
         </div>
       </div>
       <div class="msg-layout">
-        <div class="conv-list">
+        <div class="conv-list${nothingSelected ? ' conv-list-mobile-open' : ''}">
           ${convSection('channels', 'Channels', channelsUnread, teamChans || '<div style="padding:0 6px;color:var(--muted);font-size:13px">No channels</div>')}
           ${convSection('dms', 'Direct messages', dmsUnread, dms || '<div style="padding:0 6px;color:var(--muted);font-size:13px">No DMs yet</div>')}
           ${convSection('quick', 'Quick access', quickUnread, `
