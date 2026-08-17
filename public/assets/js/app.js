@@ -58,6 +58,58 @@ function linkify(s) {
   return esc.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--gold-dark);text-decoration:underline">$1</a>');
 }
 
+// ===== MULTI-LINE TEXT ENTRY =====
+// Every free-form prose box in the app is a <textarea> that starts one line tall
+// and grows as you type. Enter still sends; Shift+Enter (or Alt+Enter) makes a new
+// line. These three helpers are what every composer shares — keep them here in
+// app.js so the view files can call them without a load-order dependency.
+
+const ML_MAX_H = 168;            // ~7 lines before the textarea starts scrolling
+const ML_LIST_RE = /^([ \t]*)([-*•]|\d+[.)])([ \t]+)/;
+
+// Resize a textarea to fit its content, capped at `max` px.
+function mlAutoGrow(el, max) {
+  if (!el || el.tagName !== 'TEXTAREA') return;
+  const cap = max || ML_MAX_H;
+  el.style.height = 'auto';
+  const h = Math.min(el.scrollHeight, cap);
+  el.style.height = h + 'px';
+  el.style.overflowY = el.scrollHeight > cap ? 'auto' : 'hidden';
+}
+
+// Clear a composer and shrink it back to one line.
+function mlReset(el) {
+  if (!el) return;
+  el.value = '';
+  if (el.tagName === 'TEXTAREA') { el.style.height = ''; el.style.overflowY = 'hidden'; }
+}
+
+// Bullet/number continuation. Call FIRST from a composer's keydown handler and
+// bail out if it returns true. On Shift+Enter (or Alt+Enter) inside a line that
+// starts with "- ", "* ", "• " or "1. ", the marker is carried to the new line;
+// numbered lists increment. Pressing it again on an empty marker ends the list.
+function mlListContinue(e) {
+  const el = e.target;
+  if (!el || el.tagName !== 'TEXTAREA') return false;
+  if (e.key !== 'Enter' || !(e.shiftKey || e.altKey)) return false;
+  if (el.selectionStart !== el.selectionEnd) return false;
+  const pos = el.selectionStart;
+  const line = el.value.slice(0, pos).split('\n').pop();
+  const m = line.match(ML_LIST_RE);
+  if (!m) return false;
+  e.preventDefault();
+  if (line.trim() === m[2]) {
+    // Empty bullet — drop the marker instead of adding another one.
+    el.setRangeText('', pos - line.length, pos, 'end');
+  } else {
+    let marker = m[2];
+    if (/^\d+[.)]$/.test(marker)) marker = (parseInt(marker, 10) + 1) + marker.slice(-1);
+    el.setRangeText('\n' + m[1] + marker + m[3], pos, pos, 'end');
+  }
+  el.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}
+
 // Allowlist HTML sanitizer for AI-generated / server HTML fragments (XSS defense, H4).
 // Parses the fragment, drops any tag/attribute not on the allowlist, blocks
 // javascript:/data: URLs and all inline event handlers, then returns safe HTML.

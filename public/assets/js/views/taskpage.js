@@ -48,7 +48,7 @@ async function renderTaskPage(taskId) {
       <div class="avatar" style="width:30px;height:30px;font-size:11px;background:${c.bg || c.avatar_color}">${esc(c.initials)}</div>
       <div style="min-width:0">
         <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px"><span style="font-size:13px;font-weight:700">${esc(c.who || c.name)}</span><span style="font-size:11px;color:var(--muted)">${esc(c.time || c.time_ago)}</span></div>
-        <div style="font-size:14px;line-height:1.5">${linkify(c.text || c.body)}</div>
+        <div class="cmt-text">${linkify(c.text || c.body)}</div>
       </div>
     </div>
   `).join('');
@@ -117,7 +117,7 @@ async function renderTaskPage(taskId) {
           </div>
           <div class="chat-input-row">
             <div class="chat-input-wrap" style="position:relative">
-              <input class="chat-input" id="task-page-comment-input" placeholder="Add a comment… use @ to mention" onkeydown="onTaskPageCommentKey(event,${t.id})" oninput="onTaskPageCommentInput()">
+              <textarea class="chat-input" id="task-page-comment-input" rows="1" placeholder="Add a comment… @ to mention · Shift+Enter for a new line or bullet" onkeydown="onTaskPageCommentKey(event,${t.id})" oninput="onTaskPageCommentInput()"></textarea>
               <div class="mention-dropdown" id="task-page-mention-dropdown" style="display:none"></div>
             </div>
             <button class="chat-send" onclick="sendTaskPageComment(${t.id})">${I.send}</button>
@@ -377,7 +377,7 @@ async function sendTaskPageComment(taskId) {
   if (!input) return;
   const text = input.value.trim();
   if (!text) return;
-  input.value = '';
+  mlReset(input);
   hideTaskPageMentionDropdown();
   try {
     const res = await API.addComment(taskId, text);
@@ -396,7 +396,7 @@ async function sendTaskPageComment(taskId) {
           <div class="avatar" style="width:30px;height:30px;font-size:11px;background:${c.bg || c.avatar_color}">${esc(c.initials)}</div>
           <div style="min-width:0">
             <div style="display:flex;align-items:baseline;gap:8px;margin-bottom:3px"><span style="font-size:13px;font-weight:700">${esc(c.who || c.name)}</span><span style="font-size:11px;color:var(--muted)">${esc(c.time || c.time_ago || 'now')}</span></div>
-            <div style="font-size:14px;line-height:1.5">${linkify(c.text || c.body || '')}</div>
+            <div class="cmt-text">${linkify(c.text || c.body || '')}</div>
           </div>
         </div>`);
       cm.scrollTop = cm.scrollHeight;
@@ -412,6 +412,7 @@ let _taskPageMentionActiveIndex = -1;
 let _taskPageMentionUsers = [];
 
 function onTaskPageCommentKey(e, taskId) {
+  if (mlListContinue(e)) return;
   const dropdown = document.getElementById('task-page-mention-dropdown');
   if (dropdown && dropdown.style.display !== 'none' && dropdown.children.length) {
     if (e.key === 'ArrowDown') { e.preventDefault(); selectTaskPageMention(1); return; }
@@ -428,6 +429,7 @@ function onTaskPageCommentKey(e, taskId) {
 function onTaskPageCommentInput() {
   const input = document.getElementById('task-page-comment-input');
   if (!input) return;
+  mlAutoGrow(input);
   const text = input.value;
   const cursorPos = input.selectionStart;
   const beforeCursor = text.substring(0, cursorPos);
@@ -485,6 +487,7 @@ function insertTaskPageMention(index) {
   const after = text.substring(cursorPos);
   const newBefore = before.replace(/@(\w*)$/, '@' + user.name + ' ');
   input.value = newBefore + after;
+  mlAutoGrow(input);
   input.focus();
   const newPos = newBefore.length;
   input.setSelectionRange(newPos, newPos);

@@ -370,7 +370,7 @@ $followUpUrl = '?' . http_build_query(array_merge($baseQuery, ['follow_up' => '1
                                     <?php if ($interaction['next_action']): ?>
                                         <div class="interaction-next-action">
                                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" style="vertical-align:middle;margin-right:4px;flex-shrink:0;"><polyline points="9 18 15 12 9 6"/></svg>
-                                            <strong>Next:</strong>&nbsp;<?php echo htmlspecialchars($interaction['next_action']); ?>
+                                            <strong>Next:</strong>&nbsp;<?php echo nl2br(htmlspecialchars($interaction['next_action'])); ?>
                                             <?php if ($interaction['next_action_date']): ?>
                                                 <?php
                                                 $isOverdue = strtotime($interaction['next_action_date']) <= strtotime('today');
@@ -478,7 +478,7 @@ $followUpUrl = '?' . http_build_query(array_merge($baseQuery, ['follow_up' => '1
 
                     <div class="form-group">
                         <label class="form-label">Next Action</label>
-                        <input type="text" name="next_action" class="form-control" placeholder="What's the next step?">
+                        <textarea name="next_action" class="form-control" rows="2" placeholder="What's the next step? One line per step is fine."></textarea>
                     </div>
                     
                     <div class="form-group">

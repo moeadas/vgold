@@ -200,7 +200,7 @@ async function renderMessages() {
           <div class="chat-messages" id="conv-messages">${convHTML}</div>
           ${showComposer ? `<div class="chat-input-row">
             <div style="flex:1;position:relative">
-              <div class="msg-composer" id="msg-composer" contenteditable="true" placeholder="Write a message… or @ to mention…" onkeydown="onComposerKey(event)" oninput="onComposerInput()"></div>
+              <textarea class="msg-composer" id="msg-composer" rows="1" placeholder="Write a message… @ to mention · Shift+Enter for a new line or bullet" onkeydown="onComposerKey(event)" oninput="onComposerInput()"></textarea>
               <div class="mention-dropdown" id="mention-dropdown" style="display:none"></div>
               <div id="chat-attachment-preview" class="chat-attachment-preview">
                 <span class="chat-attachment-chip">${I.upload || '📎'}</span>
@@ -276,8 +276,8 @@ function commentCardHTML(c) {
       </div>
       <div class="cmt-reply-box" id="cmt-reply-${c.id}" style="${open ? '' : 'display:none'}">
         <textarea class="cmt-reply-input" id="cmt-reply-input-${c.id}" rows="2"
-          placeholder="Reply to ${esc(c.who)}… (Enter to send, Shift+Enter for a new line)"
-          oninput="setCommentDraft(${c.id}, this.value)"
+          placeholder="Reply to ${esc(c.who)}… (Enter to send, Shift+Enter for a new line or bullet)"
+          oninput="setCommentDraft(${c.id}, this.value); mlAutoGrow(this)"
           onkeydown="onCommentReplyKey(event, ${c.id}, ${c.project_id})">${esc(draft)}</textarea>
         <div class="cmt-reply-foot">
           <span class="cmt-reply-hint">Posts to the ${esc(c.project_name || 'project')} thread</span>
@@ -320,6 +320,7 @@ function toggleCommentReply(id) {
 }
 
 function onCommentReplyKey(e, id, projectId) {
+  if (mlListContinue(e)) return;
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     sendCommentReply(id, projectId);
@@ -486,9 +487,9 @@ function clearChatAttachment() {
 
 async function sendChannelMsg() {
   const composer = document.getElementById('msg-composer');
-  const text = composer.innerText.trim();
+  const text = composer.value.trim();
   if ((!text && !_chatAttachment) || !State.activeChannel) return;
-  composer.innerHTML = '';
+  mlReset(composer);
   try {
     let res;
     if (_chatAttachment) {
@@ -519,6 +520,7 @@ let mentionActiveIndex = -1;
 let mentionUsers = [];
 
 function onComposerKey(e) {
+  if (mlListContinue(e)) return;
   const dropdown = document.getElementById('mention-dropdown');
   if (dropdown.style.display !== 'none' && dropdown.children.length) {
     if (e.key === 'ArrowDown') { e.preventDefault(); selectMention(1); return; }
@@ -535,8 +537,9 @@ function onComposerKey(e) {
 function onComposerInput() {
   const composer = document.getElementById('msg-composer');
   if (!composer) return;
-  const text = composer.innerText;
-  // Find @ mention query
+  mlAutoGrow(composer);
+  // Find @ mention query — only look at what precedes the caret.
+  const text = composer.value.slice(0, composer.selectionStart);
   const match = text.match(/@(\w*)$/);
   if (match) {
     mentionSearch = match[1];
@@ -583,14 +586,16 @@ function confirmMention() {
 
 function insertMention(index) {
   const composer = document.getElementById('msg-composer');
-  const text = composer.innerText;
-  // Replace @query with @Name 
   const user = mentionUsers[index];
   if (!user) return;
-  const newText = text.replace(/@\w*$/, '@' + user.name + ' ');
-  composer.innerText = newText;
+  // Replace the @query at the caret with @Name, leaving anything after it alone.
+  const pos = composer.selectionStart;
+  const before = composer.value.slice(0, pos).replace(/@\w*$/, '@' + user.name + ' ');
+  composer.value = before + composer.value.slice(pos);
+  mlAutoGrow(composer);
   hideMentionDropdown();
   composer.focus();
+  composer.setSelectionRange(before.length, before.length);
 }
 
 function highlightMention(index) {

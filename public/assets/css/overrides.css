@@ -810,3 +810,79 @@ span.acc-truncate { display: inline-block; vertical-align: bottom; }
   padding: 4px 6px; border-radius: 6px; transition: all .15s;
 }
 .chat-attachment-clear:hover { background: var(--gold-bg); color: var(--gold-dark); }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   MULTI-LINE TEXT ENTRY
+   Every free-form prose box is a <textarea> that starts one line tall and grows
+   with what you type (mlAutoGrow in app.js sets the inline height). Two halves
+   to this: make the textareas look like the single-line inputs they replaced,
+   and make every surface that renders the text back out keep the line breaks.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* --- the composers ------------------------------------------------------- */
+textarea.chat-input,
+textarea.msg-composer,
+textarea.ask-input,
+textarea.ml-grow {
+  display: block;
+  resize: none;              /* height is driven by mlAutoGrow, not the grip */
+  overflow-y: hidden;
+  font-family: var(--sans);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+textarea.chat-input {
+  border-radius: 20px;       /* softened from the 999px pill so 3 lines still reads */
+  padding: 10px 16px;
+  min-height: 42px;
+}
+
+textarea.msg-composer {
+  min-height: 42px;
+  max-height: 168px;
+  padding: 10px 14px;
+}
+/* The old contenteditable faked its placeholder with :empty::before —
+   a real textarea has one natively, so drop the fake to avoid doubling up. */
+.msg-composer:empty::before { content: none; }
+textarea.msg-composer::placeholder { color: var(--muted); }
+
+textarea.ask-input {
+  padding: 0;
+  min-height: 26px;
+  max-height: 120px;
+}
+
+/* crm-native.css sets `textarea.form-control { min-height: 88px }` for its big
+   note fields, and that selector out-specifies a bare `textarea.ml-grow` — so
+   the auto-growing CRM composers have to match it class-for-class. */
+textarea.ml-grow,
+.crm-native textarea.form-control.ml-grow {
+  min-height: 38px; max-height: 168px;
+  resize: none; overflow-y: hidden;
+}
+
+/* Keep the send button pinned to the bottom of a composer that has grown. */
+.chat-input-row { align-items: flex-end; }
+.ct-compose { display: flex; align-items: flex-end; gap: 8px; }
+.ct-compose > .btn { flex: none; }
+.ct-compose > textarea { flex: 1; min-width: 0; }
+
+.cmt-reply-input { resize: vertical; overflow-y: auto; }
+
+/* --- the render surfaces ------------------------------------------------- */
+/* Without this a typed line break is stored but never shown. `pre-wrap` (not
+   `pre`) so long lines still wrap to the bubble width. */
+.chat-msg .msg-bubble,
+.cmt-body,
+.cmt-text,
+.cmt-reply-text,
+.crm-notes,
+.rule-desc,
+.crm-native .timeline-notes {
+  white-space: pre-wrap;
+}
+
+.cmt-text { font-size: 14px; line-height: 1.5; }

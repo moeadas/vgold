@@ -168,7 +168,7 @@ async function renderProject() {
           <div class="chat-messages" id="proj-chat">${chat}</div>
           <div class="chat-input-row">
             <div class="chat-input-wrap" style="position:relative">
-              <input class="chat-input" id="proj-chat-input" placeholder="Message the team… use @ to mention" onkeydown="onProjChatKey(event,${p.id})" oninput="onProjChatInput()">
+              <textarea class="chat-input" id="proj-chat-input" rows="1" placeholder="Message the team… @ to mention · Shift+Enter for a new line or bullet" onkeydown="onProjChatKey(event,${p.id})" oninput="onProjChatInput()"></textarea>
               <div class="mention-dropdown" id="proj-mention-dropdown" style="display:none"></div>
             </div>
             <button class="chat-send" onclick="sendProjChat(${p.id})">${I.send}</button>
@@ -315,7 +315,7 @@ async function sendProjChat(pid) {
   const input = document.getElementById('proj-chat-input');
   const text = input.value.trim();
   if (!text) return;
-  input.value = '';
+  mlReset(input);
   try {
     const res = await API.sendProjectChat(pid, text);
     const m = res.message;
@@ -464,6 +464,7 @@ let projMentionActiveIndex = -1;
 let projMentionUsers = [];
 
 function onProjChatKey(e, pid) {
+  if (mlListContinue(e)) return;
   const dropdown = document.getElementById('proj-mention-dropdown');
   if (dropdown && dropdown.style.display !== 'none' && dropdown.children.length) {
     if (e.key === 'ArrowDown') { e.preventDefault(); selectProjMention(1); return; }
@@ -480,6 +481,7 @@ function onProjChatKey(e, pid) {
 function onProjChatInput() {
   const input = document.getElementById('proj-chat-input');
   if (!input) return;
+  mlAutoGrow(input);
   const text = input.value;
   const cursorPos = input.selectionStart;
   const beforeCursor = text.substring(0, cursorPos);
@@ -537,6 +539,7 @@ function insertProjMention(index) {
   const after = text.substring(cursorPos);
   const newBefore = before.replace(/@(\w*)$/, '@' + user.name + ' ');
   input.value = newBefore + after;
+  mlAutoGrow(input);
   input.focus();
   const newPos = newBefore.length;
   input.setSelectionRange(newPos, newPos);

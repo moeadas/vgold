@@ -698,7 +698,7 @@ async function autoOpenForm(id = null) {
       <div class="form-group"><label class="form-label">Rule Name <span style="color:var(--color-danger)">*</span></label>
         <input class="form-control" id="ar-name" value="${esc(rule.name || '')}" placeholder="e.g., Assign new US leads to Sarah"></div>
       <div class="form-group"><label class="form-label">Description</label>
-        <input class="form-control" id="ar-desc" value="${esc(rule.description || '')}" placeholder="Optional"></div>
+        <textarea class="form-control ml-grow" id="ar-desc" rows="2" placeholder="Optional — what this rule does, and why">${esc(rule.description || '')}</textarea></div>
       <div class="ct-section-label">WHEN (Trigger)</div>
       <div class="form-group"><label class="form-label">Trigger Event</label>
         <select class="form-control" id="ar-trigger" onchange="autoTriggerChange()">
@@ -1880,7 +1880,7 @@ async function waOpenChat(leadId, toNumber, name) {
       <div id="wa-fill-panel" class="wa-tpl-panel" style="display:none"></div>
       <div class="ct-compose">
         <button class="btn btn-outline" title="Send a template" onclick="waShowTemplatePicker()" ${num ? '' : 'disabled'}>Templates</button>
-        <input class="form-control" id="wa-input" placeholder="${num ? 'Type a message…' : 'No phone number on this lead'}" ${num ? '' : 'disabled'} onkeydown="if(event.key==='Enter')waSendMessage()">
+        <textarea class="form-control ml-grow" id="wa-input" rows="1" placeholder="${num ? 'Type a message… Shift+Enter for a new line or bullet' : 'No phone number on this lead'}" ${num ? '' : 'disabled'} oninput="mlAutoGrow(this)" onkeydown="if(mlListContinue(event))return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();waSendMessage()}"></textarea>
         <button class="btn btn-primary wa-green-btn" onclick="waSendMessage()" ${num ? '' : 'disabled'}>Send</button>
       </div>`),
     footer: `<button class="btn-secondary" onclick="Modal.close()">Close</button>`,
@@ -1937,7 +1937,7 @@ async function waSendMessage() {
   if (!body) return;
   const w = CrmMod.wa;
   if (!crmIsPhone(w.toNumber)) { toast('This lead has no valid phone number. Add one on the lead record first.', 'error'); return; }
-  inp.value = '';
+  mlReset(inp);
   try {
     await crmApiPost('whatsapp.php?action=send', { to_number: w.toNumber, body, lead_id: w.leadId || 0 });
     crmModInvalidate('waChats'); crmModInvalidate('waStats');
@@ -2132,7 +2132,7 @@ async function waRenderUnmatchedTab() {
       </div>
       <div id="wa-um-body-${idx}" style="display:none">
         <div class="wa-unmatched-thread" id="wa-um-thread-${idx}"></div>
-        <div class="ct-compose" style="padding:10px 12px 0"><input class="form-control" id="wa-um-reply-${idx}" placeholder="Type a reply…" onkeydown="if(event.key==='Enter')waSendUnmatchedReply(${idx},'${waEscJs(phone)}')"><button class="btn btn-primary wa-green-btn" onclick="waSendUnmatchedReply(${idx},'${waEscJs(phone)}')">Send</button></div>
+        <div class="ct-compose" style="padding:10px 12px 0"><textarea class="form-control ml-grow" id="wa-um-reply-${idx}" rows="1" placeholder="Type a reply… Shift+Enter for a new line" oninput="mlAutoGrow(this)" onkeydown="if(mlListContinue(event))return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();waSendUnmatchedReply(${idx},'${waEscJs(phone)}')}"></textarea><button class="btn btn-primary wa-green-btn" onclick="waSendUnmatchedReply(${idx},'${waEscJs(phone)}')">Send</button></div>
         <div class="wa-unmatched-actions">
           <button class="btn btn-outline btn-sm" onclick="waLinkLeadModal('${waEscJs(phone)}')">Link to Lead</button>
           <button class="btn btn-primary btn-sm wa-green-btn" onclick="waCreateLeadModal('${waEscJs(phone)}')">Create Lead</button>
@@ -2169,7 +2169,7 @@ async function waSendUnmatchedReply(idx, phone) {
   const inp = document.getElementById('wa-um-reply-' + idx);
   const body = (inp ? inp.value : '').trim();
   if (!body) return;
-  inp.value = '';
+  mlReset(inp);
   try {
     await crmApiPost('whatsapp.php?action=send', { to_number: phone, body, lead_id: 0 });
     toast('Reply sent', 'success');

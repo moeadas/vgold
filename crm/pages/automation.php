@@ -267,7 +267,7 @@ function renderRules() {
             <div class="rule-top">
                 <div style="flex:1;">
                     <div class="rule-name">${esc(r.name)}</div>
-                    ${r.description ? `<div class="rule-desc">${esc(r.description)}</div>` : ''}
+                    ${r.description ? `<div class="rule-desc" style="white-space:pre-wrap">${esc(r.description)}</div>` : ''}
                     <div class="rule-badges">
                         <span class="rule-badge badge-trigger">WHEN: ${esc(trigLabel)}</span>
                         ${condCount ? `<span class="rule-badge badge-conditions">IF: ${condCount} condition${condCount>1?'s':''}</span>` : ''}
@@ -407,7 +407,7 @@ function renderModalForm(rule) {
         </div>
         <div class="auto-field">
             <label>Description <span style="color:#86868b;font-weight:400;">(optional)</span></label>
-            <input id="fDesc" value="${esc(r.description || '')}" placeholder="Short description of what this rule does">
+            <textarea id="fDesc" rows="2" placeholder="Short description of what this rule does">${esc(r.description || '')}</textarea>
         </div>
 
         <div class="section-label">WHEN (Trigger)</div>

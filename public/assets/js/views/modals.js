@@ -12,7 +12,7 @@ function renderAskModal() {
       <div class="ask-modal" onclick="event.stopPropagation()">
         <div class="ask-header">
           ${I.sparkle}
-          <input class="ask-input" id="ask-input" placeholder="Ask anything, or tell VGo what to do…" onkeydown="if(event.key==='Enter')runAskFromInput();if(event.key==='Escape')closeAsk()">
+          <textarea class="ask-input" id="ask-input" rows="1" placeholder="Ask anything, or tell VGo what to do… (Shift+Enter for a new line)" oninput="mlAutoGrow(this,120)" onkeydown="if(mlListContinue(event))return;if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();runAskFromInput()}if(event.key==='Escape')closeAsk()"></textarea>
           <span class="ask-esc">esc</span>
         </div>
         <div id="ask-body" class="ask-body">
