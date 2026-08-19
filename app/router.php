@@ -30,10 +30,13 @@ require_once __DIR__ . '/lib/AccSchema.php';
 require_once __DIR__ . '/lib/Acc.php';
 require_once __DIR__ . '/lib/AccSeed.php';
 require_once __DIR__ . '/lib/StatementParser.php';
+require_once __DIR__ . '/lib/Plaid.php';
+require_once __DIR__ . '/lib/PlaidSchema.php';
 require_once __DIR__ . '/lib/BankMatcher.php';
 require_once __DIR__ . '/lib/ContractorInvoiceExtractor.php';
 require_once __DIR__ . '/controllers/AccountingController.php';
 require_once __DIR__ . '/controllers/BankFeedController.php';
+require_once __DIR__ . '/controllers/PlaidController.php';
 require_once __DIR__ . '/controllers/ContractorInvoiceController.php';
 require_once __DIR__ . '/controllers/BackupController.php';
 require_once __DIR__ . '/lib/CRMTaskBridge.php';
@@ -262,6 +265,21 @@ $routes = [
     'POST acc/bank-lines/{id}/add' => ['BankFeedController::addLine', true],
     'POST acc/bank-lines/{id}/exclude' => ['BankFeedController::excludeLine', true],
     'POST acc/bank-lines/{id}/undo' => ['BankFeedController::undoLine', true],
+
+    // ===== Plaid bank feed =====
+    // The webhook is the ONE unauthenticated route in this file: Plaid has no
+    // session to present. It is safe because PlaidController::webhook verifies
+    // an ES256 signature over the raw body before trusting a single field, and
+    // because `false` here also means the CSRF check above is skipped — which
+    // it must be, as Plaid cannot know our token.
+    'POST acc/plaid/webhook' => ['PlaidController::webhook', false],
+    'GET acc/plaid/status' => ['PlaidController::status', true],
+    'POST acc/plaid/config' => ['PlaidController::saveConfig', true],
+    'POST acc/plaid/link-token' => ['PlaidController::linkToken', true],
+    'POST acc/plaid/exchange' => ['PlaidController::exchange', true],
+    'POST acc/plaid/accounts/{id}' => ['PlaidController::mapAccount', true],
+    'POST acc/plaid/connections/{id}/sync' => ['PlaidController::syncNow', true],
+    'DELETE acc/plaid/connections/{id}' => ['PlaidController::disconnect', true],
 
     // Contractor invoices. The contractor's own routes sit outside /acc/ on
     // purpose: submitting one must never require an accounting grant.

@@ -15,7 +15,7 @@ async function renderAccBanking() {
 
   const pending = Number(b.review_pending || 0);
   const tabs = [['accounts', 'Accounts'], ['transactions', 'Transactions'], ['transfers', 'Transfers'],
-                ['statements', 'Statements'], ['reconciliations', 'Reconciliations']];
+                ['statements', 'Statements'], ['feed', 'Live feed'], ['reconciliations', 'Reconciliations']];
   const tabBar = `<div class="acc-tabs">${tabs.map(([t, label]) => `
     <button class="acc-tab ${tab === t ? 'active' : ''}" onclick="accBankingTab('${t}')">${esc(label)}${
       t === 'statements' && pending ? `<span class="acc-tab-count">${pending}</span>` : ''}</button>`).join('')}</div>`;
@@ -25,6 +25,7 @@ async function renderAccBanking() {
   else if (tab === 'transactions') body = await accBankingTransactions();
   else if (tab === 'transfers') body = accBankingTransfers(b);
   else if (tab === 'statements') body = accBankingStatements(b);
+  else if (tab === 'feed') body = await accBankingFeed();
   else body = accBankingReconciliations(b);
 
   const action = {
@@ -32,6 +33,7 @@ async function renderAccBanking() {
     transactions: `<button class="btn-primary" onclick="accTransactionModal()">${I.plus} New transaction</button>`,
     transfers: `<button class="btn-primary" onclick="accTransferModal()">${I.plus} New transfer</button>`,
     statements: `<button class="btn-primary" onclick="accGoBankImport()">${I.plus} Import a statement</button>`,
+    feed: '',
     reconciliations: `<button class="btn-primary" onclick="accReconciliationModal()">${I.plus} Start reconciling</button>`,
   }[tab];
 

@@ -95,6 +95,7 @@ window.ASSET_V = "' . ASSET_VERSION . '";</script>
 <script src="/assets/js/views/accounting2.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/acc-billscan.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/acc-bankfeed.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/acc-plaid.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/contractor-invoices.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/backups.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/app.js?v=' . ASSET_VERSION . '"></script>

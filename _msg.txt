@@ -1,25 +1,50 @@
-Notifications: never land on an empty Messages pane
+Plaid bank feed for Accounting (sandbox)
 
-Two live mention rows (#72, #73) were written before notifyMentions() passed its
-context through, so they carry link_id 0 AND project_id 0 — no target at all.
-targetFor() correctly fell back to nav('messages'), but on mobile that is a blank
-pane reading "Select a conversation" with the channel list off-canvas, which is
-what Moe screenshotted. Landing somewhere is not the same as landing usefully.
+Connects Bank of America to the Accounting app through Plaid, so transactions
+arrive on their own instead of being parsed out of monthly PDF statements.
 
-Two changes so this cannot look like a dead click again:
+Built natively in PHP rather than from Plaid's Node quickstart. VGo runs on
+LiteSpeed shared hosting with no Node runtime and no way to keep a process
+alive, so a Node service would have meant a second host, a second deploy path,
+and the access token living outside the app that needs it. Everything Plaid
+requires is JSON over HTTPS plus one ES256 signature check, and a probe on the
+live server confirmed both work there before any of this was written.
 
-- When a notification has no deep link and belongs on Messages, targetFor() now
-  also returns a `view` — the Mentions list for a mention, the Comments feed for
-  anything else. Those lists contain the item itself with its text, instead of an
-  empty conversation pane.
+Plaid gets no parallel transaction store. A synced transaction becomes an
+ordinary acc_bank_imports / acc_bank_lines row, exactly like a line parsed from
+a statement, so the matcher, Bank Review and the reconciliation engine treat
+both identically and nothing downstream learned a second shape. Lines arrive as
+`pending`; nothing reaches the ledger without a human accepting it.
 
-- renderMessages() opens the conversation list on mobile whenever nothing is
-  selected. The list is display:none until .conv-list-mobile-open on narrow
-  screens, so an unselected Messages screen previously showed nothing at all and
-  gave no hint that the "Channels" button was the way forward.
+Two guards exist because these three accounts already hold years of imported
+history. Per-account `sync_from` skips anything on or before the cutover, and a
+content-level check catches the overlap that identity dedupe cannot see —
+Plaid's transaction_id can never match a fitid minted by the PDF importer, so
+without it the same charge would land twice.
 
-The two legacy rows are separately repairable and are backfilled by hand: both
-bodies match rows in `messages` on channel 7 (System feedback), message ids 16
-and 18, so they become link_type 'channel' with a ref_id and deep-link properly.
+Plaid reports money LEAVING an account as positive; acc_bank_lines is signed
+from the account's point of view. Every amount is negated on the way in. Getting
+that backwards would post every payment as income, so it has a test.
 
-v1.26.1 / build 2026.08.17.4
+Credentials live in config/plaid.local.php — above the docroot, gitignored, and
+written by an in-app settings panel so keys never pass through a chat or a
+commit. The access_token is sealed at rest, so a database dump alone is not
+enough to read the company's bank feed.
+
+The webhook is the only unauthenticated route in the router. It verifies an
+ES256 JWT against Plaid's published key, rejects anything older than five
+minutes, and compares a SHA-256 of the RAW body before trusting a single field.
+It handles the Bank of America migration explicitly: PENDING_DISCONNECT gives
+about a week to re-link through Link update mode, and migrated Items carry a
+12-month consent expiry, so both raise a notification that deep-links to
+Banking rather than waiting for someone to notice a feed gone quiet.
+
+Tested offline: 22 assertions covering token sealing (including that the wrong
+key cannot open a token), the JWK->PEM and raw->DER conversions that make
+signature verification work, tampered-signature rejection, the sign convention
+both directions, and six overlap-guard cases against realistic statement text.
+UI render-checked at 390px and 1280px for overflow and the re-auth state.
+
+Sandbox only — env is 'sandbox' and no production secret is stored.
+
+v1.27.0 / build 2026.08.17.5

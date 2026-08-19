@@ -20,6 +20,7 @@ public/test_*.php
 .DS_Store
 
 # Secrets / credentials (never commit)
+config/plaid.local.php
 config/graph.php
 config/app_key.php
 config/push.php

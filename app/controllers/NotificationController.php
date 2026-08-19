@@ -77,6 +77,7 @@ class NotificationController {
             'contractor_invoice_submitted' => 'acc-contractor-invoices',
             'contractor_invoice_decision'  => 'my-invoices',
             'contractor_invoice_paid'      => 'my-invoices',
+            'bank_reauth'                  => 'acc-banking',
         ];
 
         $type = (string)$type;
@@ -95,6 +96,7 @@ class NotificationController {
             case 'project':   return 'projects';
             case 'crm_lead':  return 'crm-leads';
             case 'crm':       return 'crm-dashboard';
+            case 'acc_banking': return 'acc-banking';
         }
         return 'mytasks';
     }
@@ -327,6 +329,12 @@ class NotificationController {
 
             case 'crm_lead':
                 if ($linkId) { $t['action'] = 'crm_lead'; $t['id'] = $linkId; $t['hash'] = '/#crm-lead/' . $linkId; }
+                break;
+
+            case 'acc_banking':
+                // A bank connection needing re-auth: the Banking screen is where
+                // the Reconnect button lives, so the screen IS the destination.
+                $t['nav'] = 'acc-banking';
                 break;
 
             case 'contractor_invoice':
