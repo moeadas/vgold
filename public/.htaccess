@@ -11,12 +11,6 @@ RewriteRule ^ - [L]
 RewriteCond %{HTTPS} off
 RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
-# Plaid OAuth return. Must resolve to a real page at exactly the URI
-# registered in the Plaid dashboard, so it is matched before the SPA fallback
-# and without relying on a directory-index redirect (which would bounce the
-# browser to a trailing slash mid-handshake).
-RewriteRule ^plaid/oauth/?$ plaid-oauth.php [QSA,L]
-
 # API routes — pass to public/index.php
 RewriteRule ^api(.*)$ index.php [QSA,L]
 

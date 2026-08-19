@@ -10,6 +10,18 @@ if (strpos($uri, '/api/') === 0 || $uri === '/api') {
     exit;
 }
 
+// Plaid OAuth return.
+//
+// Registered with Plaid as /plaid/oauth, which is a VIRTUAL path: the root
+// .htaccess only rewrites a URI into public/ when a matching file physically
+// exists there, so anything else lands on the SPA shell. Bank of America sends
+// the browser back here mid-handshake and it must get the real page, so it is
+// dispatched by the front controller rather than by a rewrite rule.
+if ($uri === '/plaid/oauth' || $uri === '/plaid/oauth/') {
+    require __DIR__ . '/plaid-oauth.php';
+    exit;
+}
+
 // Full CRM functionality mounted inside the unified VGo identity/database.
 if ($uri === '/crm' || strpos($uri, '/crm/') === 0) {
     require __DIR__ . '/../crm/mount.php';
