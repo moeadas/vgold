@@ -68,3 +68,6 @@ Accounting/
 
 # Private PHP session store (created at runtime by Auth::init)
 storage/sessions/
+
+# Scratch commit-message file — never part of the app
+_msg.txt
