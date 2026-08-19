@@ -39,7 +39,10 @@ class PlaidSchema
                 `institution_id` VARCHAR(60) NULL,
                 `institution_name` VARCHAR(191) NULL,
                 `access_token` TEXT NULL,
-                `cursor` TEXT NULL,
+                -- Named sync_cursor, not `cursor`: that is a RESERVED WORD in MySQL 8 and
+                -- DB::update() writes bare column names, so every status write blew up
+                -- with a syntax error. Same trap as `interval` -> `interval_n`.
+                `sync_cursor` TEXT NULL,
                 `status` VARCHAR(32) NOT NULL DEFAULT 'active',
                 `error_code` VARCHAR(64) NULL,
                 `error_message` VARCHAR(500) NULL,

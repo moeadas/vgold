@@ -396,7 +396,7 @@ class PlaidController
                     'skipped_before_cutover' => 0, 'note' => 'no mapped accounts'];
         }
 
-        $cursor = (string)($conn['cursor'] ?? '');
+        $cursor = (string)($conn['sync_cursor'] ?? '');
         $added = []; $modified = []; $removed = [];
         $guard = 0;
 
@@ -426,7 +426,7 @@ class PlaidController
         $stats = self::applyTransactions($conn, $map, $added, $modified, $removed);
 
         DB::update('acc_bank_connections', [
-            'cursor' => $cursor,
+            'sync_cursor' => $cursor,
             'status' => in_array($conn['status'], ['login_required','revoked'], true) ? 'active' : $conn['status'],
             'error_code' => null, 'error_message' => null,
             'last_sync_at' => date('Y-m-d H:i:s'),
