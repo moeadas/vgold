@@ -173,6 +173,7 @@ $routes = [
     'PATCH settings/users/{id}/role' => ['SettingsController::changeRole', true],
     'POST settings/users/{id}/toggle-active' => ['SettingsController::toggleUserActive', true],
     'POST settings/users/{id}/password' => ['SettingsController::setUserPassword', true],
+    'PATCH settings/users/{id}/email' => ['SettingsController::changeUserEmail', true],
     'POST settings/users/{id}/send-reset' => ['SettingsController::sendUserPasswordReset', true],
     'POST settings/users/{id}/contractor' => ['SettingsController::setContractor', true],
     'DELETE settings/users' => ['SettingsController::deleteUser', true],

@@ -1445,6 +1445,21 @@ async function renderEditUserPage(userId) {
       </div>
     </div>
 
+    <div class="settings-card" id="settings-user-email">
+      <h3>Email address</h3>
+      <div class="desc">This is what ${esc(member.name)} signs in with${isExternal ? '' : ', and it should match their Microsoft 365 address'}.
+        People can no longer change their own address without their password, and a Microsoft account has no VGo password —
+        so correcting a typo or following a real address change is done here.</div>
+      <div class="form-field" style="max-width:360px;margin-top:10px">
+        <label class="form-label">Sign-in email</label>
+        <input class="form-input" type="email" id="admin-email-new" value="${esc(member.email)}" placeholder="name@victorygenomics.com">
+      </div>
+      <button class="btn-primary" style="margin-top:10px" onclick="adminChangeEmail(${userId})">Update email</button>
+      ${isExternal ? '' : '<p class="pw-admin-note">They are matched on their Microsoft account id, so changing this will not break their sign-in — but leaving it out of step with Microsoft breaks CRM email for them.</p>'}
+      <div id="admin-email-result" class="pw-admin-result" style="display:none"></div>
+      <div id="admin-email-error" class="pw-error" style="display:none;margin-top:10px"></div>
+    </div>
+
     ${passwordCard}
 
     <div class="settings-card" id="settings-user-contractor">
@@ -1461,6 +1476,25 @@ async function renderEditUserPage(userId) {
         who approves them into payables. Turning this off later leaves everything already submitted untouched.</p>
     </div>
   </div>`;
+}
+
+async function adminChangeEmail(userId) {
+  const input = document.getElementById('admin-email-new');
+  const out = document.getElementById('admin-email-result');
+  const err = document.getElementById('admin-email-error');
+  if (out) out.style.display = 'none';
+  if (err) err.style.display = 'none';
+  const email = (input?.value || '').trim();
+  if (!email) { if (err) { err.textContent = 'Enter an email address.'; err.style.display = 'block'; } return; }
+  try {
+    const res = await API.changeUserEmail(userId, email);
+    if (out) { out.textContent = res.message || 'Email updated.'; out.style.display = 'block'; }
+    // The team list is cached, so drop it or the old address keeps showing.
+    State.teamData = null;
+    toast('Email updated', 'success');
+  } catch (e) {
+    if (err) { err.textContent = e.message; err.style.display = 'block'; }
+  }
 }
 
 async function toggleContractor(userId, on) {

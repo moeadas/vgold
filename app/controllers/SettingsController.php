@@ -165,6 +165,63 @@ class SettingsController {
         return $user;
     }
 
+    /**
+     * Admin changes someone else's sign-in address.
+     *
+     * Self-service email changes now cost your own password, which a Microsoft
+     * account does not have — so without this there would be no way at all to
+     * correct a typo or follow a genuine address change for an O365 user. An
+     * admin is not proving the target's identity, they are exercising their own
+     * authority, so this works for every account type.
+     *
+     * It deliberately does NOT touch ms_oid: a Microsoft user is matched on that
+     * first, so their sign-in keeps working across the change.
+     */
+    public static function changeUserEmail($id) {
+        Auth::requireAdmin();
+        $id    = (int)$id;
+        $data  = input();
+        $email = trim((string)($data['email'] ?? ''));
+
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonError('Please enter a valid email address');
+        }
+
+        $target = DB::fetch(
+            "SELECT u.id, u.name, u.email, u.auth_provider
+               FROM users u JOIN workspace_members wm ON wm.user_id = u.id
+              WHERE u.id = ? AND wm.workspace_id = ? LIMIT 1",
+            [$id, Auth::workspaceId()]
+        );
+        if (!$target) jsonError('User not found in this workspace', 404);
+
+        if (strcasecmp($email, (string)$target['email']) === 0) {
+            jsonResponse(['ok' => true, 'message' => 'That is already ' . $target['name'] . "'s address."]);
+        }
+
+        // The accounting-owner address still confers every accounting module, so
+        // it cannot be handed to a second account even by an admin. Moving it off
+        // this address entirely is the proper fix (users.is_acc_owner).
+        if (strcasecmp($email, Authz::ACC_OWNER_EMAIL) === 0) {
+            jsonError('That email address is reserved for the accounting owner.');
+        }
+        if (strcasecmp((string)$target['email'], Authz::ACC_OWNER_EMAIL) === 0) {
+            jsonError('That is the accounting-owner address. Moving it would drop every accounting permission, so it has to be changed deliberately in code.');
+        }
+
+        $clash = DB::fetch("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?", [$email, $id]);
+        if ($clash) jsonError('Another account already uses that email address');
+
+        $was = $target['email'];
+        DB::update('users', ['email' => $email], 'id = ?', [$id]);
+        self::logPasswordAction($id, 'changed the email address (from ' . $was . ') for');
+
+        $note = ($target['auth_provider'] ?? 'password') === 'microsoft'
+            ? ' They sign in with Microsoft and are matched on their Microsoft account id, so their login is unaffected — but this address should match their real Microsoft one.'
+            : '';
+        jsonResponse(['ok' => true, 'message' => $target['name'] . ' is now ' . $email . '.' . $note]);
+    }
+
     private static function logPasswordAction($targetId, $verb) {
         try {
             $actor  = Auth::user();

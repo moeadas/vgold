@@ -92,6 +92,30 @@ switch ($action) {
 // ─────────────────────────────────────
 // SEND MESSAGE
 // ─────────────────────────────────────
+/**
+ * A rep may only act on a lead that is theirs.
+ *
+ * The WhatsApp actions checked that you hold the module, never that the lead you
+ * named belongs to you, so any rep could message another rep's contact and have
+ * it filed against that lead. Mirrors the rule in leads.php. Returns an error
+ * string to send back, or null when the caller is entitled to the lead.
+ */
+function waLeadDenied($leadId) {
+    $leadId = (int)$leadId;
+    if (!$leadId) return null;                  // not lead-scoped
+    if (hasRole('Sales Manager')) return null;  // managers and admins see everything
+    try {
+        $lead = Database::getInstance()->findOne('leads', ['lead_id' => $leadId]);
+        if (!$lead) return 'Lead not found';
+        $uid = (int)getCurrentUserId();
+        if ((int)$lead['assigned_to'] === $uid || (int)$lead['created_by'] === $uid) return null;
+    } catch (Throwable $e) {
+        error_log('waLeadDenied: ' . $e->getMessage());
+        return 'Could not verify access to that lead';
+    }
+    return 'Access denied — this lead is not assigned to you.';
+}
+
 function sendMessage() {
     $input = json_decode(file_get_contents('php://input'), true);
     $toNumber   = $input['to_number'] ?? '';
@@ -102,6 +126,10 @@ function sendMessage() {
 
     if (empty($toNumber) || empty($body)) {
         echo json_encode(['success' => false, 'message' => 'Phone number and message are required']);
+        return;
+    }
+    if ($denied = waLeadDenied($leadId)) {
+        echo json_encode(['success' => false, 'message' => $denied]);
         return;
     }
     if (!TwilioHelper::isValidPhone($toNumber)) {
@@ -178,6 +206,10 @@ function sendTemplate() {
 
     if (!$templateId || empty($toNumber)) {
         echo json_encode(['success' => false, 'message' => 'Template ID and phone number are required']);
+        return;
+    }
+    if ($denied = waLeadDenied($leadId)) {
+        echo json_encode(['success' => false, 'message' => $denied]);
         return;
     }
     if (!TwilioHelper::isValidPhone($toNumber)) {
@@ -706,6 +738,10 @@ function sendContentTemplate() {
 
     if (empty($contentSid) || empty($toNumber)) {
         echo json_encode(['success' => false, 'message' => 'Content SID and phone number are required']);
+        return;
+    }
+    if ($denied = waLeadDenied($leadId)) {
+        echo json_encode(['success' => false, 'message' => $denied]);
         return;
     }
     if (!TwilioHelper::isValidPhone($toNumber)) {

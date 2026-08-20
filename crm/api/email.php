@@ -15,6 +15,49 @@ if (!in_array($action, $publicActions)) {
     requireRole('Sales Manager');
 }
 
+/**
+ * May track_click redirect to this address?
+ *
+ * Two conditions. It has to be an ordinary http(s) URL — that rules out
+ * javascript:, data: and scheme-relative //evil.example. And its host has to be
+ * one the campaign behind this tracking token actually links to, checked against
+ * the campaign's own stored HTML. Link rewriting happens after merge tags are
+ * substituted, so the comparison is on host rather than the whole URL: a path
+ * may legitimately contain a merged value, a host never does.
+ */
+function emailRedirectAllowed($db, $token, $url) {
+    $parts = parse_url($url);
+    if ($parts === false || empty($parts['host'])) return false;
+    $scheme = strtolower($parts['scheme'] ?? '');
+    if (!in_array($scheme, ['http', 'https'], true)) return false;
+    // Credentials in a URL are used to make a foreign host read as a trusted one.
+    if (isset($parts['user']) || isset($parts['pass'])) return false;
+
+    $host = strtolower($parts['host']);
+    if ($host === strtolower(parse_url(APP_URL, PHP_URL_HOST) ?: '')) return true;
+
+    try {
+        $stmt = $db->prepare(
+            "SELECT c.content_html
+               FROM email_campaign_log l
+               JOIN email_campaigns c ON c.campaign_id = l.campaign_id
+              WHERE l.tracking_token = ? LIMIT 1"
+        );
+        $stmt->execute([$token]);
+        $row = $stmt->fetch();
+        if (!$row || empty($row['content_html'])) return false;
+
+        if (!preg_match_all('/href="(https?:\/\/[^"]+)"/i', $row['content_html'], $m)) return false;
+        foreach ($m[1] as $candidate) {
+            $h = strtolower(parse_url($candidate, PHP_URL_HOST) ?: '');
+            if ($h !== '' && $h === $host) return true;
+        }
+    } catch (Throwable $e) {
+        error_log('emailRedirectAllowed: ' . $e->getMessage());
+    }
+    return false;
+}
+
 $db = Database::getInstance()->getConnection();
 $method = $_SERVER['REQUEST_METHOD'];
 
@@ -36,7 +79,19 @@ try {
     // ─── PUBLIC: Click tracking ───
     if ($action === 'track_click' && isset($_GET['token']) && isset($_GET['url'])) {
         $token = $_GET['token'];
-        $url = $_GET['url'];
+        $url = (string)$_GET['url'];
+
+        // This endpoint is unauthenticated and used to redirect anywhere it was
+        // told to, which made every campaign link a way to send someone from a
+        // victorygenomics.com URL to any site at all — a ready-made phishing
+        // hop. The destination must now be a plain http(s) address that really
+        // belongs to the campaign this tracking token came from.
+        if (!emailRedirectAllowed($db, $token, $url)) {
+            error_log('CRM track_click: refused redirect to ' . substr($url, 0, 200));
+            header('Location: ' . rtrim(APP_URL, '/') . '/');
+            exit;
+        }
+
         $stmt = $db->prepare("UPDATE email_campaign_log SET status = 'Clicked', clicked_at = NOW() WHERE tracking_token = ? AND status IN ('Sent','Opened','Clicked')");
         $stmt->execute([$token]);
         $stmt2 = $db->prepare("UPDATE email_campaigns c SET c.total_clicked = (SELECT COUNT(*) FROM email_campaign_log WHERE campaign_id = c.campaign_id AND status = 'Clicked') WHERE c.campaign_id = (SELECT campaign_id FROM email_campaign_log WHERE tracking_token = ? LIMIT 1)");
