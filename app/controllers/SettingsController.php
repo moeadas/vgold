@@ -311,6 +311,11 @@ class SettingsController {
     
     // ===== SMTP Settings =====
     public static function smtp() {
+        // Outbound mail configuration — host, port, username and the from
+        // identity — is administrative, not something every member needs. The
+        // password column is deliberately never selected below, but the rest is
+        // still a map of how mail leaves this company.
+        Auth::requireAdmin();
         $wsId = Auth::workspaceId();
         $cfg = DB::fetch("SELECT id, host, port, username, from_name, from_email, encryption, is_active FROM smtp_settings WHERE workspace_id = ?", [$wsId]);
         // Report where mail is actually going out from, so an unconfigured

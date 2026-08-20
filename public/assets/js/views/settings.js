@@ -98,7 +98,10 @@ async function renderSettings() {
     catch (e) { myMail = null; }
   }
   let smtp = State.smtpSettings;
-  if (smtp === undefined) {
+  // Admin-only on the server now, and the section it feeds (line ~456) was
+  // already admin-only in the UI — so asking as a member just earned a 403 on
+  // every settings load.
+  if (user.role === 'admin' && smtp === undefined) {
     try {
       const res = await API.smtp();
       smtp = res.settings; State.smtpSettings = smtp;

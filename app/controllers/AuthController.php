@@ -350,6 +350,25 @@ class AuthController {
         // the standard claims as defense in depth against token confusion/replay.
         $parts = explode('.', $d['id_token']);
         if (count($parts) !== 3) jsonError('Login failed: malformed token', 401);
+
+        // Cryptographic proof Microsoft issued this token, rather than inferring
+        // it from how the token arrived. The JWKS URI is the standard OIDC path
+        // under the configured authority, so this needs no new config.
+        //
+        // Three outcomes, and the distinction matters. A bad signature is fatal.
+        // A good one proceeds. Being *unable* to check — Microsoft's key endpoint
+        // unreachable and no usable cache — proceeds with a log line, because the
+        // token still came over a TLS back-channel straight from the token
+        // endpoint and refusing here would turn a transient network fault into
+        // nobody in the company being able to log in.
+        $sigOk = MsJwks::verify($d['id_token'], rtrim($cfg['login_authority'], '/') . '/discovery/v2.0/keys');
+        if ($sigOk === false) {
+            error_log('microsoftCallback: id_token signature verification FAILED');
+            jsonError('Login failed: invalid token signature', 401);
+        }
+        if ($sigOk === null) {
+            error_log('microsoftCallback: could not verify id_token signature (keys unavailable); continuing on back-channel trust');
+        }
         $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
         if (!is_array($claims)) jsonError('Login failed: unreadable token', 401);
         // Audience must be this application.

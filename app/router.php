@@ -11,6 +11,7 @@ require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/lib/MsMail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
 require_once __DIR__ . '/lib/RateLimit.php';
+require_once __DIR__ . '/lib/MsJwks.php';
 require_once __DIR__ . '/lib/PdfRaster.php';
 require_once __DIR__ . '/lib/AiClient.php';
 require_once __DIR__ . '/lib/BillExtractor.php';
