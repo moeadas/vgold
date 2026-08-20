@@ -59,10 +59,58 @@ class Authz {
         return $out;
     }
 
-    /** Is this user the hard-wired accounting owner? */
+    /** Cached: does users.is_acc_owner actually exist on this database? */
+    private static $accOwnerCol = null;
+
+    /**
+     * Make sure users.is_acc_owner exists, and report whether it really does.
+     *
+     * Deriving accounting-owner status from the email column meant the highest
+     * privilege in the finance app keyed off a field the user could edit. This
+     * moves it to a flag only an admin or a seed can set.
+     *
+     * The return value matters. MySQL here runs without STRICT_TRANS_TABLES, so
+     * a query against a column that failed to appear does not reliably error —
+     * it just answers wrongly. If the ALTER cannot run (no privilege, table
+     * locked), this returns false and isAccOwner() falls back to the old email
+     * comparison, so the owner keeps their access instead of silently losing
+     * every accounting module at once.
+     */
+    private static function ensureAccOwnerColumn() {
+        if (self::$accOwnerCol !== null) return self::$accOwnerCol;
+        self::$accOwnerCol = false;
+        try {
+            $cols = DB::fetchAll("SHOW COLUMNS FROM users LIKE 'is_acc_owner'");
+            if (!$cols) {
+                DB::query("ALTER TABLE users ADD COLUMN is_acc_owner TINYINT(1) NOT NULL DEFAULT 0");
+                // Seed from the historic address so the bootstrap owner is never
+                // locked out by the migration itself.
+                DB::query(
+                    "UPDATE users SET is_acc_owner = 1 WHERE LOWER(email) = LOWER(?)",
+                    [self::ACC_OWNER_EMAIL]
+                );
+                $cols = DB::fetchAll("SHOW COLUMNS FROM users LIKE 'is_acc_owner'");
+            }
+            self::$accOwnerCol = !empty($cols);
+        } catch (\Throwable $e) {
+            error_log('Authz::ensureAccOwnerColumn: ' . $e->getMessage());
+            self::$accOwnerCol = false;
+        }
+        return self::$accOwnerCol;
+    }
+
+    /** Is this user the accounting owner? */
     public static function isAccOwner($userId = null) {
         $userId = $userId ?? Auth::userId();
         if (!$userId) return false;
+
+        if (self::ensureAccOwnerColumn()) {
+            $row = DB::fetch("SELECT is_acc_owner FROM users WHERE id = ?", [$userId]);
+            return $row && (int)$row['is_acc_owner'] === 1;
+        }
+
+        // Degraded: the flag column is not available. Keep the old behaviour
+        // rather than stripping the owner of every module.
         $row = DB::fetch("SELECT email FROM users WHERE id = ?", [$userId]);
         return $row && strcasecmp(trim($row['email']), self::ACC_OWNER_EMAIL) === 0;
     }
@@ -124,10 +172,11 @@ class Authz {
             );
             foreach ($rows as $r) $ids[(int)$r['user_id']] = true;
 
-            $owner = DB::fetch(
-                "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1",
-                [self::ACC_OWNER_EMAIL]
-            );
+            // The owner holds every module implicitly and would otherwise never
+            // be told about work waiting for them.
+            $owner = self::ensureAccOwnerColumn()
+                ? DB::fetch("SELECT id FROM users WHERE is_acc_owner = 1 AND is_active = 1")
+                : DB::fetch("SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND is_active = 1", [self::ACC_OWNER_EMAIL]);
             if ($owner) $ids[(int)$owner['id']] = true;
         } catch (\Throwable $e) {
             error_log('Authz::usersWithAccModule: ' . $e->getMessage());

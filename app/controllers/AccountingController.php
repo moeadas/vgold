@@ -75,21 +75,60 @@ class AccountingController
             'can_admin' => ($user && $user['role'] === 'admin') && in_array('acc.settings', $granted, true),
             'settings'  => self::companySettings(),
             'empty'     => AccSchema::isEmpty(),
-            'options'   => self::optionsPayload(),
+            'options'   => self::optionsPayload($granted),
         ]);
     }
 
-    private static function optionsPayload()
+    /**
+     * The picker lists the Accounting UI needs up front.
+     *
+     * This used to return everything to anyone holding any one accounting
+     * module, so a person granted only the finance overview received every bank
+     * balance, the full customer and vendor lists and the whole chart of
+     * accounts. Each list is now tied to the modules that actually need it to do
+     * their job — a bills user needs vendors to enter a bill, an invoices user
+     * needs customers, and neither needs the other.
+     *
+     * Bank balances are cut finer than the account list itself: several modules
+     * need the account *picker* to record a payment, but the running balance is
+     * only the business of banking, reports and the overview.
+     */
+    private static function optionsPayload(?array $granted = null)
     {
+        $granted = $granted ?? array_values(array_filter(Authz::grantedModules(), fn($k) => isset(Authz::ACC_MODULES[$k])));
+        $has = fn(...$keys) => (bool)array_intersect($keys, $granted);
+
+        // Modules that create or edit a document, and so need the line-item pickers.
+        $posts = ['acc.invoices', 'acc.bills', 'acc.recurring', 'acc.accounting', 'acc.reports'];
+
+        $needsAccounts = $has('acc.banking', 'acc.dashboard', 'acc.reports', ...$posts);
+        $seesBalances  = $has('acc.banking', 'acc.dashboard', 'acc.reports');
+        $accounts = $needsAccounts
+            ? DB::fetchAll("SELECT id, name, bank_name, number, type, balance, currency_code, color FROM acc_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name")
+            : [];
+        if ($accounts && !$seesBalances) {
+            foreach ($accounts as &$a) { unset($a['balance']); }
+            unset($a);
+        }
+
+        $catalog = $has('acc.catalog', 'acc.settings', ...$posts);
+
         return [
-            'accounts'   => DB::fetchAll("SELECT id, name, bank_name, number, type, balance, currency_code, color FROM acc_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
-            'customers'  => DB::fetchAll("SELECT id, name, email FROM acc_contacts WHERE deleted_at IS NULL AND type = 'customer' ORDER BY name"),
-            'vendors'    => DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'vendor' ORDER BY name"),
-            'investors'  => DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'investor' ORDER BY name"),
-            'taxes'      => DB::fetchAll("SELECT id, name, rate, type FROM acc_taxes WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
-            'categories' => DB::fetchAll("SELECT id, name, type, color, parent_id FROM acc_categories WHERE deleted_at IS NULL ORDER BY type, name"),
-            'items'      => DB::fetchAll("SELECT id, name, sku, sale_price, purchase_price, type FROM acc_items WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name"),
-            'coa'        => DB::fetchAll("SELECT id, code, name, type, side FROM acc_chart_of_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY code"),
+            'accounts'   => $accounts,
+            'customers'  => $has('acc.customers', 'acc.invoices', 'acc.recurring', 'acc.reports')
+                ? DB::fetchAll("SELECT id, name, email FROM acc_contacts WHERE deleted_at IS NULL AND type = 'customer' ORDER BY name") : [],
+            'vendors'    => $has('acc.vendors', 'acc.bills', 'acc.recurring', 'acc.reports')
+                ? DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'vendor' ORDER BY name") : [],
+            'investors'  => $has('acc.investors', 'acc.reports')
+                ? DB::fetchAll("SELECT id, name, email, category FROM acc_contacts WHERE deleted_at IS NULL AND type = 'investor' ORDER BY name") : [],
+            'taxes'      => $catalog
+                ? DB::fetchAll("SELECT id, name, rate, type FROM acc_taxes WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name") : [],
+            'categories' => $catalog
+                ? DB::fetchAll("SELECT id, name, type, color, parent_id FROM acc_categories WHERE deleted_at IS NULL ORDER BY type, name") : [],
+            'items'      => $catalog
+                ? DB::fetchAll("SELECT id, name, sku, sale_price, purchase_price, type FROM acc_items WHERE deleted_at IS NULL AND enabled = 1 ORDER BY name") : [],
+            'coa'        => $has('acc.accounting', 'acc.settings', 'acc.reports', 'acc.invoices', 'acc.bills')
+                ? DB::fetchAll("SELECT id, code, name, type, side FROM acc_chart_of_accounts WHERE deleted_at IS NULL AND enabled = 1 ORDER BY code") : [],
             'agents'     => self::agentList(),
             'adjustment_kinds' => Acc::ADJUSTMENT_KINDS,
         ];
@@ -2295,10 +2334,15 @@ class AccountingController
         if ($file['size'] <= 0) jsonError('That file is empty');
         if ($file['size'] > 25 * 1024 * 1024) jsonError('File too large (max 25MB)');
 
-        // Never accept anything the server could be tricked into executing.
+        // Two different dangers here. The first group is anything the SERVER could
+        // be tricked into executing. The second is anything the BROWSER will
+        // execute when the file is later served back inline from this origin —
+        // an SVG is a script container, not a picture, and it was previously
+        // accepted and rendered inline, which is same-origin script execution.
         $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
         $blocked = ['php','php3','php4','php5','php7','php8','phtml','phar','cgi','pl','py','sh','bash',
-                    'htaccess','htpasswd','exe','bat','cmd','com','js','jsp','asp','aspx'];
+                    'htaccess','htpasswd','exe','bat','cmd','com','js','jsp','asp','aspx',
+                    'svg','svgz','html','htm','xhtml','xht','xml','xsl','xslt','swf','mhtml','mht'];
         if ($ext === '' || in_array($ext, $blocked, true)) jsonError('That file type is not allowed');
 
         $dir = AccSchema::attachmentDir();
@@ -2317,7 +2361,10 @@ class AccountingController
             'attachable_id'   => $targetId,
             'name'            => mb_substr($file['name'], 0, 255),
             'path'            => AccSchema::ATTACHMENT_DIR . '/' . $unique,
-            'mime'            => Acc::strOrNull($file['type'] ?? null, 120),
+            // Derived from the bytes, never from $file['type'] — that field is
+            // whatever the client claimed, and it is echoed straight back as the
+            // Content-Type on download.
+            'mime'            => self::sniffMime($full, $file['type'] ?? null),
             'size'            => (int)$file['size'],
             'uploaded_by'     => Auth::userId(),
         ]);
@@ -2325,6 +2372,38 @@ class AccountingController
         if ($type === 'document') Acc::addHistory($targetId, 'attachment', 'Attached ' . $file['name']);
 
         jsonResponse(['ok' => true, 'id' => (int)$id, 'attachments' => self::attachmentsFor($type, $targetId)]);
+    }
+
+    /** The only types ever rendered in the browser rather than downloaded. */
+    private const INLINE_SAFE_MIMES = [
+        'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/bmp',
+        'application/pdf', 'text/plain',
+    ];
+
+    /**
+     * The file's real MIME type, read from its bytes.
+     *
+     * $_FILES['x']['type'] is supplied by the browser and is trivially forged,
+     * so a caller could label a script-bearing SVG as anything they liked — or
+     * label anything at all as image/svg+xml and have it served back inline from
+     * this origin. finfo reads the actual content. The claimed type is only used
+     * as a last resort when finfo is unavailable, and even then anything outside
+     * the inline allowlist simply downloads instead of rendering.
+     */
+    private static function sniffMime($path, $claimed = null)
+    {
+        $mime = null;
+        if (function_exists('finfo_open') && is_file($path)) {
+            $fi = @finfo_open(FILEINFO_MIME_TYPE);
+            if ($fi) { $mime = @finfo_file($fi, $path) ?: null; @finfo_close($fi); }
+        }
+        if (!$mime) $mime = Acc::strOrNull($claimed, 120);
+        $mime = strtolower(trim((string)$mime));
+        // finfo reports SVG as image/svg+xml or text/xml depending on the build;
+        // either way it must never be presented as a renderable image.
+        if ($mime === '' ) return 'application/octet-stream';
+        if (strpos($mime, 'svg') !== false) return 'application/octet-stream';
+        return substr($mime, 0, 120);
     }
 
     public static function downloadAttachment($id)
@@ -2344,9 +2423,12 @@ class AccountingController
         }
 
         $inline = isset($_GET['inline']) && $_GET['inline'] === '1';
-        $mime = $row['mime'] ?: 'application/octet-stream';
-        // Only ever render a handful of types inline; everything else downloads.
-        if ($inline && !preg_match('#^(image/|application/pdf|text/plain)#i', $mime)) $inline = false;
+        // Trust the bytes on the way out too, not the stored string — rows
+        // written before MIME sniffing landed still carry a client-supplied value.
+        $mime = self::sniffMime($full, $row['mime']);
+        // An explicit allowlist, not a `^image/` prefix: that prefix also matched
+        // image/svg+xml, which the browser runs as script on this origin.
+        if ($inline && !in_array(strtolower($mime), self::INLINE_SAFE_MIMES, true)) $inline = false;
 
         while (ob_get_level() > 0) ob_end_clean();
         header('Content-Type: ' . $mime);

@@ -139,6 +139,17 @@ try {
     jsonError('Error loading lead', 500);
 }
 
+// Holding crm.email says you may send mail. It does not say which leads you may
+// send it about — without this, any rep could mail another rep's lead from their
+// own mailbox and have it logged as an interaction on that lead. Same rule as
+// leads.php: managers see everything, reps see what is theirs.
+if (!hasRole('Sales Manager')) {
+    $uid = getCurrentUserId();
+    if ((int)$lead['assigned_to'] !== (int)$uid && (int)$lead['created_by'] !== (int)$uid) {
+        jsonError('Access denied — this lead is not assigned to you.', 403);
+    }
+}
+
 // Determine send method: the user's own mailbox via Graph, else workspace SMTP.
 // accessToken() refreshes silently when the stored one has expired.
 $msAccessToken = MsMail::accessToken($userId);

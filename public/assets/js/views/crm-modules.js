@@ -312,7 +312,7 @@ async function renderCrmKnowledge() {
   const shown = active === 'all' ? cards : cards.filter(c => (c.category || '').toLowerCase().includes(active.toLowerCase()));
   const chips = `<div class="ct-filter-chips">
     <button class="ct-chip ${active === 'all' ? 'active' : ''}" onclick="khFilter('all')">All</button>
-    ${cats.map(c => `<button class="ct-chip ${active === c ? 'active' : ''}" onclick="khFilter('${esc(c)}')">${esc(c)}</button>`).join('')}
+    ${cats.map(c => `<button class="ct-chip ${active === c ? 'active' : ''}" onclick="khFilter('${escJs(c)}')">${esc(c)}</button>`).join('')}
   </div>`;
   const grid = shown.length ? `<div class="ct-guides">${shown.map(c => {
     const color = c.icon_color || '#0071e3';
@@ -1683,7 +1683,7 @@ async function voipBuildCalls() {
 
   const rows = calls.map(v => {
     const rec = v.recording_url ? ' 🔊' : '';
-    return `<tr class="clickable-row" style="cursor:pointer;" onclick="voipCallDetail('${esc(String(v.call_id))}')">
+    return `<tr class="clickable-row" style="cursor:pointer;" onclick="voipCallDetail('${escJs(v.call_id)}')">
       <td>${esc(v.contact_person || v.company_name || (v.lead_id ? 'Lead #' + v.lead_id : '—'))}</td>
       <td style="font-family:ui-monospace,monospace">${esc((v.direction === 'Inbound' ? v.from_number : v.to_number) || '-')}</td>
       <td>${esc(v.direction || '')}</td>
@@ -1754,7 +1754,7 @@ function voipCallDetail(callId) {
 // --- WhatsApp (faithful to whatsapp-dashboard.php + whatsapp.js) ---
 CrmMod.wa = CrmMod.wa || { leadId: 0, toNumber: '', name: '', insideWindow: null, contentTemplates: [] };
 
-function waEscJs(s) { return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '').replace(/\r?\n/g, ' '); }
+function waEscJs(s) { return escJs(String(s == null ? '' : s).replace(/\r?\n/g, ' ')); }
 function waInitials(name) {
   const p = String(name || '').trim().split(/\s+/);
   if (!p[0]) return '?';

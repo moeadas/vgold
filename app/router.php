@@ -10,6 +10,8 @@ require_once __DIR__ . '/lib/Secrets.php';
 require_once __DIR__ . '/lib/Mail.php';
 require_once __DIR__ . '/lib/MsMail.php';
 require_once __DIR__ . '/lib/PasswordReset.php';
+require_once __DIR__ . '/lib/RateLimit.php';
+require_once __DIR__ . '/lib/MsJwks.php';
 require_once __DIR__ . '/lib/PdfRaster.php';
 require_once __DIR__ . '/lib/AiClient.php';
 require_once __DIR__ . '/lib/BillExtractor.php';
@@ -172,6 +174,7 @@ $routes = [
     'PATCH settings/users/{id}/role' => ['SettingsController::changeRole', true],
     'POST settings/users/{id}/toggle-active' => ['SettingsController::toggleUserActive', true],
     'POST settings/users/{id}/password' => ['SettingsController::setUserPassword', true],
+    'PATCH settings/users/{id}/email' => ['SettingsController::changeUserEmail', true],
     'POST settings/users/{id}/send-reset' => ['SettingsController::sendUserPasswordReset', true],
     'POST settings/users/{id}/contractor' => ['SettingsController::setContractor', true],
     'DELETE settings/users' => ['SettingsController::deleteUser', true],

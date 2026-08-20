@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../lib/Crypto.php';
+require_once __DIR__ . '/../lib/AiClient.php';
 class AIController {
     
     private static $providers = [
@@ -718,11 +719,13 @@ class AIController {
             'messages' => [['role' => 'user', 'content' => $prompt]],
         ]);
         
+        AiClient::assertAllowedUrl($baseUrl);
         $ch = curl_init("$baseUrl/v1/messages");
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'x-api-key: ' . $apiKey, 'anthropic-version: 2023-06-01'],
             CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -746,11 +749,13 @@ class AIController {
             'max_tokens' => 1024,
         ]);
         
+        AiClient::assertAllowedUrl($baseUrl);
         $ch = curl_init("$baseUrl/v1/chat/completions");
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Authorization: Bearer ' . $apiKey],
             CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -770,10 +775,12 @@ class AIController {
             'generationConfig' => ['maxOutputTokens' => 1024],
         ]);
         
+        AiClient::assertAllowedUrl($baseUrl);
         $ch = curl_init("$baseUrl/models/" . rawurlencode($model) . ":generateContent?key=" . urlencode($apiKey));
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true, CURLOPT_POSTFIELDS => $payload,
             CURLOPT_HTTPHEADER => ['Content-Type: application/json'], CURLOPT_TIMEOUT => 30,
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -801,11 +808,13 @@ class AIController {
         if (!empty($config['api_key'])) $headers[] = 'Authorization: Bearer ' . Crypto::decrypt($config['api_key']);
         elseif ($isCloud) throw new Exception('Ollama Cloud needs an API key. Add one in Settings → AI Connections.');
 
+        AiClient::assertAllowedUrl($baseUrl);
         $ch = curl_init(rtrim($baseUrl, '/') . '/api/chat');
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true, CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode(['model' => $model, 'messages' => $messages, 'stream' => false]),
             CURLOPT_HTTPHEADER => $headers, CURLOPT_TIMEOUT => 60,
+            CURLOPT_FOLLOWLOCATION => false, CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

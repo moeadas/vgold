@@ -67,7 +67,7 @@ async function renderTaskPage(taskId) {
         <div style="position:relative;display:inline-flex">
           <button onclick="event.stopPropagation();toggleAgendaAddMenu('task-${t.id}', this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots" style="display:inline-flex;align-items:center;justify-content:center">${I.plus}</button>
           <div class="task-quick-menu" id="agenda-add-menu-task-${t.id}" style="top:100%;left:0;right:auto">
-            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${projectId})">Add to Priorities</button>
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${escJs(t.title)}',${projectId})">Add to Priorities</button>
           </div>
         </div>
         <span style="font-size:13px;color:var(--muted)">·</span>
@@ -252,14 +252,14 @@ function renderTaskFileRow(f) {
   // external link. No preview/download/edit — just open in a new tab.
   if (f.is_link && f.external_url) {
     const url = f.external_url;
-    return `<div class="file-row" style="cursor:pointer" onclick="window.open('${esc(url)}','_blank','noopener')">
+    return `<div class="file-row" style="cursor:pointer" onclick="window.open('${escJs(safeUrl(url))}','_blank','noopener')">
       <div class="file-icon" style="background:#4A7C9B"><span>LINK</span></div>
       <div style="flex:1;min-width:0">
         <div class="file-name">${esc(f.name)} <span style="font-size:11px;color:var(--muted);font-weight:400">↗ external</span></div>
         <div class="file-meta">Link · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
       </div>
       <div class="file-actions" onclick="event.stopPropagation()">
-        <button class="file-action-btn" onclick="window.open('${esc(url)}','_blank','noopener')" title="Open link">${I.eye}</button>
+        <button class="file-action-btn" onclick="window.open('${escJs(safeUrl(url))}','_blank','noopener')" title="Open link">${I.eye}</button>
         ${canDelete ? `<button class="file-action-btn danger" onclick="deleteTaskFile(${taskId},${f.id})" title="Remove link">${I.trash}</button>` : ''}
       </div>
     </div>`;

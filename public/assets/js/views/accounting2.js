@@ -813,7 +813,7 @@ function accJournalList() {
             <span style="flex:1"></span>
             <button class="btn-secondary" style="padding:4px 10px;font-size:12.5px" onclick="accEntryDetail(${e.id})">${I.eye} Full details</button>
             ${e.status === 'posted' && e.source !== 'reversal'
-              ? `<button class="btn-secondary" style="padding:4px 10px;font-size:12.5px" onclick="accReverseEntry(${e.id},'${esc(e.number)}')">Reverse entry</button>` : ''}
+              ? `<button class="btn-secondary" style="padding:4px 10px;font-size:12.5px" onclick="accReverseEntry(${e.id},'${escJs(e.number)}')">Reverse entry</button>` : ''}
             ${e.status === 'draft'
               ? `<button class="btn-secondary" style="padding:4px 10px;font-size:12.5px;color:var(--barn)" onclick="accDeleteEntry(${e.id})">Delete draft</button>` : ''}
           </div>
@@ -866,7 +866,7 @@ function accEntryDetail(id) {
       <span style="flex:1"></span>
       <button class="btn-secondary" onclick="Modal.close()">Close</button>
       ${e.status === 'posted' && e.source !== 'reversal'
-        ? `<button class="btn-primary" onclick="Modal.close();accReverseEntry(${e.id},'${esc(e.number)}')">Reverse entry</button>` : ''}`,
+        ? `<button class="btn-primary" onclick="Modal.close();accReverseEntry(${e.id},'${escJs(e.number)}')">Reverse entry</button>` : ''}`,
   });
 }
 

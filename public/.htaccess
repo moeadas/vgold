@@ -28,6 +28,34 @@ Header set X-Content-Type-Options "nosniff"
 Header set X-Frame-Options "SAMEORIGIN"
 Header set Referrer-Policy "strict-origin-when-cross-origin"
 
+# Content-Security-Policy — deliberately WITHOUT script-src.
+#
+# The SPA is built on inline event handlers and inline style attributes, so any
+# script-src it could accept would need 'unsafe-inline', which defeats the point:
+# a policy with 'unsafe-inline' does not stop injected inline script. Shipping one
+# anyway would mean maintaining an allowlist of a dozen CDN and Twilio origins
+# (softphone WebSockets, Plaid Link, jsDelivr, cdnjs, Google Fonts) for no real
+# gain, with a live softphone and bank feed to break if the list is wrong.
+#
+# The four directives below need no allowlist, cost nothing to serve, and each
+# closes an injection route that escaping does not:
+#   object-src   — no <object>/<embed>/applet, a classic XSS vector that survives
+#                  a lot of output encoding.
+#   base-uri     — an injected <base href> silently repoints every relative URL in
+#                  the page, including the API calls, at an attacker's host.
+#   form-action  — an injected form cannot post credentials off-origin. Verified
+#                  the app has no cross-origin form targets.
+#   frame-ancestors — clickjacking, and unlike X-Frame-Options it is honoured by
+#                  modern browsers and understands more than one ancestor.
+#
+# Adding script-src later is a separate exercise: run it as
+# Content-Security-Policy-Report-Only first, with a collector, for long enough to
+# see a real month of softphone and Plaid traffic.
+Header set Content-Security-Policy "object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+
+# Stop the browser handing this origin's features to embedded third-party frames.
+Header set Permissions-Policy "geolocation=(), payment=(), usb=(), magnetometer=(), gyroscope=()"
+
 # Gzip compression
 <IfModule mod_deflate.c>
   AddOutputFilterByType DEFLATE text/html text/plain text/css text/javascript application/javascript application/json

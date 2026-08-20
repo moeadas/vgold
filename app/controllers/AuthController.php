@@ -5,6 +5,28 @@ require_once __DIR__ . '/../../vendor/autoload.php';
 use Firebase\JWT\JWT;
 
 class AuthController {
+
+    /**
+     * Salt+digest of a throwaway bcrypt hash, used when the identifier does not
+     * match any account so that the failure still pays the bcrypt cost. Without
+     * it the not-found path returned in a few milliseconds while a real account
+     * took ~180ms, which told an unauthenticated caller exactly which addresses
+     * are real.
+     *
+     * The cost is spliced in at call time rather than baked in: password_verify()
+     * reads the round count from the hash prefix, and the body is independent of
+     * it, so this always runs the same number of rounds as a freshly-created
+     * account on whatever PHP this server happens to be on. The digest will never
+     * match — that is the point.
+     */
+    private const DUMMY_HASH_BODY = 'E7Ghl.85jRV.woF.Ku.fy.QDrlNLqs5rWDg/0u1pv2ZEIGWgZGd4u';
+
+    private static function dummyHash() {
+        $cost = defined('PASSWORD_BCRYPT_DEFAULT_COST') ? (int)PASSWORD_BCRYPT_DEFAULT_COST : 10;
+        if ($cost < 4 || $cost > 31) $cost = 10;
+        return '$2y$' . str_pad((string)$cost, 2, '0', STR_PAD_LEFT) . '$' . self::DUMMY_HASH_BODY;
+    }
+
     public static function registerDisabled() {
         jsonError('Registration is disabled. Ask an admin to add you.', 403);
     }
@@ -71,13 +93,23 @@ class AuthController {
         $email = strtolower(trim($data['email'] ?? ''));
         $generic = ['ok' => true, 'message' => 'If that address belongs to an account that signs in with a password, a reset link is on its way.'];
 
-        // Per-IP ceiling, independent of which address is being probed.
-        $ipKey = 'pwreset_' . md5($_SERVER['REMOTE_ADDR'] ?? 'unknown');
-        $win   = $_SESSION[$ipKey . '_time'] ?? 0;
-        if ($win && (time() - $win) > 3600) { unset($_SESSION[$ipKey], $_SESSION[$ipKey . '_time']); }
-        if ((int)($_SESSION[$ipKey] ?? 0) >= 10) jsonResponse($generic);
-        $_SESSION[$ipKey] = (int)($_SESSION[$ipKey] ?? 0) + 1;
-        if (!isset($_SESSION[$ipKey . '_time'])) $_SESSION[$ipKey . '_time'] = time();
+        // Per-IP ceiling, independent of which address is being probed. Stored
+        // server-side for the same reason as the login counter: a session-backed
+        // ceiling is reset by dropping the cookie.
+        if (RateLimit::ensure()) {
+            $ip = RateLimit::ip();
+            if (RateLimit::exceeded(RateLimit::RESET_IP, $ip, RateLimit::RESET_IP_MAX, RateLimit::RESET_WINDOW)) {
+                jsonResponse($generic);
+            }
+            RateLimit::hit(RateLimit::RESET_IP, $ip);
+        } else {
+            $ipKey = 'pwreset_' . md5($_SERVER['REMOTE_ADDR'] ?? 'unknown');
+            $win   = $_SESSION[$ipKey . '_time'] ?? 0;
+            if ($win && (time() - $win) > 3600) { unset($_SESSION[$ipKey], $_SESSION[$ipKey . '_time']); }
+            if ((int)($_SESSION[$ipKey] ?? 0) >= 10) jsonResponse($generic);
+            $_SESSION[$ipKey] = (int)($_SESSION[$ipKey] ?? 0) + 1;
+            if (!isset($_SESSION[$ipKey . '_time'])) $_SESSION[$ipKey . '_time'] = time();
+        }
 
         if ($email === '' || !filter_var($email, FILTER_VALIDATE_EMAIL)) jsonResponse($generic);
 
@@ -124,26 +156,54 @@ class AuthController {
         $identifierLc = strtolower($identifier);
         $password = $data['password'];
         
-        // Rate limiting: max 5 attempts per 15 min per IP
-        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-        $key = 'login_' . md5($ip);
-        $attempts = (int)($_SESSION[$key] ?? 0);
-        $firstAttempt = $_SESSION[$key . '_time'] ?? 0;
-        if ($firstAttempt && (time() - $firstAttempt) > 900) {
-            $_SESSION[$key] = 0;
-            $_SESSION[$key . '_time'] = time();
+        // Rate limiting. The counters live in the database, keyed by IP and by the
+        // identifier being tried — a counter kept in $_SESSION is reset by simply
+        // dropping the session cookie, so it stopped nothing. The per-account
+        // ceiling is the tight one; the per-IP ceiling is loose because the whole
+        // office shares one NAT address.
+        $ip = RateLimit::ip();
+        $limiterLive = RateLimit::ensure();
+
+        if ($limiterLive) {
+            if (RateLimit::exceeded(RateLimit::LOGIN_USER, $identifierLc, RateLimit::LOGIN_USER_MAX, RateLimit::LOGIN_WINDOW)
+             || RateLimit::exceeded(RateLimit::LOGIN_IP, $ip, RateLimit::LOGIN_IP_MAX, RateLimit::LOGIN_WINDOW)) {
+                jsonError('Too many login attempts. Please try again in 15 minutes.', 429);
+            }
+        } else {
+            // Degraded: the attempts table is unavailable. Keep the old
+            // session-backed behaviour rather than letting nobody sign in.
+            $key = 'login_' . md5($ip);
+            $attempts = (int)($_SESSION[$key] ?? 0);
+            $firstAttempt = $_SESSION[$key . '_time'] ?? 0;
+            if ($firstAttempt && (time() - $firstAttempt) > 900) {
+                $_SESSION[$key] = 0;
+                $_SESSION[$key . '_time'] = time();
+            }
+            if ($attempts >= 5) {
+                jsonError('Too many login attempts. Please try again in 15 minutes.', 429);
+            }
         }
-        if ($attempts >= 5) {
-            jsonError('Too many login attempts. Please try again in 15 minutes.', 429);
-        }
-        
+
         $user = DB::fetch("SELECT * FROM users WHERE LOWER(email) = ? AND is_active = 1", [$identifierLc]);
         if (!$user) {
             $user = DB::fetch("SELECT * FROM users WHERE LOWER(crm_username) = ? AND is_active = 1", [$identifierLc]);
         }
-        if (!$user || !password_verify($password, $user['password'])) {
-            $_SESSION[$key] = $attempts + 1;
-            if (!isset($_SESSION[$key . '_time'])) $_SESSION[$key . '_time'] = time();
+
+        // Always pay the bcrypt cost, even for an address that does not exist.
+        // Skipping it returned in ~5ms instead of ~180ms, which told an
+        // unauthenticated caller exactly which addresses are real accounts.
+        $hash = ($user && !empty($user['password'])) ? $user['password'] : self::dummyHash();
+        $passwordOk = password_verify($password, $hash);
+
+        if (!$user || !$passwordOk) {
+            if ($limiterLive) {
+                RateLimit::hit(RateLimit::LOGIN_USER, $identifierLc);
+                RateLimit::hit(RateLimit::LOGIN_IP, $ip);
+            } else {
+                $key = 'login_' . md5($ip);
+                $_SESSION[$key] = (int)($_SESSION[$key] ?? 0) + 1;
+                if (!isset($_SESSION[$key . '_time'])) $_SESSION[$key . '_time'] = time();
+            }
             jsonError('Invalid credentials', 401);
         }
         
@@ -151,8 +211,14 @@ class AuthController {
         if (!$wm) jsonError('No workspace found', 403);
         
         // Reset rate limit on success
-        unset($_SESSION[$key]);
-        unset($_SESSION[$key . '_time']);
+        if ($limiterLive) {
+            RateLimit::clear(RateLimit::LOGIN_USER, $identifierLc);
+            RateLimit::clear(RateLimit::LOGIN_IP, $ip);
+        } else {
+            $key = 'login_' . md5($ip);
+            unset($_SESSION[$key]);
+            unset($_SESSION[$key . '_time']);
+        }
         
         // Set auth_provider + CRM linkage in session from the user's DB record.
         $_SESSION['auth_provider'] = $user['auth_provider'] ?? 'password';
@@ -284,6 +350,25 @@ class AuthController {
         // the standard claims as defense in depth against token confusion/replay.
         $parts = explode('.', $d['id_token']);
         if (count($parts) !== 3) jsonError('Login failed: malformed token', 401);
+
+        // Cryptographic proof Microsoft issued this token, rather than inferring
+        // it from how the token arrived. The JWKS URI is the standard OIDC path
+        // under the configured authority, so this needs no new config.
+        //
+        // Three outcomes, and the distinction matters. A bad signature is fatal.
+        // A good one proceeds. Being *unable* to check — Microsoft's key endpoint
+        // unreachable and no usable cache — proceeds with a log line, because the
+        // token still came over a TLS back-channel straight from the token
+        // endpoint and refusing here would turn a transient network fault into
+        // nobody in the company being able to log in.
+        $sigOk = MsJwks::verify($d['id_token'], rtrim($cfg['login_authority'], '/') . '/discovery/v2.0/keys');
+        if ($sigOk === false) {
+            error_log('microsoftCallback: id_token signature verification FAILED');
+            jsonError('Login failed: invalid token signature', 401);
+        }
+        if ($sigOk === null) {
+            error_log('microsoftCallback: could not verify id_token signature (keys unavailable); continuing on back-channel trust');
+        }
         $claims = json_decode(base64_decode(strtr($parts[1], '-_', '+/')), true);
         if (!is_array($claims)) jsonError('Login failed: unreadable token', 401);
         // Audience must be this application.

@@ -71,6 +71,20 @@ class ContractorInvoiceController
         Authz::requireAccModule(self::APPROVER_MODULE);
     }
 
+    /**
+     * Nobody signs off their own money.
+     *
+     * requireApprover() only asks whether you hold the approver module — which a
+     * contractor may legitimately also hold. Approval posts a bill straight into
+     * acc_documents, so the submitter has to be somebody else.
+     */
+    private static function denySelfDecision($row, $verb)
+    {
+        if ((int)$row['user_id'] === (int)Auth::userId()) {
+            jsonError('You cannot ' . $verb . ' your own invoice. Ask another approver to review it.', 403);
+        }
+    }
+
     private static function row($id, $forUser = null)
     {
         $r = DB::fetch("SELECT * FROM acc_contractor_invoices WHERE id = ? AND deleted_at IS NULL", [(int)$id]);
@@ -398,6 +412,7 @@ class ContractorInvoiceController
     {
         self::requireApprover();
         $r = self::row($id);
+        self::denySelfDecision($r, 'approve');
         if ($r['status'] === 'approved') jsonError('This invoice has already been approved.');
         if ($r['status'] !== 'submitted') jsonError('Only a submitted invoice can be approved.');
 
@@ -497,6 +512,7 @@ class ContractorInvoiceController
     {
         self::requireApprover();
         $r = self::row($id);
+        self::denySelfDecision($r, 'reject');
         if ($r['status'] !== 'submitted') jsonError('Only a submitted invoice can be rejected.');
 
         $data = input();

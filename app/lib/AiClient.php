@@ -142,6 +142,56 @@ class AiClient {
         throw new Exception('Unknown provider: ' . $provider);
     }
 
+    /**
+     * Hosts an AI request is ever allowed to reach.
+     *
+     * base_url is user-supplied and every authenticated user can set their own,
+     * so without this the app will happily curl whatever address it is handed —
+     * loopback services, RFC1918 neighbours, a cloud metadata endpoint. The
+     * allowlist is by hostname rather than by resolved IP on purpose: checking a
+     * resolved address and then letting cURL resolve it again is a DNS-rebinding
+     * race, whereas a name that is not on this list never gets that far.
+     *
+     * The one non-public entry is a self-hosted Ollama, which by convention
+     * listens on loopback:11434 and nowhere else.
+     */
+    private const ALLOWED_HOSTS = [
+        'api.anthropic.com',
+        'api.openai.com',
+        'generativelanguage.googleapis.com',
+        'ollama.com',
+    ];
+    private const OLLAMA_LOCAL_HOSTS = ['127.0.0.1', 'localhost', '::1', '[::1]'];
+    private const OLLAMA_LOCAL_PORT  = 11434;
+
+    /** Throws unless $url points somewhere an AI provider is allowed to live. */
+    public static function assertAllowedUrl($url) {
+        $url = trim((string)$url);
+        $parts = parse_url($url);
+        if ($parts === false || empty($parts['host'])) {
+            throw new Exception('That AI base URL is not a valid address.');
+        }
+        $scheme = strtolower($parts['scheme'] ?? '');
+        $host   = strtolower(trim($parts['host'], '[]'));
+        if (!in_array($scheme, ['http', 'https'], true)) {
+            throw new Exception('An AI base URL must start with http:// or https://.');
+        }
+        // Credentials in the URL are a classic way to make a host look like an
+        // allowed one ("https://api.openai.com@10.0.0.5/").
+        if (isset($parts['user']) || isset($parts['pass'])) {
+            throw new Exception('That AI base URL is not allowed.');
+        }
+        if (in_array($host, self::ALLOWED_HOSTS, true) && $scheme === 'https') return;
+        if (in_array($host, self::OLLAMA_LOCAL_HOSTS, true)
+            && (int)($parts['port'] ?? 0) === self::OLLAMA_LOCAL_PORT) return;
+
+        throw new Exception(
+            'That AI base URL is not allowed. Use one of: '
+            . implode(', ', self::ALLOWED_HOSTS)
+            . ', or a local Ollama on 127.0.0.1:' . self::OLLAMA_LOCAL_PORT . '.'
+        );
+    }
+
     /** Where a provider's API lives, honouring an override. */
     private static function baseFor($provider, array $cfg) {
         $custom = trim((string)($cfg['base_url'] ?? ''));
@@ -255,6 +305,7 @@ class AiClient {
 
     /** POST JSON and return the decoded body, or throw with what the API said. */
     private static function post($url, array $payload, array $headers, $timeout, $label) {
+        self::assertAllowedUrl($url);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -262,6 +313,10 @@ class AiClient {
             CURLOPT_POSTFIELDS     => json_encode($payload),
             CURLOPT_HTTPHEADER     => array_merge(['Content-Type: application/json'], $headers),
             CURLOPT_TIMEOUT        => $timeout,
+            // Stated rather than inherited: a redirect must not be able to walk
+            // an allowed host into the intranet, and only http(s) is ever wanted.
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $body = curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -279,11 +334,14 @@ class AiClient {
 
     /** GET JSON and return the decoded body, or throw with what the API said. */
     private static function get($url, array $headers, $timeout, $label) {
+        self::assertAllowedUrl($url);
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER     => array_merge(['Accept: application/json'], $headers),
             CURLOPT_TIMEOUT        => $timeout,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_PROTOCOLS      => CURLPROTO_HTTP | CURLPROTO_HTTPS,
         ]);
         $body = curl_exec($ch);
         $code = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);

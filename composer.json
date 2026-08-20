@@ -1,6 +1,12 @@
 {
     "require": {
         "firebase/php-jwt": "^7.1",
-        "minishlink/web-push": "^10.1"
+        "minishlink/web-push": "^10.1",
+        "guzzlehttp/guzzle": "^7.15.3"
+    },
+    "config": {
+        "platform": {
+            "php": "8.2.32"
+        }
     }
 }

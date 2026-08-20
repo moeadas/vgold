@@ -185,6 +185,7 @@ const API = {
   resetCheck: (token) => API.req('/auth/reset-check?token=' + encodeURIComponent(token)),
   resetPassword: (token, password) => API.req('/auth/reset-password', { method: 'POST', body: JSON.stringify({ token, password }) }),
   setUserPassword: (id, password) => API.req('/settings/users/' + id + '/password', { method: 'POST', body: JSON.stringify({ password }) }),
+  changeUserEmail: (id, email) => API.req('/settings/users/' + id + '/email', { method: 'PATCH', body: JSON.stringify({ email }) }),
   sendUserPasswordReset: (id) => API.req('/settings/users/' + id + '/send-reset', { method: 'POST' }),
   markRead: (id) => API.req('/notifications/' + id + '/read', { method: 'POST' }),
   markAllRead: () => API.req('/notifications/read-all', { method: 'POST' }),

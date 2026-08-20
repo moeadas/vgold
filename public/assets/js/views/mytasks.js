@@ -133,7 +133,7 @@ async function renderMyTasks() {
               <span class="fav-card-name">${esc(f.name)}</span>
               <span class="fav-card-meta">${f.is_category ? 'Workspace' : (esc(f.context || 'Project'))}${f.total_tasks ? ` · ${f.completed_tasks}/${f.total_tasks} done` : ''}</span>
             </span>
-            <span class="fav-card-star" title="Remove from favourites" onclick="event.stopPropagation();toggleFavoriteProject(${f.id},'${esc(f.name).replace(/'/g, "\\'")}')">${I.starFill}</span>
+            <span class="fav-card-star" title="Remove from favourites" onclick="event.stopPropagation();toggleFavoriteProject(${f.id},'${escJs(f.name)}')">${I.starFill}</span>
           </button>
         `).join('')}
       </div>
