@@ -81,7 +81,7 @@ function favBtnHTML(id, name) {
   const on = isFavorite(id);
   return `<button class="fav-btn ${on ? 'on' : ''}" title="${on ? 'Remove from favourites' : 'Add to favourites'}"
     aria-label="${on ? 'Remove from favourites' : 'Add to favourites'}" aria-pressed="${on}"
-    onclick="event.stopPropagation();toggleFavoriteProject(${id},'${esc(name).replace(/'/g, "\\'")}')">${on ? I.starFill : I.star}</button>`;
+    onclick="event.stopPropagation();toggleFavoriteProject(${id},'${escJs(name)}')">${on ? I.starFill : I.star}</button>`;
 }
 async function toggleFavoriteProject(id, name) {
   try {
@@ -125,7 +125,7 @@ async function renderProjects() {
         <span class="card-drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">${I.grip || '⠿'}</span>
         <div class="card-actions">
           ${favBtnHTML(p.id, p.name)}
-          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${esc(p.name).replace(/'/g, "\\'")}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
+          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${escJs(p.name)}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
           ${State.user?.role === 'admin' ? `<button class="card-icon-btn danger" onclick="event.stopPropagation();deleteCategory(${p.id})" title="Delete workspace" aria-label="Delete workspace">${I.trash}</button>` : ''}
         </div>
         ${unreadKPI(State.unreadCounts, p.id)}<div class="pc-title">${esc(p.name)}</div>
@@ -146,7 +146,7 @@ async function renderProjects() {
         <div class="pc-footer">
           <div style="display:flex;align-items:center;gap:6px">
             <div class="pc-team">${memberAvatars}${extraMembers}</div>
-            <button class="btn-secondary" style="padding:4px 10px;font-size:11px;flex:none" onclick="event.stopPropagation();openMembersModal(${p.id},'${esc(p.name).replace(/'/g,"\'")}')">Manage</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px;flex:none" onclick="event.stopPropagation();openMembersModal(${p.id},'${escJs(p.name)}')">Manage</button>
           </div>
         </div>
       </div>
@@ -237,7 +237,7 @@ async function renderCategory() {
         <span class="card-drag-handle" title="Drag to reorder" onclick="event.stopPropagation()">${I.grip || '⠿'}</span>
         <div class="card-actions">
           ${favBtnHTML(p.id, p.name)}
-          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${esc(p.name).replace(/'/g, "\\'")}','project')" title="Rename project" aria-label="Rename project">${I.pencil}</button>
+          <button class="card-icon-btn" onclick="event.stopPropagation();renameProjectPrompt(${p.id},'${escJs(p.name)}','project')" title="Rename project" aria-label="Rename project">${I.pencil}</button>
           ${State.user?.role === 'admin' ? `<button class="card-icon-btn danger" onclick="event.stopPropagation();deleteProject(${p.id})" title="Delete project" aria-label="Delete project">${I.trash}</button>` : ''}
         </div>
         <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:8px">
@@ -254,7 +254,7 @@ async function renderCategory() {
         <div class="pc-footer">
           <div style="display:flex;align-items:center;gap:6px">
             <div class="pc-team">${memberAvatars}</div>
-            <button class="btn-secondary" style="padding:4px 10px;font-size:11px;flex:none" onclick="event.stopPropagation();openMembersModal(${cat.id},'${esc(cat.name).replace(/'/g,"\'")}')">Manage</button>
+            <button class="btn-secondary" style="padding:4px 10px;font-size:11px;flex:none" onclick="event.stopPropagation();openMembersModal(${cat.id},'${escJs(cat.name)}')">Manage</button>
           </div>
           <span style="font-size:12.5px;color:var(--muted)">${esc(p.due_label || '')}</span>
         </div>
@@ -273,11 +273,11 @@ async function renderCategory() {
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <h1 class="page-title-sm" style="margin:0">${esc(cat.name)}</h1>
             ${favBtnHTML(cat.id, cat.name)}
-            <button class="card-icon-btn" onclick="renameProjectPrompt(${cat.id},'${esc(cat.name).replace(/'/g, "\\'")}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
+            <button class="card-icon-btn" onclick="renameProjectPrompt(${cat.id},'${escJs(cat.name)}','workspace')" title="Rename workspace" aria-label="Rename workspace">${I.pencil}</button>
           </div>
           ${cat.description ? `<p class="page-desc">${esc(cat.description)}</p>` : ''}
         </div>
-        <button class="btn-primary" style="flex:none" onclick="openNewProjectModal(${cat.id},'${esc(cat.name).replace(/'/g, "\\'")}')">${I.plus}<span>Add project</span></button>
+        <button class="btn-primary" style="flex:none" onclick="openNewProjectModal(${cat.id},'${escJs(cat.name)}')">${I.plus}<span>Add project</span></button>
       </div>
       <div class="project-grid">${grid}</div>
       
@@ -606,14 +606,14 @@ function renderFileRow(f) {
   // Link files: single "open external" affordance; downloads/edit/preview don't apply.
   if (isLink) {
     const url = f.external_url;
-    return `<div class="file-row" style="cursor:pointer" onclick="window.open('${esc(url)}','_blank','noopener')">
+    return `<div class="file-row" style="cursor:pointer" onclick="window.open('${escJs(safeUrl(url))}','_blank','noopener')">
       <div class="file-icon" style="background:#4A7C9B"><span>LINK</span></div>
       <div style="flex:1;min-width:0">
         <div class="file-name">${esc(f.name)} <span style="font-size:11px;color:var(--muted);font-weight:400">↗ external</span></div>
         <div class="file-meta">${esc(f.project_name || '')} · Link · ${esc(f.by || '')} · ${esc(f.when || '')}</div>
       </div>
       <div class="file-actions" onclick="event.stopPropagation()">
-        <button class="file-action-btn" onclick="window.open('${esc(url)}','_blank','noopener')" title="Open link">${I.eye}</button>
+        <button class="file-action-btn" onclick="window.open('${escJs(safeUrl(url))}','_blank','noopener')" title="Open link">${I.eye}</button>
         ${State.user?.role === 'admin' ? `<button class="file-action-btn danger" onclick="deleteFileFromId(${f.id})" title="Remove link">${I.trash}</button>` : ''}
       </div>
     </div>`;

@@ -934,7 +934,7 @@ async function crmLeadSearchRun() {
       box.innerHTML = `<div class="crm-leadpick-empty">No leads match “${esc(q)}”.</div>`;
     } else {
       box.innerHTML = leads.map(l => `
-        <button type="button" class="crm-leadpick-item" onclick="crmLeadSearchPick(${l.id}, '${esc(l.name).replace(/'/g, "\\'")}')">
+        <button type="button" class="crm-leadpick-item" onclick="crmLeadSearchPick(${l.id}, '${escJs(l.name)}')">
           <span class="crm-leadpick-name">${esc(l.name)}</span>
           <span class="crm-leadpick-meta">${esc([l.company && l.company !== l.name ? l.company : '', l.country || '', l.status || ''].filter(Boolean).join(' · '))}</span>
         </button>`).join('');
@@ -1107,7 +1107,7 @@ async function renderCrmLeadDetail(id) {
     <button class="btn ${size} btn-warning" onclick="goCrmLeadEditPage(${lead.id})">${CRM_ICONS.edit} Edit Lead</button>
     ${CRM_CUSTOMER_STATUSES.includes(lead.status)
       ? ''
-      : `<button class="btn ${size} btn-outline" onclick="crmConvertLead(${lead.id}, '${esc(lead.display_name || '').replace(/'/g, "\\'")}')">Convert to customer</button>`}`;
+      : `<button class="btn ${size} btn-outline" onclick="crmConvertLead(${lead.id}, '${escJs(lead.display_name || '')}')">Convert to customer</button>`}`;
 
   return `
     <div class="crm-native fade-in">

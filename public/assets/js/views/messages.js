@@ -71,7 +71,7 @@ async function renderMessages() {
         <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.name)}</span>
         ${c.count ? `<span style="font-size:11px;color:var(--gold);background:var(--gold-bg);border-radius:99px;padding:1px 7px">${c.count}</span>` : ''}
       </button>
-      <button class="conv-delete" title="Delete channel" aria-label="Delete channel" onclick="event.stopPropagation();deleteChannelFromList(${c.id},'${esc(c.name).replace(/'/g,"\\'")}')">${I.trash}</button>
+      <button class="conv-delete" title="Delete channel" aria-label="Delete channel" onclick="event.stopPropagation();deleteChannelFromList(${c.id},'${escJs(c.name)}')">${I.trash}</button>
     </div>`
   ).join('');
   const dms = (channels.dms || []).map(c =>

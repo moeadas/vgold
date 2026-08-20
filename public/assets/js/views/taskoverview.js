@@ -144,7 +144,7 @@ function overviewTaskRowHTML(t) {
         <div class="task-row-agenda" style="position:relative;flex:none">
           <button onclick="event.stopPropagation();toggleAgendaAddMenu(${t.id}, this)" title="Add to Priorities" aria-label="Add to Priorities" class="task-row-dots">${I.plus}</button>
           <div class="task-quick-menu" id="agenda-add-menu-${t.id}">
-            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})">Add to Priorities</button>
+            <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${escJs(t.title)}',${t.project_id})">Add to Priorities</button>
           </div>
         </div>
       </div>

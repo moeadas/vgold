@@ -172,7 +172,7 @@ async function renderSettings() {
       ? `<select onchange="changeUserRole(${m.id},this.value)" style="font-size:11px;padding:3px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surface)"><option value="member" ${m.role !== 'admin' ? 'selected' : ''}>Member</option><option value="admin" ${m.role === 'admin' ? 'selected' : ''}>Admin</option></select>`
       : rolePill;
     const actions = user.role === 'admin'
-      ? `<button class="btn-secondary" style="padding:5px 11px;font-size:12px" onclick="openEditUser(${m.id})">Edit</button>${m.id !== user.id ? `<button class="btn-icon-danger" onclick="deleteUser(${m.id},'${esc(m.name)}')" title="Remove user">${I.trash || '🗑'}</button>` : ''}`
+      ? `<button class="btn-secondary" style="padding:5px 11px;font-size:12px" onclick="openEditUser(${m.id})">Edit</button>${m.id !== user.id ? `<button class="btn-icon-danger" onclick="deleteUser(${m.id},'${escJs(m.name)}')" title="Remove user">${I.trash || '🗑'}</button>` : ''}`
       : '';
     return `
     <div class="member-row">
@@ -388,8 +388,13 @@ async function renderSettings() {
             </div>
             <div class="form-field" style="flex:1">
               <label class="form-label">Email address</label>
-              <input class="form-input" id="prof-email" type="email" value="${esc(user.email)}" placeholder="you@company.com">
+              <input class="form-input" id="prof-email" type="email" value="${esc(user.email)}" placeholder="you@company.com" data-original="${esc(user.email)}" oninput="profEmailChanged()">
             </div>
+          </div>
+          <div class="form-field" id="prof-pw-wrap" style="display:none;margin-top:10px;max-width:320px">
+            <label class="form-label">Current password</label>
+            <input class="form-input" id="prof-current-pw" type="password" autocomplete="current-password" placeholder="Required to change your email">
+            <div class="settings-hint">Your email is what you sign in with, so changing it needs your password.</div>
           </div>
           <button class="btn-primary" style="margin-top:12px" onclick="saveProfile()">Save profile</button>
           <div id="prof-error" class="pw-error" style="display:none"></div>
@@ -634,14 +639,41 @@ function renderSmtpForm(smtp) {
 }
 
 // ===== Profile update =====
+// The password box only appears once the address actually differs from the one
+// the page loaded with — changing just your name should not ask for it.
+function profEmailChanged() {
+  const el = document.getElementById('prof-email');
+  const wrap = document.getElementById('prof-pw-wrap');
+  if (!el || !wrap) return;
+  const changed = el.value.trim().toLowerCase() !== (el.dataset.original || '').trim().toLowerCase();
+  wrap.style.display = changed ? '' : 'none';
+  if (!changed) { const pw = document.getElementById('prof-current-pw'); if (pw) pw.value = ''; }
+}
+
 async function saveProfile() {
-  const name = document.getElementById('prof-name')?.value.trim();
-  const email = document.getElementById('prof-email')?.value.trim();
+  const nameEl = document.getElementById('prof-name');
+  const emailEl = document.getElementById('prof-email');
+  const name = nameEl?.value.trim();
+  const email = emailEl?.value.trim();
   const errEl = document.getElementById('prof-error');
   errEl.style.display = 'none';
   if (!name || !email) { errEl.textContent = 'Name and email are required'; errEl.style.display = 'block'; return; }
+
+  const original = (emailEl?.dataset.original || '').trim();
+  const emailChanged = email.toLowerCase() !== original.toLowerCase();
+  const currentPw = document.getElementById('prof-current-pw')?.value || '';
+  if (emailChanged && !currentPw) {
+    errEl.textContent = 'Enter your current password to change your email address.';
+    errEl.style.display = 'block';
+    document.getElementById('prof-current-pw')?.focus();
+    return;
+  }
+
+  const body = { name, email };
+  if (emailChanged) body.current_password = currentPw;
+
   try {
-    await API.updateProfile({ name, email });
+    await API.updateProfile(body);
     State.user.name = name;
     State.user.email = email;
     State.user.initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
@@ -892,7 +924,7 @@ async function deleteUser(userId, name) {
     `,
     footer: `
       <button class="btn-secondary" onclick="Modal.close()">Cancel</button>
-      <button class="btn-primary" style="background:#B0432B" onclick="confirmDeleteUser(${userId}, '${esc(name).replace(/'/g,"\'")}')">Remove user</button>
+      <button class="btn-primary" style="background:#B0432B" onclick="confirmDeleteUser(${userId}, '${escJs(name)}')">Remove user</button>
     `,
   });
 }

@@ -53,6 +53,43 @@ const State = {
 };
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// esc() is for HTML TEXT. It is unsafe for a value that ends up inside a
+// JavaScript string literal that itself sits inside an HTML attribute — e.g.
+// onclick="doThing('${...}')". The HTML parser entity-decodes an attribute value
+// BEFORE the JS parser sees it, so esc()'s &#39; turns back into a live quote and
+// closes the string. escJs() emits \xNN escapes instead: they contain no quote,
+// no angle bracket and no '&', so they pass through HTML decoding untouched and
+// are inert once JS parses them.
+//
+// Use esc() for text nodes and normal attributes. Use escJs() ONLY inside a JS
+// string literal. Never swap one for the other wholesale.
+function escJs(s) {
+  return String(s ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/&/g, '\\x26')
+    .replace(/'/g, '\\x27')
+    .replace(/"/g, '\\x22')
+    .replace(/</g, '\\x3C')
+    .replace(/>/g, '\\x3E')
+    .replace(/\//g, '\\x2F')
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+// A user-supplied URL is only ever handed to window.open()/href after this.
+// Anything that is not plainly http(s) — javascript:, data:, vbscript:, a
+// scheme-relative //evil.example — becomes 'about:blank'.
+function safeUrl(u) {
+  const raw = String(u ?? '').trim();
+  if (!/^https?:\/\/[^\/\\]/i.test(raw)) return 'about:blank';
+  try {
+    const parsed = new URL(raw);
+    return (parsed.protocol === 'http:' || parsed.protocol === 'https:') ? parsed.href : 'about:blank';
+  } catch (e) { return 'about:blank'; }
+}
 function linkify(s) {
   const esc = String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   return esc.replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" style="color:var(--gold-dark);text-decoration:underline">$1</a>');

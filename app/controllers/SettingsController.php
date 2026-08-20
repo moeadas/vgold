@@ -1,6 +1,9 @@
 <?php
 require_once __DIR__ . '/../lib/Mail.php';
 require_once __DIR__ . '/../lib/Crypto.php';
+require_once __DIR__ . '/../lib/Authz.php';
+require_once __DIR__ . '/../lib/PasswordReset.php';
+require_once __DIR__ . '/../lib/AiClient.php';
 
 class SettingsController {
     
@@ -16,22 +19,61 @@ class SettingsController {
         ]]);
     }
     
+    /**
+     * Your own name / email / avatar colour.
+     *
+     * Email is not an ordinary profile field here: it is the identifier you sign
+     * in with, the address a password reset is sent to, and — until the
+     * is_acc_owner flag lands — what Authz::isAccOwner() keys off. So changing it
+     * costs your current password, and the accounting-owner address can never be
+     * adopted by anyone who is not already the owner.
+     */
     public static function updateProfile() {
         $data = input();
         $allowed = ['name', 'email', 'avatar_color'];
         $update = array_intersect_key($data, array_flip($allowed));
-        
-        // Validate email if changing
+
         if (isset($update['email'])) {
             $update['email'] = trim($update['email']);
             if (!filter_var($update['email'], FILTER_VALIDATE_EMAIL)) {
                 jsonError('Please enter a valid email address');
             }
-            // Check email isn't taken by another user
-            $existing = DB::fetch("SELECT id FROM users WHERE email = ? AND id != ?", [$update['email'], Auth::userId()]);
-            if ($existing) jsonError('That email is already in use');
+
+            $me = DB::fetch(
+                "SELECT id, email, password, auth_provider FROM users WHERE id = ?",
+                [Auth::userId()]
+            );
+            if (!$me) jsonError('Account not found', 404);
+
+            $changing = strcasecmp($update['email'], (string)$me['email']) !== 0;
+            if (!$changing) {
+                // Same address, possibly re-cased. Nothing to authorise.
+                unset($update['email']);
+            } else {
+                // The accounting-owner address confers every accounting module.
+                // Nobody adopts it through a profile form.
+                if (strcasecmp($update['email'], Authz::ACC_OWNER_EMAIL) === 0) {
+                    jsonError('That email address is reserved.');
+                }
+
+                // Prove it is you. A Microsoft account has no local password to
+                // check against, so its address is managed upstream.
+                if (!PasswordReset::isPasswordAccount($me)) {
+                    jsonError('Your email address is managed by Microsoft and cannot be changed here.', 400);
+                }
+                $current = (string)($data['current_password'] ?? '');
+                if ($current === '' || empty($me['password']) || !password_verify($current, $me['password'])) {
+                    jsonError('Enter your current password to change your email address.');
+                }
+
+                $existing = DB::fetch(
+                    "SELECT id FROM users WHERE LOWER(email) = LOWER(?) AND id != ?",
+                    [$update['email'], Auth::userId()]
+                );
+                if ($existing) jsonError('That email is already in use');
+            }
         }
-        
+
         if ($update) {
             DB::update('users', $update, 'id = ?', [Auth::userId()]);
         }
@@ -337,14 +379,27 @@ class SettingsController {
     public static function updateApiKey() {
         $data = input();
         requireFields(['provider'], $data);
-        
+
+        // base_url is user-supplied and reaches curl_init(). AiClient refuses a
+        // disallowed host at request time; refusing it here too means the bad
+        // value is never stored in the first place, and the person gets told at
+        // the moment they typed it rather than on some later request.
+        $baseUrl = trim((string)($data['base_url'] ?? ''));
+        if ($baseUrl !== '') {
+            try {
+                AiClient::assertAllowedUrl($baseUrl);
+            } catch (Throwable $e) {
+                jsonError($e->getMessage());
+            }
+        }
+
         $existing = DB::fetch(
             "SELECT id FROM user_api_keys WHERE user_id = ? AND provider = ?",
             [Auth::userId(), $data['provider']]
         );
         
         $update = [
-            'base_url' => $data['base_url'] ?? null,
+            'base_url' => $baseUrl !== '' ? $baseUrl : null,
             'model' => $data['model'] ?? null,
             'is_active' => isset($data['is_active']) ? ($data['is_active'] ? 1 : 0) : 1,
         ];

@@ -253,7 +253,7 @@ function renderMembersModalBody(data) {
         <div style="font-size:12px;color:var(--muted)">${esc(m.email)}${m.role ? ' · ' + esc(m.role) : ''}</div>
       </div>
       ${m.role === 'Lead' ? '<span style="font-size:11px;font-weight:700;color:var(--primary-dark);background:var(--primary-bg);border-radius:99px;padding:3px 8px">Lead</span>' : ''}
-      ${m.role !== 'Lead' ? `<button class="btn-icon-danger" onclick="removeProjectMember(${membersModalProjectId},${m.id},'${esc(m.name)}')" title="Remove">${I.trash || '✕'}</button>` : ''}
+      ${m.role !== 'Lead' ? `<button class="btn-icon-danger" onclick="removeProjectMember(${membersModalProjectId},${m.id},'${escJs(m.name)}')" title="Remove">${I.trash || '✕'}</button>` : ''}
     </div>
   `).join('');
   
@@ -264,7 +264,7 @@ function renderMembersModalBody(data) {
         <div style="font-size:14px;font-weight:700">${esc(m.name)}</div>
         <div style="font-size:12px;color:var(--muted)">${esc(m.email)}</div>
       </div>
-      <button class="btn-secondary" style="padding:5px 12px;font-size:12px" onclick="addProjectMember(${membersModalProjectId},${m.id},'${esc(m.name)}')">Add</button>
+      <button class="btn-secondary" style="padding:5px 12px;font-size:12px" onclick="addProjectMember(${membersModalProjectId},${m.id},'${escJs(m.name)}')">Add</button>
     </div>
   `).join('');
   

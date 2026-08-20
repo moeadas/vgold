@@ -121,7 +121,7 @@ function allTaskRowHTML(t) {
       ${t.deadline_label ? `<span style="font-size:12px;color:${t.deadline_label.includes('Overdue') ? '#B0432B' : 'var(--muted)'};font-weight:${t.deadline_label.includes('Overdue') ? 700 : 400}">${esc(t.deadline_label)}</span>` : ''}
       <span class="meeting-status" style="background:${t.status_color};color:#FFF;font-size:10px;padding:2px 7px">${esc(t.status_label)}</span>
       <div style="display:flex;align-items:center;margin-left:auto">${assigneeHTML}</div>
-      <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${esc(t.title).replace(/'/g,"\\'")}',${t.project_id})" title="Add to Priorities" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--gold);display:inline-flex;align-items:center" aria-label="Add to Priorities">${I.plus}</button>
+      <button onclick="event.stopPropagation();addToAgendaFromTask(${t.id},'${escJs(t.title)}',${t.project_id})" title="Add to Priorities" style="background:none;border:none;cursor:pointer;padding:4px;color:var(--gold);display:inline-flex;align-items:center" aria-label="Add to Priorities">${I.plus}</button>
     </div>
   `;
 }
