@@ -1,0 +1,241 @@
+/* =============================================================================
+   VGo — CRM Sales Dashboard
+   Scoped under .sales-dash, which always sits inside .crm-native, so the
+   design-system tokens (--color-accent, --radius-lg, --shadow-*) are in scope.
+
+   ⚠️ Every grid cell here carries min-width:0. Grid items default to
+   min-width:auto, so a long client name or a wide table overflows its track and
+   paints over the next column — the exact defect that broke the ledger.
+============================================================================= */
+
+.sales-dash { --sd-gold: #C99520; }
+
+/* ─── period bar ─── */
+.sales-dash .sd-periodbar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+    margin: 0 0 20px;
+}
+.sales-dash .sd-seg-group {
+    display: inline-flex; background: #f0f0f5; border-radius: 10px; padding: 3px; gap: 2px;
+}
+.sales-dash .sd-seg {
+    border: 0; background: transparent; cursor: pointer;
+    padding: 6px 14px; border-radius: 8px;
+    font: 600 13px/1 var(--font-family); color: var(--color-text-secondary);
+    transition: background .15s, color .15s;
+}
+.sales-dash .sd-seg:hover { color: var(--color-text); }
+.sales-dash .sd-seg.active { background: var(--color-surface); color: var(--color-text); box-shadow: var(--shadow-xs); }
+.sales-dash .sd-period-nav { display: inline-flex; align-items: center; gap: 4px; }
+.sales-dash .sd-period-label { font-weight: 700; font-size: 14px; min-width: 96px; text-align: center; }
+.sales-dash .sd-scope {
+    margin-left: auto; font-size: 12px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--color-text-secondary);
+}
+.sales-dash select.sd-rep-select { max-width: 220px; min-width: 150px; }
+
+.sales-dash .page-header { flex-wrap: wrap; gap: 12px; }
+.sales-dash .page-header > * { min-width: 0; }
+.sales-dash .card-header-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.sales-dash .card-header { flex-wrap: wrap; gap: 8px; }
+.sales-dash .form-control { max-width: 100%; }
+
+.sales-dash .sd-notice {
+    background: #fff8e6; border: 1px solid #f5e3b3; color: #7a5b12;
+    border-radius: var(--radius-md); padding: 12px 14px; font-size: 13px; line-height: 1.5;
+    margin-bottom: 18px;
+}
+
+/* ─── hero ─── */
+.sales-dash .sd-hero {
+    display: grid; grid-template-columns: minmax(0, 172px) minmax(0, 1fr);
+    gap: 26px; align-items: center; padding: 24px;
+}
+.sales-dash .sd-hero > * { min-width: 0; }
+.sales-dash .sd-hero-ring { display: flex; justify-content: center; }
+.sales-dash .sd-ring { max-width: 100%; height: auto; }
+.sales-dash .sd-ring-value { font: 700 30px var(--font-family); fill: var(--color-text); }
+.sales-dash .sd-ring-label { font: 500 11px var(--font-family); fill: var(--color-text-secondary);
+    text-transform: uppercase; letter-spacing: .06em; }
+
+.sales-dash .sd-hero-top { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start;
+    justify-content: space-between; margin-bottom: 16px; }
+.sales-dash .sd-hero-top > * { min-width: 0; }
+.sales-dash .sd-hero-kicker { font-size: 12px; font-weight: 600; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--color-text-secondary); }
+.sales-dash .sd-hero-value { font-size: 38px; font-weight: 800; letter-spacing: -.02em; line-height: 1.1; margin: 2px 0 4px; }
+.sales-dash .sd-hero-sub { font-size: 13px; color: var(--color-text-secondary); }
+.sales-dash .sd-hint { color: var(--color-text-tertiary); font-size: 12px; }
+
+.sales-dash .sd-hero-gap { text-align: right; padding: 10px 14px; border-radius: var(--radius-md);
+    background: var(--color-bg); flex: none; }
+.sales-dash .sd-hero-gap .sd-gap-value { font-size: 18px; font-weight: 700; }
+.sales-dash .sd-hero-gap .sd-gap-label { font-size: 11px; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--color-text-secondary); }
+.sales-dash .sd-hero-gap.good { background: rgba(91,140,90,.12); }
+.sales-dash .sd-hero-gap.good .sd-gap-value { color: #3f6b3e; }
+.sales-dash .sd-hero-gap.warn { background: rgba(201,149,32,.14); }
+.sales-dash .sd-hero-gap.warn .sd-gap-value { color: #8a6511; }
+.sales-dash .sd-hero-gap.bad  { background: rgba(176,67,43,.10); }
+.sales-dash .sd-hero-gap.bad .sd-gap-value { color: #8f3522; }
+
+.sales-dash .sd-hero-foot { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-top: 12px;
+    font-size: 13px; color: var(--color-text-secondary); }
+.sales-dash .sd-hero-foot strong { color: var(--color-text); }
+.sales-dash .sd-foot-pending strong { color: #8a6511; }
+
+/* ─── progress track ─── */
+.sales-dash .sd-track {
+    position: relative; display: block; height: 10px; border-radius: 6px;
+    background: #ececef; overflow: visible;
+}
+.sales-dash .sd-fill { display: block; height: 100%; border-radius: 6px; transition: width .4s ease; }
+.sales-dash .sd-pace {
+    position: absolute; top: -4px; width: 2px; height: 18px; border-radius: 2px;
+    background: var(--color-text); opacity: .45;
+}
+.sales-dash .sd-pace::after {
+    /* A short cap so the marker reads as a deliberate "you are here" line rather
+       than a rendering artefact. Deliberately NOT a text label: an absolutely
+       positioned caption inside a 2px box overflows its own border box, which is
+       exactly the shape of defect the overflow harness exists to catch. */
+    content: ''; position: absolute; left: -2px; top: -3px;
+    width: 6px; height: 6px; border-radius: 50%; background: inherit;
+}
+
+/* ─── KPI cards ─── */
+.sales-dash .sd-kpis { grid-template-columns: repeat(auto-fit, minmax(216px, 1fr)); }
+.sales-dash .sd-kpi .stat-value { font-size: 21px; letter-spacing: -.01em; overflow-wrap: break-word; }
+/* A KPI label is two or three uppercase words with wide tracking; left on one
+   line it pushes past its card. */
+.sales-dash .sd-kpi .stat-label { white-space: normal; overflow-wrap: break-word; }
+.sales-dash .sd-kpi .stat-content { min-width: 0; }
+.sales-dash .sd-kpi-sub { font-size: 12px; color: var(--color-text-secondary); margin-top: 3px; line-height: 1.4; }
+.sales-dash .sd-warn { color: #8a6511; }
+.sales-dash .sd-ic-green { background: rgba(91,140,90,.12); color: #3f6b3e; }
+.sales-dash .sd-ic-gold  { background: rgba(201,149,32,.14); color: #8a6511; }
+.sales-dash .sd-ic-amber { background: rgba(201,149,32,.14); color: #8a6511; }
+.sales-dash .sd-ic-good  { background: rgba(91,140,90,.12); color: #3f6b3e; }
+.sales-dash .sd-ic-ok    { background: var(--color-accent-bg); color: var(--color-accent); }
+.sales-dash .sd-ic-warn  { background: rgba(201,149,32,.14); color: #8a6511; }
+.sales-dash .sd-ic-bad   { background: rgba(176,67,43,.10); color: #8f3522; }
+.sales-dash .sd-ic-neutral { background: #f0f0f5; color: var(--color-text-secondary); }
+
+/* ─── two-up row ─── */
+.sales-dash .sd-grid-2 {
+    display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 20px;
+}
+.sales-dash .sd-grid-2 > * { min-width: 0; }
+
+/* ─── trend chart ─── */
+.sales-dash .sd-chart-wrap { width: 100%; }
+.sales-dash .sd-chart { width: 100%; height: auto; display: block; }
+.sales-dash .sd-grid { stroke: #ececef; stroke-width: 1; }
+.sales-dash .sd-axis { font: 500 10px var(--font-family); fill: var(--color-text-tertiary); }
+.sales-dash .sd-bar { fill: var(--color-accent); opacity: .22; }
+.sales-dash .sd-bar-collected { fill: var(--color-accent); }
+.sales-dash .sd-target-line { fill: none; stroke: var(--sd-gold); stroke-width: 2;
+    stroke-linejoin: round; stroke-dasharray: 5 4; }
+.sales-dash .sd-target-dot { fill: var(--sd-gold); }
+.sales-dash .sd-legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px;
+    font-size: 12px; color: var(--color-text-secondary); }
+.sales-dash .sd-key { display: inline-block; width: 10px; height: 10px; border-radius: 3px;
+    margin-right: 6px; vertical-align: -1px; }
+.sales-dash .sd-key-booked { background: var(--color-accent); opacity: .3; }
+.sales-dash .sd-key-collected { background: var(--color-accent); }
+.sales-dash .sd-key-target { background: var(--sd-gold); }
+
+/* ─── leaderboard ─── */
+.sales-dash .sd-section { font-size: 15px; font-weight: 700; margin: 26px 0 12px; }
+.sales-dash .sd-board-legend { font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--color-text-tertiary); }
+.sales-dash .sd-board .card-body { padding: 8px 12px 14px; }
+.sales-dash .sd-board-row {
+    display: grid;
+    grid-template-columns: 26px 32px minmax(0, 1.4fr) minmax(0, 2.2fr) 62px 46px minmax(0, 96px);
+    gap: 12px; align-items: center; padding: 12px 8px;
+    border-bottom: 1px solid var(--color-border-light); cursor: pointer;
+    border-radius: 8px; transition: background .15s;
+}
+.sales-dash .sd-board-row > * { min-width: 0; }
+.sales-dash .sd-board-row:last-child { border-bottom: 0; }
+.sales-dash .sd-board-row:hover { background: var(--color-bg); }
+.sales-dash .sd-rank { font-weight: 700; color: var(--color-text-tertiary); text-align: center; font-size: 13px; }
+.sales-dash .sd-avatar { display: inline-flex; align-items: center; justify-content: center;
+    width: 30px; height: 30px; border-radius: 50%; color: #fff; font-size: 11px; font-weight: 700; flex: none; }
+.sales-dash .sd-board-who { display: flex; flex-direction: column; overflow: hidden; }
+.sales-dash .sd-board-who > * { min-width: 0; max-width: 100%; }
+.sales-dash .sd-board-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sales-dash .sd-board-role { font-size: 11px; color: var(--color-text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sales-dash .sd-board-bar { display: flex; flex-direction: column; gap: 8px; }
+.sales-dash .sd-board-nums { font-size: 12px; color: var(--color-text-secondary);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sales-dash .sd-board-att { font-weight: 700; font-size: 13px; text-align: right; }
+.sales-dash .sd-board-att.good { color: #3f6b3e; }
+.sales-dash .sd-board-att.ok   { color: var(--color-accent); }
+.sales-dash .sd-board-att.warn { color: #8a6511; }
+.sales-dash .sd-board-att.bad  { color: #8f3522; }
+.sales-dash .sd-board-cell { font-size: 13px; text-align: right;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* ─── ledger extras ─── */
+.sales-dash .sd-src { font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+    color: var(--color-accent); background: var(--color-accent-bg); padding: 2px 6px; border-radius: 5px; }
+.sales-dash .sd-src-manual { color: var(--color-text-secondary); background: #f0f0f5; }
+
+/* ─── forms ─── */
+.sales-dash .sd-form-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 4px 20px;
+}
+.sales-dash .sd-form-grid > * { min-width: 0; }
+.sales-dash .sd-span2 { grid-column: 1 / -1; }
+.sales-dash .sd-form-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 18px; }
+.sales-dash .sd-target-input { max-width: 180px; }
+.sales-dash .sd-rate-input { display: flex; align-items: center; gap: 6px; }
+.sales-dash .sd-rate-input .form-control { max-width: 110px; }
+
+.sales-dash .sd-suggest { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; }
+.sales-dash .sd-suggest-item {
+    text-align: left; border: 1px solid var(--color-border); background: var(--color-surface);
+    border-radius: 8px; padding: 8px 12px; cursor: pointer; font: inherit;
+    display: flex; flex-direction: column; gap: 1px; transition: background .12s, border-color .12s;
+}
+.sales-dash .sd-suggest-item:hover { background: var(--color-accent-bg); border-color: var(--color-accent); }
+.sales-dash .sd-suggest-item span { font-size: 12px; color: var(--color-text-secondary); }
+.sales-dash .sd-suggest-empty { font-size: 12px; color: var(--color-text-tertiary); padding: 6px 2px; }
+.sales-dash .sd-chosen { margin-top: 8px; font-size: 13px; color: var(--color-text-secondary);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sales-dash .sd-team-row td { background: var(--color-bg); }
+
+/* ─── the card on a lead's page ─── */
+.sales-dash .sd-lead-summary { display: flex; flex-wrap: wrap; gap: 26px; margin-bottom: 14px; }
+.sales-dash .sd-lead-k { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--color-text-secondary); }
+.sales-dash .sd-lead-v { display: block; font-size: 18px; font-weight: 700; }
+
+/* ─── responsive ─── */
+@media (max-width: 1080px) {
+    .sales-dash .sd-grid-2 { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 1024px) {
+    .sales-dash .sd-hero { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+    .sales-dash .sd-hero-ring { justify-content: flex-start; }
+    .sales-dash .sd-board-row {
+        grid-template-columns: 22px 30px minmax(0, 1fr) 54px;
+        grid-template-areas: 'rank av who att' '. . bar bar' '. . cells cells';
+        row-gap: 8px;
+    }
+    .sales-dash .sd-rank { grid-area: rank; }
+    .sales-dash .sd-avatar { grid-area: av; }
+    .sales-dash .sd-board-who { grid-area: who; }
+    .sales-dash .sd-board-att { grid-area: att; }
+    .sales-dash .sd-board-bar { grid-area: bar; }
+    .sales-dash .sd-board-cell { display: none; }
+    .sales-dash .sd-scope { margin-left: 0; width: 100%; }
+    .sales-dash select.sd-rep-select { max-width: 100%; }
+}
+@media (max-width: 620px) {
+    .sales-dash .sd-hero-value { font-size: 30px; }
+    .sales-dash .sd-hero-gap { text-align: left; }
+}

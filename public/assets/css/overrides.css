@@ -100,6 +100,21 @@
 .project-card .card-actions .fav-btn.on { opacity: 1; }
 .project-card:not(:hover) .card-actions:has(.fav-btn.on) { opacity: 1; }
 
+/* The rule above was written for the hover-revealed cluster on a workspace or
+   project card, but its selector is unscoped — so `.card-actions` ANYWHERE in
+   the app inherits position:absolute + opacity:0. Inside a CRM card header
+   (which is not position:relative) that means the buttons vanish and are painted
+   against the page's top-right corner instead. It was already doing that to the
+   proposal builder's "+ Add Item" button. Put CRM card headers back in flow;
+   `.crm-native` never contains a `.project-card`, so the workflow cards are
+   untouched. */
+.crm-native .card-header .card-actions,
+.crm-native .card-header-actions {
+  position: static;
+  opacity: 1;
+  z-index: auto;
+}
+
 .card-icon-btn, .fav-btn {
   display: inline-flex;
   align-items: center;

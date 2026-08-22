@@ -28,6 +28,8 @@ require_once __DIR__ . '/controllers/AdminController.php';
 require_once __DIR__ . '/controllers/NotificationController.php';
 require_once __DIR__ . '/controllers/CRMController.php';
 require_once __DIR__ . '/controllers/CrmSyncController.php';
+require_once __DIR__ . '/lib/SalesSchema.php';
+require_once __DIR__ . '/controllers/SalesController.php';
 require_once __DIR__ . '/lib/AccSchema.php';
 require_once __DIR__ . '/lib/Acc.php';
 require_once __DIR__ . '/lib/AccSeed.php';
@@ -199,6 +201,20 @@ $routes = [
     'GET crm/interactions' => ['CRMController::interactions', true],
     'POST crm/interactions' => ['CRMController::createInteraction', true],
     'DELETE crm/interactions/{id}' => ['CRMController::deleteInteraction', true],
+    // Sales Dashboard. Literal segments MUST precede crm/sales/{id}, because the
+    // router takes the FIRST pattern that matches and {id} would swallow them.
+    'GET crm/sales/dashboard' => ['SalesController::dashboard', true],
+    'GET crm/sales/options' => ['SalesController::options', true],
+    'GET crm/sales/targets' => ['SalesController::targets', true],
+    'POST crm/sales/targets' => ['SalesController::saveTargets', true],
+    'GET crm/sales/commission' => ['SalesController::commissionSettings', true],
+    'POST crm/sales/commission' => ['SalesController::saveCommission', true],
+    'POST crm/sales/sync' => ['SalesController::syncNow', true],
+    'GET crm/sales' => ['SalesController::index', true],
+    'POST crm/sales' => ['SalesController::createSale', true],
+    'PUT crm/sales/{id}' => ['SalesController::updateSale', true],
+    'DELETE crm/sales/{id}' => ['SalesController::deleteSale', true],
+
     'POST crm/sync-followups' => ['CrmSyncController::syncFollowUps', true],
     'GET tasks/{id}/crm-context' => ['CrmSyncController::taskCrmContext', true],
     

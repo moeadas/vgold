@@ -9,6 +9,7 @@ const CRM_MODULE_COPY = {
   'crm.email': { title: 'Email marketing', description: 'Manage audiences, templates, campaigns, and delivery activity.', features: ['Campaigns', 'Templates', 'Audience lists'] },
   'crm.communications': { title: 'Calls & WhatsApp', description: 'Keep calls and messages attached to the same customer record.', features: ['VoIP activity', 'WhatsApp conversations', 'Communication history'] },
   'crm.automation': { title: 'Automations', description: 'Run lead and follow-up actions from one shared rules engine.', features: ['Triggers', 'Actions', 'Run history'] },
+  'crm.sales': { title: 'Sales Dashboard', description: 'Targets, results, clients sold to and commission — for the team or one person.', features: ['Targets and attainment', 'Commission on cash collected', 'Clients sold to'] },
   'crm.reports': { title: 'Reports', description: 'See CRM performance and export the data your team needs.', features: ['Pipeline reporting', 'Team performance', 'Data exports'] },
   'crm.knowledge': { title: 'Knowledge hub', description: 'Keep sales guides and customer-facing knowledge close to the work.', features: ['Quick guides', 'Sales playbooks', 'Shared resources'] },
 };
@@ -83,7 +84,10 @@ async function renderCrmDashboard() {
         <a class="btn btn-sm btn-outline">${esc(cta)}</a>
       </div>
     </div>`;
+  const salesTile = (typeof crmOverviewSalesTile === 'function' && crmHas('crm.sales'))
+    ? await crmOverviewSalesTile() : '';
   const allowedCards = [
+    salesTile,
     crmHas('crm.leads') ? actionCard('Customer records', 'Open leads', 'Search, prioritize, and assign every active opportunity.', 'View leads →', 'crm-leads') : '',
     crmHas('crm.interactions') ? actionCard('Shared activity', 'Log an interaction', 'Capture a call, meeting, note, or follow-up without leaving VGo.', 'Open interactions →', 'crm-interactions') : '',
     actionCard('CRM ↔ Workflow', 'Follow-ups become tasks', 'Every next action appears in Workflow with the lead name and full context.', 'View my tasks →', 'mytasks'),
@@ -1162,6 +1166,8 @@ async function renderCrmLeadDetail(id) {
 
           ${CRM_CUSTOMER_STATUSES.includes(lead.status) && typeof crmCustomerFinanceCard === 'function'
               ? crmCustomerFinanceCard(data.finance, lead.id) : ''}
+          ${data.sales && typeof crmLeadSalesCard === 'function'
+              ? crmLeadSalesCard(data.sales, lead.id, lead.display_name || lead.company_name || '') : ''}
           ${socialCard}
 
           ${lead.notes ? `<div class="card"><div class="card-header"><h3 class="card-title">Notes</h3></div><div class="card-body"><p style="white-space:pre-wrap;line-height:1.6;">${esc(lead.notes)}</p></div></div>` : ''}

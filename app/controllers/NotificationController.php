@@ -70,6 +70,9 @@ class NotificationController {
             'follow_up'     => 'crm-interactions',
             'interaction'   => 'crm-interactions',
             'proposal'      => 'crm-proposals',
+            'sales_target'  => 'crm-sales',
+            'sales_won'     => 'crm-sales',
+            'sales_pending' => 'crm-sales',
             'campaign'      => 'crm-email',
             // Contractor invoices point at two different screens depending on
             // which side you are: the approver's queue, or the contractor's
@@ -95,6 +98,7 @@ class NotificationController {
             case 'follow_up': return 'mytasks';
             case 'project':   return 'projects';
             case 'crm_lead':  return 'crm-leads';
+            case 'crm_sales': return 'crm-sales';
             case 'crm':       return 'crm-dashboard';
             case 'acc_banking': return 'acc-banking';
         }
@@ -328,7 +332,18 @@ class NotificationController {
                 break;
 
             case 'crm_lead':
-                if ($linkId) { $t['action'] = 'crm_lead'; $t['id'] = $linkId; $t['hash'] = '/#crm-lead/' . $linkId; }
+                // The hash must match routeFromHash(), which splits on '/': it
+                // looks for parts[0]==='crm' && parts[1]==='lead'. '#crm-lead/12'
+                // parsed as ONE segment and fell through to the Home fallback, so
+                // every crm_lead PUSH notification opened My Tasks.
+                if ($linkId) { $t['action'] = 'crm_lead'; $t['id'] = $linkId; $t['hash'] = '/#crm/lead/' . $linkId; }
+                break;
+
+            case 'crm_sales':
+                // A target change or a pending-sale confirmation: the dashboard
+                // IS the destination — there is no per-sale page to deep-link to.
+                $t['nav'] = 'crm-sales';
+                $t['hash'] = '/#crm/sales';
                 break;
 
             case 'acc_banking':

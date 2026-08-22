@@ -67,6 +67,7 @@ echo '<!DOCTYPE html>
 <link rel="stylesheet" href="/assets/css/crm-native.css?v=' . ASSET_VERSION . '">
 <link rel="stylesheet" href="/assets/css/overrides.css?v=' . ASSET_VERSION . '">
 <link rel="stylesheet" href="/assets/css/accounting.css?v=' . ASSET_VERSION . '">
+<link rel="stylesheet" href="/assets/css/sales.css?v=' . ASSET_VERSION . '">
 <link rel="icon" href="/assets/img/vgo-logo.png">
 <link rel="manifest" href="/manifest.json">
 <link rel="apple-touch-icon" href="/assets/img/icon-180.png">
@@ -100,6 +101,7 @@ window.ASSET_V = "' . ASSET_VERSION . '";</script>
 <script src="/assets/js/views/crm.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/crm-modules.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/customers.js?v=' . ASSET_VERSION . '"></script>
+<script src="/assets/js/views/sales.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/assignee-picker.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/modals.js?v=' . ASSET_VERSION . '"></script>
 <script src="/assets/js/views/taskpage.js?v=' . ASSET_VERSION . '"></script>

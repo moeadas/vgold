@@ -27,6 +27,7 @@ function renderSidebar() {
     { module: 'crm.email', id: 'crm-email', label: 'Email marketing', icon: I.mail || I.msg },
     { module: 'crm.communications', id: 'crm-communications', label: 'Calls & WhatsApp', icon: I.phone || I.msg },
     { module: 'crm.automation', id: 'crm-automation', label: 'Automations', icon: I.sparkle },
+    { module: 'crm.sales', id: 'crm-sales', label: 'Sales Dashboard', icon: I.chart || I.grid },
     { module: 'crm.reports', id: 'crm-reports', label: 'Reports', icon: I.chart || I.grid },
     { module: 'crm.knowledge', id: 'crm-knowledge', label: 'Knowledge hub', icon: I.book || I.file },
   ].filter(item => granted.has(item.module));
@@ -93,6 +94,9 @@ function renderSidebar() {
       'crm-lead-new': 'crm-leads',
       'crm-lead-email': 'crm-leads',
       'crm-customer': 'crm-customers',
+      'crm-sale-new': 'crm-sales',
+      'crm-sales-targets': 'crm-sales',
+      'crm-sales-settings': 'crm-sales',
     };
     const activeId = parents[State.screen] || State.screen;
     return `<button class="nav-btn ${activeId === n.id ? 'active' : ''}" onclick="nav('${n.id}')"

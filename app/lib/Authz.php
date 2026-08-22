@@ -10,6 +10,7 @@ class Authz {
         'crm.email' => 'Email marketing',
         'crm.communications' => 'VoIP & WhatsApp',
         'crm.automation' => 'Automations',
+        'crm.sales' => 'Sales Dashboard',
         'crm.reports' => 'Reports & exports',
         'crm.knowledge' => 'Knowledge hub',
     ];

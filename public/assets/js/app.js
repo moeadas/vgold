@@ -418,6 +418,10 @@ async function render() {
       case 'crm-customers': mainContent = await renderCrmCustomers(); break;
       case 'crm-email-builder': mainContent = await renderEmailBuilderPage(); break;
       case 'crm-interactions': mainContent = await renderCrmInteractions(); break;
+      case 'crm-sales': mainContent = await renderSalesDashboard(); break;
+      case 'crm-sale-new': mainContent = await renderSaleForm(); break;
+      case 'crm-sales-targets': mainContent = await renderSalesTargets(); break;
+      case 'crm-sales-settings': mainContent = await renderSalesCommission(); break;
       case 'crm-proposals':
       case 'crm-email':
       case 'crm-communications':
@@ -659,7 +663,8 @@ function routeFromHash() {
     State.activeCategoryId = null;
   }
   else if (parts[0] === 'crm' && parts[1]) {
-    const known = ['dashboard','leads','customers','interactions','proposals','email','communications','automation','reports','knowledge'];
+    const known = ['dashboard','leads','customers','interactions','proposals','email','communications','automation','reports','knowledge',
+                   'sales','sales-targets','sales-settings','sale-new'];
     State.screen = known.includes(parts[1]) ? 'crm-' + parts[1] : 'crm-dashboard';
     State.activeCrmModule = 'crm.' + parts[1];
     State.activeProjectId = null;
@@ -845,6 +850,9 @@ function applyRealtimeRefresh() {
   State.dayPlan = undefined;
   if (typeof invalidateTaskOverviewCache === 'function') invalidateTaskOverviewCache();
   const s = State.screen;
+  // The Sales Dashboard keeps its own module-scoped cache (SalesUI), which
+  // app.js cannot reach directly — same shape as the task views.
+  if (s.startsWith('crm-sale') && typeof invalidateSalesCache === 'function') invalidateSalesCache();
   if (s === 'project') State.activeProject = null;
   if (s === 'category') State.activeCategory = null;
   if (s === 'priorities') State.agendaItems = null;
@@ -855,7 +863,8 @@ function applyRealtimeRefresh() {
   // Keep the Messages nav badge and the per-module counts fresh too.
   loadMsgUnread();
   loadModuleCounts();
-  if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities', 'task', 'messages'].includes(s)) {
+  if (['projects', 'category', 'project', 'mytasks', 'taskoverview', 'priorities', 'task', 'messages'].includes(s)
+      || s === 'crm-sales') {
     render();
   }
 }

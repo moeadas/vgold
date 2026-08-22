@@ -761,6 +761,18 @@ class CRMController {
         if (in_array($lead['lead_status'], self::CUSTOMER_STATUSES, true)) {
             $payload['finance'] = self::customerFinance($id);
         }
+        // Deals booked against this lead, for the Sales card. Only sent to
+        // someone who actually holds the Sales Dashboard module, and a rep only
+        // ever sees their own — the lead page must not become a side door into
+        // the team's numbers.
+        if (class_exists('SalesController') && Authz::hasModuleAccess('crm.sales')) {
+            $sales = SalesController::forLead($id);
+            if (!SalesController::canManage()) {
+                $me = (int)Auth::userId();
+                $sales = array_values(array_filter($sales, fn($s) => (int)$s['rep_user_id'] === $me));
+            }
+            $payload['sales'] = $sales;
+        }
         jsonResponse($payload);
     }
 

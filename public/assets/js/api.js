@@ -165,6 +165,18 @@ const API = {
   crmInteractions: (params = {}) => API.req('/crm/interactions?' + new URLSearchParams(params).toString()),
   createCrmInteraction: (data) => API.req('/crm/interactions', { method: 'POST', body: JSON.stringify(data) }),
   crmDeleteInteraction: (id) => API.req('/crm/interactions/' + id, { method: 'DELETE' }),
+  // Sales Dashboard
+  salesDashboard: (params = {}) => API.req('/crm/sales/dashboard?' + new URLSearchParams(params).toString()),
+  salesList: (params = {}) => API.req('/crm/sales?' + new URLSearchParams(params).toString()),
+  salesOptions: () => API.req('/crm/sales/options'),
+  createSale: (data) => API.req('/crm/sales', { method: 'POST', body: JSON.stringify(data) }),
+  updateSale: (id, data) => API.req('/crm/sales/' + id, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSale: (id) => API.req('/crm/sales/' + id, { method: 'DELETE' }),
+  salesSync: () => API.req('/crm/sales/sync', { method: 'POST' }),
+  salesTargets: (params = {}) => API.req('/crm/sales/targets?' + new URLSearchParams(params).toString()),
+  saveSalesTargets: (data) => API.req('/crm/sales/targets', { method: 'POST', body: JSON.stringify(data) }),
+  salesCommission: () => API.req('/crm/sales/commission'),
+  saveSalesCommission: (rates) => API.req('/crm/sales/commission', { method: 'POST', body: JSON.stringify({ rates }) }),
   // AI
   providers: () => API.req('/ai/providers'),
   ask: (prompt) => API.req('/ai/ask', { method: 'POST', body: JSON.stringify({ prompt }) }),
