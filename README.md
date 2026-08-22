@@ -15,6 +15,10 @@ ecosystem that can grow into a full ERP.
 
 ## Architecture
 
+> **Full reference: [ARCHITECTURE.md](ARCHITECTURE.md)** — apps and modules, the three
+> API patterns, the access model, schema-on-demand, the escaping rules, and the deploy
+> path. Keep it updated in the same commit as the change it describes.
+
 - **Backend:** PHP 8.x, no framework, lightweight custom MVC.
 - **Database:** one MySQL/MariaDB database (`dbs9ygqiryh4yg`) holding both the workflow
   tables (VGo) and the CRM tables.
@@ -64,15 +68,17 @@ vgold/
 
 | Phase | Scope | Status |
 |------:|-------|--------|
-| 0 | Scaffold VGo from VGo, new subdomain/DB/Azure config, import CRM source | ✅ done |
-| 1 | Unified schema + CRM data migration (leads/interactions/users, ID reconciliation) | ⏳ |
-| 2 | Unified auth & session (365 + password) | ⏳ |
-| 3 | Mount CRM under `/crm/*` inside the shell | ⏳ |
-| 4 | Access control + role-mapping settings | ⏳ |
-| 5 | Task ↔ CRM bridge (follow-ups → tasks, two-way sync) | ⏳ |
-| 6 | Integrations: SharePoint files, email, VoIP/WhatsApp/Sheets re-point | ⏳ |
-| 7 | UI unification (re-skin + port CRM screens) | ⏳ |
-| 8 | QA, deploy to vgold, verify data + logins | ⏳ |
+| 0 | Scaffold VGo, new subdomain/DB/Azure config, import CRM source | ✅ done |
+| 1 | Unified schema + CRM data migration (leads/interactions/users, ID reconciliation) | ✅ done |
+| 2 | Unified auth & session (Microsoft 365 + password) | ✅ done |
+| 3 | Mount CRM under `/crm/*` inside the shell | ✅ done |
+| 4 | Access control + role-mapping settings | ✅ done |
+| 5 | Task ↔ CRM bridge (follow-ups → tasks, two-way sync) | ✅ done |
+| 6 | Integrations: SharePoint files, email, VoIP/WhatsApp/Sheets | ✅ done |
+| 7 | UI unification (re-skin + port CRM screens to native SPA views) | ✅ done |
+| 8 | QA, deploy, verify data + logins | ✅ done |
+| 9 | Accounting & Finance app (`acc_*`, double-entry ledger, Plaid bank feed) | ✅ done |
+| 10 | Sales Dashboard (targets, attainment, clients sold to, commission) | ✅ done |
 
 ---
 
